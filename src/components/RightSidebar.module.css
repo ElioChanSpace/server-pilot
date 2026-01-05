@@ -1,0 +1,19 @@
+.rightSidebar {
+  width: 300px;
+  background-color: var(--glass-bg);
+  border-left: 1px solid var(--glass-border);
+  padding: 16px;
+  transition: width 0.2s ease-in-out, padding 0.2s ease-in-out;
+  overflow: hidden;
+  z-index: 1; /* Match the left sidebar's stacking context */
+}
+
+.rightSidebar[data-closed="true"] {
+  width: 0;
+  padding: 0;
+  border-left: none;
+}
+
+.content {
+  white-space: nowrap;
+}

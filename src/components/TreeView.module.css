@@ -1,0 +1,54 @@
+/* --- FIX: Apply padding only to NESTED nodes --- */
+.treeNode .treeNode {
+  padding-left: 20px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.header:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.folderIcon {
+  color: #87ceeb; /* SkyBlue color for folders */
+}
+
+.serverItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  padding-left: 24px; /* Indent server items further */
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.serverItem:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.serverItem[data-active="true"] {
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

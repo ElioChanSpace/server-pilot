@@ -1,0 +1,71 @@
+.leftSidebar {
+  width: 250px;
+  background-color: var(--glass-bg);
+  border-right: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  transition: width 0.2s ease-in-out, padding 0.2s ease-in-out;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.leftSidebar[data-closed="true"] {
+  width: 0;
+  padding: 0;
+  border-right: none;
+}
+
+.category {
+  margin-bottom: 8px;
+}
+
+.categoryHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.categoryHeader:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.folderIcon {
+  color: #87ceeb; /* SkyBlue color for folders */
+}
+
+.serverItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  padding-left: 30px; /* Indent server items */
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.serverItem:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.serverItem[data-active="true"] {
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

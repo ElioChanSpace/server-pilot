@@ -1,0 +1,17 @@
+.leftSidebar {
+  width: 250px;
+  background-color: var(--glass-bg);
+  border-right: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  transition: width 0.15s ease-out, padding 0.15s ease-out; /* <-- FIX: Faster animation */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.leftSidebar[data-closed="true"] {
+  width: 0;
+  padding: 0;
+  border-right: none;
+}
