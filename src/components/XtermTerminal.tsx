@@ -3,56 +3,76 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { invoke } from '@tauri-apps/api/tauri';
-import { listen } from '@tauri-apps/api/event';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
-export const XtermTerminal: React.FC = () => {
+interface XtermTerminalProps {
+  sessionId: string; // 会话 ID，用于订阅特定事件
+}
+
+export const XtermTerminal: React.FC<XtermTerminalProps> = ({ sessionId }) => {
   const termRef = useRef<HTMLDivElement>(null);
-  const term = useRef<Terminal | null>(null);
-  const fitAddon = useRef<FitAddon | null>(null);
+  const termInstance = useRef<Terminal | null>(null);
 
   useEffect(() => {
-    if (termRef.current && !term.current) {
+    const componentId = `Terminal_${sessionId}`;
+    console.log(`${componentId}: useEffect START`);
+
+    let unlisten: UnlistenFn;
+
+    if (termRef.current && !termInstance.current) {
       const terminal = new Terminal({
         cursorBlink: true,
-        theme: {
-          background: 'rgba(0,0,0,0.3)',
-          foreground: '#f0f0f0',
-        },
+        theme: { background: 'rgba(0,0,0,0.8)', foreground: '#f0f0f0' },
+        convertEol: true,
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        fontSize: 14,
+        scrollback: 5000,
       });
-      
       const addon = new FitAddon();
       terminal.loadAddon(addon);
-      
       terminal.open(termRef.current);
-      addon.fit();
+
+      termInstance.current = terminal;
+
+      // --- 关键修复：只订阅自己的事件 ---
+      const eventName = `pty-data-${sessionId}`;
+      listen<string>(eventName, (event) => {
+        terminal.write(event.payload);
+      }).then(unlistenFn => {
+        console.log(`${componentId}: Attached listener for ${eventName}`);
+        unlisten = unlistenFn;
+      });
 
       terminal.onData(data => {
-        invoke('pty_write', { data });
+        invoke('pty_write', { serverId: sessionId, data });
       });
 
       terminal.onResize(({ cols, rows }) => {
-        invoke('pty_resize', { cols, rows });
+        invoke('pty_resize', { serverId: sessionId, rows, cols });
       });
 
-      term.current = terminal;
-      fitAddon.current = addon;
-
       const resizeObserver = new ResizeObserver(() => {
-        fitAddon.current?.fit();
+        addon.fit();
       });
       resizeObserver.observe(termRef.current);
 
-      const unlisten = listen<string>('pty-data', (event) => {
-        terminal.write(event.payload);
-      });
-
-      return () => {
-        resizeObserver.disconnect();
-        unlisten.then(f => f());
-        terminal.dispose();
-      };
+      setTimeout(() => addon.fit(), 50);
     }
-  }, []);
 
-  return <div ref={termRef} style={{ width: '100%', height: '100%' }} />;
+    return () => {
+      console.log(`${componentId}: Cleanup function running...`);
+      if (unlisten) {
+        unlisten();
+      }
+      if (termInstance.current) {
+        termInstance.current.dispose();
+        termInstance.current = null;
+      }
+      // 调用后端，确保会话被彻底清理
+      invoke('disconnect_server', { serverId: sessionId });
+      console.log(`${componentId}: Cleanup finished.`);
+    };
+  }, [sessionId]); // sessionId 是唯一的依赖
+
+  return <div ref={termRef} style={{ width: '100%', height: '100%', overflow: 'hidden' }} />;
 };

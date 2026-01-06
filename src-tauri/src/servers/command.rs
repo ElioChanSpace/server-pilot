@@ -1,30 +1,13 @@
-use std::io::{Write, Read};
-use std::sync::{Arc, Mutex};
-use tauri::{State, AppHandle, Window};
-use std::fs;
-use std::sync::atomic::{AtomicBool, Ordering};
-use crate::models::{Server, Category, OsType, AppData};
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem, MasterPty};
-use std::collections::HashMap;
-
-// AppState holds the main application data (servers, categories).
-// 使用 Arc 包装以便克隆
-pub struct AppState(pub Arc<Mutex<AppData>>);
-
-// --- PTY Management ---
-const DATA_FILE: &str = "data.json";
-
-pub struct PtySession {
-    pub server_id: String,
-    pub pty: Box<dyn MasterPty + Send>,
-    pub alive: Arc<AtomicBool>,
-}
-
-pub struct PtyState {
-    pub sessions: Arc<Mutex<HashMap<String, PtySession>>>,
-}
 
 // --- Persistence Functions ---
+
+use std::fs;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use log::info;
+use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use tauri::{AppHandle, State, Window};
+use crate::servers::{AppData, AppState, Category, OsType, PtySession, PtyState, Server, DATA_FILE};
 
 fn save_data(app: &AppHandle, data: &AppData) -> Result<(), String> {
     let path = app.path_resolver().app_data_dir().ok_or("Could not resolve app data dir")?;
@@ -196,7 +179,7 @@ pub async fn connect_server(
         let _ = window.emit("server-status-changed", s.clone());
         s.clone()
     };
-
+    info!("开始连接服务器:{:?}", server);
     let _ = window.emit(
         "connection-log",
         format!("Connecting to {} ({}@{})...", server.name, server.username, server.host),
@@ -237,6 +220,7 @@ pub async fn connect_server(
             let mut data = state.0.lock().unwrap();
             if let Some(s) = data.servers.iter_mut().find(|s| s.id == server.id) {
                 s.status = "disconnected".into();
+                info!("断开连接!");
                 let _ = window.emit("server-status-changed", s.clone());
             }
             e.to_string()
@@ -276,7 +260,10 @@ pub async fn connect_server(
                     Ok(0) => break,
                     Ok(n) => {
                         let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let _ = window.emit("pty-data", (server_id.clone(), data));
+                        info!("读取到数据:{:?}", data);
+                        // --- THE FIX: Use a session-specific event name ---
+                        let event_name = format!("pty-data-{}", server_id);
+                        let _ = window.emit(&event_name, data);
                     }
                     Err(_) => break,
                 }

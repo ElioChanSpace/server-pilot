@@ -1,0 +1,65 @@
+.tabBar {
+  display: flex;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--glass-border);
+  overflow-x: auto;
+  /* Hide scrollbar but allow scrolling */
+  scrollbar-width: none;
+}
+
+.tabBar::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  background-color: transparent;
+  border-right: 1px solid var(--glass-border);
+  min-width: 120px;
+  max-width: 200px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  user-select: none;
+  transition: background-color 0.2s;
+}
+
+.tab:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.tab[data-active="true"] {
+  background-color: var(--glass-bg); /* Match the terminal background */
+  color: var(--accent-color);
+  border-bottom: 2px solid var(--accent-color);
+}
+
+.tabTitle {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 8px;
+}
+
+.closeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-size: 10px;
+  padding: 0;
+  margin: 0;
+}
+
+.closeButton:hover {
+  background-color: rgba(255, 0, 0, 0.2);
+  color: #ff6b6b;
+}

@@ -1,5 +1,14 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
+use portable_pty::MasterPty;
 use uuid::Uuid;
+
+pub mod command;
+pub mod session_manager; // <-- 导出新模块
+
+pub const DATA_FILE: &str = "data.json";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -43,7 +52,7 @@ impl Server {
 pub struct Category {
     pub id: String,
     pub name: String,
-    pub parent_id: Option<String>, // <-- ADDED: For nesting categories
+    pub parent_id: Option<String>,
 }
 
 impl Category {
@@ -56,10 +65,23 @@ impl Category {
     }
 }
 
-// This struct represents the entire dataset to be saved to a file.
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppData {
     pub servers: Vec<Server>,
     pub categories: Vec<Category>,
+}
+
+pub struct AppState(pub Arc<Mutex<AppData>>);
+
+// --- PTY 会话管理 ---
+pub struct PtySession {
+    pub server_id: String,
+    pub pty: Box<dyn MasterPty + Send>,
+    pub alive: Arc<AtomicBool>,
+}
+
+#[derive(Default)]
+pub struct PtyState {
+    pub sessions: Arc<Mutex<HashMap<String, PtySession>>>,
 }
