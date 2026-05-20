@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { listen } from '@tauri-apps/api/event';
 import { ServerProvider, Server, Category, useServer } from "./context/ServerContext";
-import { TerminalProvider, useTerminalManager } from "./context/TerminalContext"; // <-- 引入
+import { TerminalProvider, useTerminalManager } from "./context/TerminalContext";
 import { AddServerModal } from "./components/AddServerModal";
 import { AddCategoryModal } from "./components/AddCategoryModal";
 import { LeftSidebar } from "./components/LeftSidebar";
@@ -9,7 +9,7 @@ import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
 import { MainContent } from "./components/MainContent";
 import { ContextMenu, ContextMenuAction } from "./components/ContextMenu";
-import { FaPlus, FaFolderPlus } from 'react-icons/fa';
+import { FaPlus, FaFolderPlus, FaUnlink } from 'react-icons/fa'; // <-- 引入 FaUnlink 图标
 import "./App.css";
 
 // MenuBar 保持不变...
@@ -71,7 +71,6 @@ const AppContent: React.FC = () => {
   const [sessions, setSessions] = useState<Server[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   
-  // ... 其他状态保持不变 ...
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
   const [activeServer, setActiveServer] = useState<Server | null>(null);
@@ -84,10 +83,9 @@ const AppContent: React.FC = () => {
   const [initialParentId, setInitialParentId] = useState<string | undefined>(undefined);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   
-  const { connectToServer } = useServer();
-  const { terminalRefs } = useTerminalManager(); // <-- 从 Context 获取 ref Map
+  const { connectToServer, disconnectServer } = useServer(); // <-- 获取 disconnectServer
+  const { terminalRefs } = useTerminalManager();
 
-  // --- 全局事件总线，现在位于 App.tsx ---
   useEffect(() => {
     console.log("App.tsx: Setting up global event listeners.");
     const unlistenPty = listen<[string, string]>('pty-data', (event) => {
@@ -99,7 +97,6 @@ const AppContent: React.FC = () => {
     });
 
     const unlistenLog = listen<string>('connection-log', (event) => {
-      // 广播到所有打开的终端
       terminalRefs.current.forEach(terminal => {
         terminal.write(`[INFO] ${event.payload.replace(/\n/g, '\r\n')}\r\n`);
       });
@@ -110,9 +107,8 @@ const AppContent: React.FC = () => {
       unlistenPty.then(f => f());
       unlistenLog.then(f => f());
     };
-  }, [terminalRefs]); // 依赖于稳定的 ref Map
+  }, [terminalRefs]);
 
-  // ... 其他 handle 函数保持不变 ...
   const clearSelection = () => {
     setActiveServer(null);
     setActiveCategory(null);
@@ -145,6 +141,9 @@ const AppContent: React.FC = () => {
   };
 
   const handleCloseSession = (sessionId: string) => {
+    // --- 新增：调用后端断开连接 ---
+    disconnectServer(sessionId).catch(err => console.error("Failed to disconnect:", err));
+
     setSessions(prev => {
       const newSessions = prev.filter(s => s.id !== sessionId);
       if (sessionId === currentSessionId) {
@@ -174,6 +173,28 @@ const AppContent: React.FC = () => {
     setContextMenu({ x: event.clientX, y: event.clientY, actions });
   };
 
+  // --- 新增：处理服务器右键菜单 ---
+  const handleServerContextMenu = (event: React.MouseEvent, server: Server) => {
+    const actions: ContextMenuAction[] = [];
+    
+    if (server.status === 'connected' || server.status === 'connecting') {
+      actions.push({
+        label: "Disconnect",
+        icon: <FaUnlink />,
+        action: () => {
+          // 断开连接并关闭会话（如果存在）
+          handleCloseSession(server.id);
+        }
+      });
+    }
+
+    // 可以添加 "Edit", "Delete" 等其他选项
+
+    if (actions.length > 0) {
+      setContextMenu({ x: event.clientX, y: event.clientY, actions });
+    }
+  };
+
   const closeContextMenu = () => setContextMenu(null);
 
   useEffect(() => {
@@ -200,6 +221,7 @@ const AppContent: React.FC = () => {
           onSelectCategory={handleSelectCategory}
           onCategoryContextMenu={handleCategoryContextMenu}
           onDoubleClickServer={handleConnectServer}
+          onServerContextMenu={handleServerContextMenu} // <-- 传递新的处理函数
         />
         <MainContent 
           activeView={activeView} 
@@ -226,11 +248,10 @@ const AppContent: React.FC = () => {
   );
 }
 
-// --- 最终的 App 结构 ---
 function App() {
   return (
     <ServerProvider>
-      <TerminalProvider> {/* <-- 将 TerminalProvider 包裹在 AppContent 外层 */}
+      <TerminalProvider>
         <AppContent />
       </TerminalProvider>
     </ServerProvider>

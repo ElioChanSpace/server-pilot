@@ -1,0 +1,21 @@
+# Node
+node_modules/
+dist/
+
+# Rust / Tauri
+src-tauri/target/
+**/*.rs.bk
+
+# Logs
+src-tauri/logs/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lock files (keep package-lock.json, ignore only if desired)
+# package-lock.json

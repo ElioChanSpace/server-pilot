@@ -1,0 +1,127 @@
+.container {
+  padding: 16px;
+  background-color: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  height: 100%;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 24px;
+  gap: 12px;
+}
+
+.headerIcon {
+  font-size: 24px;
+  color: var(--primary-color);
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.detailsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.detailItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background-color: var(--sidebar-item-bg);
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.detailItem:hover {
+  background-color: var(--sidebar-item-hover-bg);
+}
+
+.detailIcon {
+  font-size: 18px;
+  color: var(--primary-color);
+  margin-top: 2px;
+}
+
+.detailLabel {
+  font-size: 12px;
+  color: var(--sidebar-text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detailValue {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sidebar-text);
+}
+
+.passwordSection {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.passwordLabel {
+  font-size: 12px;
+  color: var(--sidebar-text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.passwordValue {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sidebar-text);
+  font-family: monospace;
+}
+
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--sidebar-text-secondary);
+  text-align: center;
+  padding: 24px;
+}
+
+.placeholderIcon {
+  font-size: 32px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.statusBadge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.statusBadge[data-status="connected"] {
+  background-color: #4caf50;
+  color: white;
+}
+
+.statusBadge[data-status="connecting"] {
+  background-color: #ff9800;
+  color: white;
+}
+
+.statusBadge[data-status="disconnected"] {
+  background-color: #f44336;
+  color: white;
+}

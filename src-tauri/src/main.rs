@@ -3,24 +3,25 @@
 
 mod servers;
 
-use std::collections::HashMap;
-use servers::{AppState, AppData};
-use servers::command::{
-    create_server, get_servers, connect_server, create_category, get_categories,
-    pty_write, pty_resize, load_data, disconnect_server
+use crate::servers::application::AppState;
+use crate::servers::infrastructure::session_manager::SessionManagerState;
+use crate::servers::infrastructure::FileRepository;
+use crate::servers::interface::commands::{
+    connect_server, create_category, create_server, disconnect_server, get_categories, get_servers,
+    pty_resize, pty_write,
 };
-use servers::session_manager::SessionManagerState; // <-- 引入新的 SessionManager 状态
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{CustomMenuItem, Manager, Menu, Submenu};
-use crate::servers::PtyState;
 
 fn main() {
-    log4rs::init_file("log4rs.yaml", Default::default())
-        .expect("初始化日志失败");
+    log4rs::init_file("log4rs.yaml", Default::default()).expect("初始化日志失败");
     let system_menu = Submenu::new("System", Menu::new());
 
     #[cfg(debug_assertions)]
-    let dev_menu = Submenu::new("Developer", Menu::new().add_item(CustomMenuItem::new("inspect", "Inspect Element")));
+    let dev_menu = Submenu::new(
+        "Developer",
+        Menu::new().add_item(CustomMenuItem::new("inspect", "Inspect Element")),
+    );
 
     let mut menu = Menu::new().add_submenu(system_menu);
     #[cfg(debug_assertions)]
@@ -29,21 +30,19 @@ fn main() {
     }
     tauri::Builder::default()
         .menu(menu)
-        .on_menu_event(|event| {
-            match event.menu_item_id() {
-                "inspect" => {
-                    event.window().open_devtools();
-                }
-                _ => {}
+        .on_menu_event(|event| match event.menu_item_id() {
+            "inspect" => {
+                event.window().open_devtools();
             }
+            _ => {}
         })
-        .manage(SessionManagerState::default()) // <-- 注册 SessionManager 状态
+        .manage(SessionManagerState::default())
         .setup(|app| {
-            let initial_data = load_data(&app.handle());
-            app.manage(AppState(Arc::from(Mutex::new(initial_data))));
-            app.manage(PtyState {
-                sessions: Arc::new(Mutex::new(HashMap::new()))
-            });
+            // --- Dependency Injection ---
+            let repository = Arc::new(FileRepository::new(app.handle()));
+            let app_state = AppState::new(repository);
+
+            app.manage(app_state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

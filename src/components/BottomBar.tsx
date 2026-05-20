@@ -1,6 +1,9 @@
-import React from 'react';
+import React from "react";
 // Using a more descriptive set of icons from the Tabler Icons collection
-import { TbLayoutSidebarLeftCollapse, TbLayoutSidebarRightCollapse } from 'react-icons/tb';
+import {
+  TbLayoutSidebarLeftCollapse,
+  TbLayoutSidebarRightCollapse,
+} from "react-icons/tb";
 import styles from "./BottomBar.module.css";
 
 interface BottomBarProps {
@@ -16,19 +19,19 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   toggleLeftSidebar,
   toggleRightSidebar,
 }) => {
-    console.log(isLeftSidebarOpen)
+  console.log(isLeftSidebarOpen);
   return (
     <div className={styles.bottomBar}>
-      <button 
-        className={styles.toggleButton} 
+      <button
+        className={styles.toggleButton}
         onClick={toggleLeftSidebar}
         data-active={isLeftSidebarOpen}
         title="Toggle Server List"
       >
         <TbLayoutSidebarLeftCollapse size={16} />
       </button>
-      <button 
-        className={styles.toggleButton} 
+      <button
+        className={styles.toggleButton}
         onClick={toggleRightSidebar}
         data-active={isRightSidebarOpen}
         title="Toggle Details Panel"

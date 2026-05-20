@@ -1,0 +1,108 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+}
+
+.header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+}
+
+.toggleBtn {
+  padding: 6px 12px;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.2s;
+}
+
+.toggleBtn:hover {
+  background-color: var(--primary-color-hover);
+}
+
+.toggleBtn[data-active="true"] {
+  background-color: var(--success-color);
+}
+
+.clearBtn {
+  padding: 6px 12px;
+  background-color: var(--danger-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.2s;
+}
+
+.clearBtn:hover {
+  background-color: var(--danger-color-hover);
+}
+
+.logContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.logLine {
+  margin-bottom: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.logTimestamp {
+  color: var(--text-secondary);
+  margin-right: 12px;
+}
+
+.logMessage {
+  color: var(--text-primary);
+}
+
+.logMessage[data-level="ERROR"] {
+  color: var(--error-color);
+}
+
+.logMessage[data-level="WARN"] {
+  color: var(--warning-color);
+}
+
+.logMessage[data-level="INFO"] {
+  color: var(--info-color);
+}
+
+.logMessage[data-level="DEBUG"] {
+  color: var(--debug-color);
+}
+
+.emptyState {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 32px;
+  font-style: italic;
+}

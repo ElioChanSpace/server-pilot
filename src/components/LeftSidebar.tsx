@@ -10,11 +10,12 @@ const ServerNode: React.FC<{
   server: Server;
   activeServer: Server | null;
   onSelectServer: (server: Server) => void;
-  onDoubleClickServer: (server: Server) => void; // <-- FIX: Accept the double-click handler
-}> = ({ server, activeServer, onSelectServer, onDoubleClickServer }) => {
+  onDoubleClickServer: (server: Server) => void;
+  onServerContextMenu?: (event: React.MouseEvent, server: Server) => void; // <-- 新增
+}> = ({ server, activeServer, onSelectServer, onDoubleClickServer, onServerContextMenu }) => {
   const handleServerClick = useClick(
     () => onSelectServer(server),
-    () => onDoubleClickServer(server) // <-- FIX: Use the prop for double-click
+    () => onDoubleClickServer(server)
   );
 
   const getStatusColor = (status: string) => {
@@ -30,6 +31,13 @@ const ServerNode: React.FC<{
       className={treeStyles.serverItem} 
       data-active={activeServer?.id === server.id} 
       onClick={handleServerClick}
+      onContextMenu={(e) => {
+        if (onServerContextMenu) {
+          e.preventDefault();
+          e.stopPropagation();
+          onServerContextMenu(e, server);
+        }
+      }}
     >
       <div className={treeStyles.statusDot} style={{ backgroundColor: getStatusColor(server.status) }} />
       <span>{server.name}</span>
@@ -47,10 +55,11 @@ const CategoryNode: React.FC<{
   onCategoryContextMenu: (event: React.MouseEvent, category: Category | null) => void;
   onSelectServer: (server: Server) => void;
   onSelectCategory: (category: Category) => void;
-  onDoubleClickServer: (server: Server) => void; // <-- FIX: Pass prop down
+  onDoubleClickServer: (server: Server) => void;
+  onServerContextMenu?: (event: React.MouseEvent, server: Server) => void; // <-- 新增
   activeServer: Server | null;
   activeCategory: Category | null;
-}> = ({ category, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onDoubleClickServer, activeServer, activeCategory }) => {
+}> = ({ category, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onDoubleClickServer, onServerContextMenu, activeServer, activeCategory }) => {
   const isExpanded = expandedCategories.has(category.id);
   const childCategories = allCategories.filter(c => c.parentId === category.id);
   const childServers = allServers.filter(s => s.categoryId === category.id);
@@ -75,10 +84,10 @@ const CategoryNode: React.FC<{
       {isExpanded && (
         <div>
           {childCategories.map(child => (
-            <CategoryNode key={child.id} {...{ category: child, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onDoubleClickServer, activeServer, activeCategory }} />
+            <CategoryNode key={child.id} {...{ category: child, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onDoubleClickServer, onServerContextMenu, activeServer, activeCategory }} />
           ))}
           {childServers.map(server => (
-            <ServerNode key={server.id} server={server} activeServer={activeServer} onSelectServer={onSelectServer} onDoubleClickServer={onDoubleClickServer} />
+            <ServerNode key={server.id} server={server} activeServer={activeServer} onSelectServer={onSelectServer} onDoubleClickServer={onDoubleClickServer} onServerContextMenu={onServerContextMenu} />
           ))}
         </div>
       )}
@@ -94,8 +103,9 @@ export const LeftSidebar: React.FC<{
   onSelectServer: (server: Server) => void;
   onSelectCategory: (category: Category | null) => void;
   onCategoryContextMenu: (event: React.MouseEvent, category: Category | null) => void;
-  onDoubleClickServer: (server: Server) => void; // <-- FIX: Declare the prop
-}> = ({ isOpen, activeServer, activeCategory, onSelectServer, onSelectCategory, onCategoryContextMenu, onDoubleClickServer }) => {
+  onDoubleClickServer: (server: Server) => void;
+  onServerContextMenu?: (event: React.MouseEvent, server: Server) => void; // <-- 新增
+}> = ({ isOpen, activeServer, activeCategory, onSelectServer, onSelectCategory, onCategoryContextMenu, onDoubleClickServer, onServerContextMenu }) => {
   const { categories, servers } = useServer();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
@@ -125,7 +135,7 @@ export const LeftSidebar: React.FC<{
   return (
     <div className={sidebarStyles.leftSidebar} data-closed={!isOpen}>
       {rootCategories.map(category => (
-        <CategoryNode key={category.id} {...{ category, allCategories: categories, allServers: servers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onDoubleClickServer, activeServer, activeCategory }} />
+        <CategoryNode key={category.id} {...{ category, allCategories: categories, allServers: servers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onDoubleClickServer, onServerContextMenu, activeServer, activeCategory }} />
       ))}
       
       <div className={treeStyles.treeNode}>
@@ -140,7 +150,7 @@ export const LeftSidebar: React.FC<{
           <span>Uncategorized</span>
         </div>
         {expandedCategories.has('__uncategorized__') && uncategorizedServers.map(server => (
-          <ServerNode key={server.id} server={server} activeServer={activeServer} onSelectServer={onSelectServer} onDoubleClickServer={onDoubleClickServer} />
+          <ServerNode key={server.id} server={server} activeServer={activeServer} onSelectServer={onSelectServer} onDoubleClickServer={onDoubleClickServer} onServerContextMenu={onServerContextMenu} />
         ))}
       </div>
     </div>
