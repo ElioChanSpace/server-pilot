@@ -12,11 +12,58 @@ use crate::servers::interface::commands::{
     list_remote_directory, pty_resize, pty_write, read_app_logs, update_server,
     upload_file_to_server,
 };
-use std::sync::Arc;
-use tauri::{CustomMenuItem, Manager, Menu, Submenu};
+use log::LevelFilter;
+use log4rs::{
+    append::{console::ConsoleAppender, file::FileAppender},
+    config::{Appender, Config, Root},
+    encode::pattern::PatternEncoder,
+};
+use std::{fs, path::PathBuf, sync::Arc};
+use tauri::{CustomMenuItem, Manager, Menu, PathResolver, Submenu};
+
+fn resolve_app_log_path(path_resolver: &PathResolver) -> Result<PathBuf, String> {
+    let log_dir = path_resolver
+        .app_log_dir()
+        .or_else(|| path_resolver.app_local_data_dir().map(|path| path.join("logs")))
+        .ok_or_else(|| "无法解析应用日志目录".to_string())?;
+    Ok(log_dir.join("app.log"))
+}
+
+fn initialize_logging(path_resolver: &PathResolver) -> Result<(), String> {
+    let log_path = resolve_app_log_path(path_resolver)?;
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("创建日志目录失败: {}", err))?;
+    }
+
+    let stdout = ConsoleAppender::builder()
+        .encoder(Box::new(PatternEncoder::new(
+            "{d(%Y-%m-%d %H:%M:%S)} [{l}] {m}{n}",
+        )))
+        .build();
+
+    let file = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new(
+            "{d(%Y-%m-%d %H:%M:%S)} [{l}] [{f}:{L}] {m}{n}",
+        )))
+        .build(&log_path)
+        .map_err(|err| format!("创建日志文件失败: {}", err))?;
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("stdout", Box::new(stdout)))
+        .appender(Appender::builder().build("file", Box::new(file)))
+        .build(
+            Root::builder()
+                .appender("stdout")
+                .appender("file")
+                .build(LevelFilter::Info),
+        )
+        .map_err(|err| format!("构建日志配置失败: {}", err))?;
+
+    log4rs::init_config(config).map_err(|err| format!("初始化日志失败: {}", err))?;
+    Ok(())
+}
 
 fn main() {
-    log4rs::init_file("log4rs.yaml", Default::default()).expect("初始化日志失败");
     let system_menu = Submenu::new("系统", Menu::new());
 
     #[cfg(debug_assertions)]
@@ -32,14 +79,16 @@ fn main() {
     }
     tauri::Builder::default()
         .menu(menu)
-        .on_menu_event(|event| match event.menu_item_id() {
-            "inspect" => {
+        .on_menu_event(|event| {
+            #[cfg(debug_assertions)]
+            if event.menu_item_id() == "inspect" {
                 event.window().open_devtools();
             }
-            _ => {}
         })
         .manage(SessionManagerState::default())
         .setup(|app| {
+            initialize_logging(&app.path_resolver())?;
+
             // --- Dependency Injection ---
             let repository = Arc::new(FileRepository::new(app.handle()));
             let app_state = AppState::new(repository);
