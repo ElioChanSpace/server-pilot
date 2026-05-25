@@ -96,6 +96,14 @@ npm run tauri build
 
 构建产物默认位于 `src-tauri/target/release/bundle/`。
 
+### GitHub 自动编译
+
+- `CI` 工作流会在推送到 `main` / `master` 或提交 Pull Request 时自动执行前端构建和 Rust 检查。
+- `Build Tauri App` 工作流支持两种触发方式：
+  - 在 GitHub Actions 页面手动触发
+  - 推送形如 `v1.0.0` 的 tag 自动触发
+- 打包完成后会自动上传构建产物，并在 tag 构建时创建 Draft Release。
+
 ---
 
 ## 使用说明
