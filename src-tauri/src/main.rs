@@ -7,8 +7,9 @@ use crate::servers::application::AppState;
 use crate::servers::infrastructure::session_manager::SessionManagerState;
 use crate::servers::infrastructure::FileRepository;
 use crate::servers::interface::commands::{
-    connect_server, create_category, create_server, disconnect_server, fetch_server_metrics,
-    get_categories, get_servers, pty_resize, pty_write, update_server,
+    connect_server, create_category, create_server, disconnect_server, download_file_from_server,
+    fetch_server_metrics, get_categories, get_servers, list_remote_directory, pty_resize,
+    pty_write, update_server, upload_file_to_server,
 };
 use std::sync::Arc;
 use tauri::{CustomMenuItem, Manager, Menu, Submenu};
@@ -55,7 +56,10 @@ fn main() {
             pty_write,
             pty_resize,
             disconnect_server,
-            fetch_server_metrics
+            fetch_server_metrics,
+            list_remote_directory,
+            upload_file_to_server,
+            download_file_from_server
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
