@@ -4,8 +4,9 @@ use crate::servers::infrastructure::session_manager::{self, SessionManagerState}
 use log::info;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use serde::Serialize;
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -74,6 +75,25 @@ pub struct RemoteDirectoryListing {
     pub current_path: String,
     pub parent_path: Option<String>,
     pub entries: Vec<RemoteDirectoryEntry>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppLogSnapshot {
+    pub file_path: String,
+    pub lines: Vec<String>,
+}
+
+fn resolve_app_log_path() -> Result<PathBuf, String> {
+    let current_dir = std::env::current_dir().map_err(|err| err.to_string())?;
+    let direct_log_path = current_dir.join("logs").join("app.log");
+    let nested_log_path = current_dir.join("src-tauri").join("logs").join("app.log");
+
+    if direct_log_path.exists() || !nested_log_path.exists() {
+        Ok(direct_log_path)
+    } else {
+        Ok(nested_log_path)
+    }
 }
 
 fn build_metrics_command() -> &'static str {
@@ -1045,4 +1065,48 @@ pub async fn download_file_from_server(
     })
     .await
     .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub async fn read_app_logs(limit: Option<usize>) -> Result<AppLogSnapshot, String> {
+    let log_path = resolve_app_log_path()?;
+    let max_lines = limit.unwrap_or(500).max(1);
+    let content = match fs::read_to_string(&log_path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(format!("读取日志失败: {}", err)),
+    };
+
+    let mut lines = content
+        .lines()
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>();
+
+    if lines.len() > max_lines {
+        let start = lines.len() - max_lines;
+        lines = lines.split_off(start);
+    }
+
+    Ok(AppLogSnapshot {
+        file_path: log_path.display().to_string(),
+        lines,
+    })
+}
+
+#[tauri::command]
+pub async fn clear_app_logs() -> Result<(), String> {
+    let log_path = resolve_app_log_path()?;
+
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("创建日志目录失败: {}", err))?;
+    }
+
+    OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&log_path)
+        .map_err(|err| format!("清空日志失败: {}", err))?;
+
+    Ok(())
 }
