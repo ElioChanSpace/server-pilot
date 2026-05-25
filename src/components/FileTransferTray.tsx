@@ -236,6 +236,8 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   }, [canTransferFiles, server]);
 
   React.useEffect(() => {
+    activeDirectoryRequestRef.current += 1;
+    previewDirectoryRequestRef.current += 1;
     setUploadRemotePath("");
     setDownloadRemotePath("");
     setTransferStatus(null);
@@ -266,6 +268,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const directoryTree = buildDirectoryTree("/", directoryCache);
 
   const handleSelectDirectory = async (path: string) => {
+    previewDirectoryRequestRef.current += 1;
     setDownloadRemotePath("");
     setTransferError(null);
     setPreviewDirectoryPath(null);
@@ -291,14 +294,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(normalizedPath)])));
 
     try {
-      const cachedListing = directoryCache[normalizedPath];
-      if (cachedListing) {
-        setPreviewDirectoryPath(normalizedPath);
-        setPreviewDirectoryEntries(cachedListing.entries);
-        setIsLoadingPreviewDirectory(false);
-        return;
-      }
-
       const listing = await invoke<RemoteDirectoryListing>("list_remote_directory", {
         id: server.id,
         path: normalizedPath,
