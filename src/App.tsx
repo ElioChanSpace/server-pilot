@@ -242,7 +242,12 @@ const AppContent: React.FC = () => {
     setSessions(prev => {
       const newSessions = prev.filter(s => s.id !== sessionId);
       if (sessionId === currentSessionId) {
-        setCurrentSessionId(newSessions.length > 0 ? newSessions[newSessions.length - 1].id : null);
+        const nextSession = newSessions.length > 0 ? newSessions[newSessions.length - 1] : null;
+        setCurrentSessionId(nextSession?.id ?? null);
+        if (nextSession) {
+          clearSelection();
+          setActiveServer(nextSession);
+        }
       }
       return newSessions;
     });
@@ -250,6 +255,14 @@ const AppContent: React.FC = () => {
   };
 
   const handleSelectSession = (sessionId: string) => {
+    const selectedSession = sessions.find(session => session.id === sessionId)
+      ?? servers.find(server => server.id === sessionId)
+      ?? null;
+
+    clearSelection();
+    if (selectedSession) {
+      setActiveServer(selectedSession);
+    }
     setCurrentSessionId(sessionId);
     setActiveView("dashboard");
   };
