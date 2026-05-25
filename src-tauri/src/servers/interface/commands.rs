@@ -115,8 +115,17 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+fn shell_double_quote(value: &str) -> String {
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`");
+    format!("\"{}\"", escaped)
+}
+
 fn build_list_directory_command(path: &str) -> String {
-    let quoted_path = shell_quote(path);
+    let quoted_path = shell_double_quote(path);
     format!(
         r#"TARGET_DIR={quoted_path}
 if ! cd "$TARGET_DIR" 2>/dev/null; then
@@ -130,9 +139,9 @@ else
   PARENT_DIR=$(dirname -- "$CURRENT_DIR")
 fi
 echo "{directory_output_start}"
-printf 'current_path=%s\n' "$CURRENT_DIR"
-printf 'parent_path=%s\n' "$PARENT_DIR"
-find "$CURRENT_DIR" -mindepth 1 -maxdepth 1 -printf 'entry=%P\t%y\t%s\n' 2>/dev/null | sort
+printf "current_path=%s\n" "$CURRENT_DIR"
+printf "parent_path=%s\n" "$PARENT_DIR"
+find "$CURRENT_DIR" -mindepth 1 -maxdepth 1 -printf "entry=%P\t%y\t%s\n" 2>/dev/null | sort
 echo "{directory_output_end}""#,
         quoted_path = quoted_path,
         directory_output_start = DIRECTORY_OUTPUT_START,
