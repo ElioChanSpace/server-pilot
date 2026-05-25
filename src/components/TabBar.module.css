@@ -14,7 +14,8 @@
 .tab {
   display: flex;
   align-items: center;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 10px 16px;
   cursor: pointer;
   background-color: transparent;
   border-right: 1px solid var(--glass-border);
@@ -23,17 +24,17 @@
   color: var(--text-secondary);
   font-size: 13px;
   user-select: none;
-  transition: background-color 0.2s;
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
 .tab:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--surface-hover);
   color: var(--text-primary);
 }
 
 .tab[data-active="true"] {
-  background-color: var(--glass-bg); /* Match the terminal background */
-  color: var(--accent-color);
+  background-color: var(--bg-elevated);
+  color: var(--accent-strong);
   border-bottom: 2px solid var(--accent-color);
 }
 
@@ -57,9 +58,11 @@
   font-size: 10px;
   padding: 0;
   margin: 0;
+  box-shadow: none;
+  transform: none;
 }
 
 .closeButton:hover {
-  background-color: rgba(255, 0, 0, 0.2);
-  color: #ff6b6b;
+  background-color: var(--danger-soft);
+  color: var(--danger-color);
 }

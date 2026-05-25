@@ -6,44 +6,128 @@
 .header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  white-space: nowrap;
+  gap: 6px;
+  padding: 4px 0;
+  min-width: 0;
+  border-radius: 10px;
 }
 
-.header:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+.header[data-active="true"] .headerMain {
+  background-color: var(--surface-active);
+  color: var(--accent-strong);
+}
+
+.expander,
+.headerMain,
+.nodeAction {
+  box-shadow: none;
+  transform: none;
+}
+
+.expander {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.expander:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.expanderSpacer {
+  display: block;
+  width: 10px;
+  height: 10px;
+}
+
+.headerMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  justify-content: flex-start;
+}
+
+.headerMain:hover,
+.serverItem:hover {
+  background-color: var(--surface-hover);
   color: var(--text-primary);
 }
 
 .folderIcon {
-  color: #87ceeb; /* SkyBlue color for folders */
+  color: var(--accent-color);
+  flex-shrink: 0;
+}
+
+.nodeBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nodeTitle {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeMeta {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.header:hover .nodeActions,
+.serverItem:hover .nodeAction,
+.header[data-active="true"] .nodeActions,
+.serverItem[data-active="true"] .nodeAction {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .serverItem {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  padding-left: 24px; /* Indent server items further */
-  border-radius: 4px;
+  gap: 10px;
+  padding: 8px 10px 8px 24px;
+  border-radius: 12px;
   cursor: pointer;
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-.serverItem:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  min-width: 0;
+  color: var(--text-primary);
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
 .serverItem[data-active="true"] {
-  background-color: var(--accent-color);
-  color: white;
+  background-color: var(--surface-active);
+  color: var(--accent-strong);
 }
 
 .statusDot {
@@ -51,4 +135,22 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+  margin-top: -14px;
+}
+
+.nodeAction {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nodeAction:hover {
+  background-color: var(--surface-hover);
+  color: var(--accent-strong);
 }
