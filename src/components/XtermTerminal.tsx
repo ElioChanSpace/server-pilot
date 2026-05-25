@@ -196,7 +196,8 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, rese
   return (
     <div
       ref={termRef}
-      style={{ width: '100%', height: '100%', overflow: 'hidden' }}
+      className="xterm-host"
+      style={{ width: 'max-content', minWidth: '100%', height: '100%', overflow: 'hidden' }}
       onMouseDown={() => {
         focusTerminal();
       }}
