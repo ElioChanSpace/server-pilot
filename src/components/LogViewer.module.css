@@ -26,6 +26,28 @@
   gap: 8px;
 }
 
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  box-shadow: none;
+  transform: none;
+  font-size: 12px;
+}
+
+.closeBtn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-color);
+  box-shadow: none;
+  transform: none;
+}
+
 .toggleBtn {
   padding: 6px 12px;
   background-color: var(--primary-color);

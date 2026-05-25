@@ -117,6 +117,7 @@ const AppContent: React.FC = () => {
   const [isUncategorizedSelected, setIsUncategorizedSelected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"dashboard" | "settings" | "logs">("dashboard");
+  const lastNonLogViewRef = useRef<"dashboard" | "settings">("dashboard");
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [initialCategoryId, setInitialCategoryId] = useState<string | undefined>(undefined);
@@ -135,6 +136,12 @@ const AppContent: React.FC = () => {
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (activeView !== "logs") {
+      lastNonLogViewRef.current = activeView;
+    }
+  }, [activeView]);
 
   const appendTerminalChunk = (serverId: string, chunk: string) => {
     setTerminalOutputs(prev => ({
@@ -404,11 +411,12 @@ const AppContent: React.FC = () => {
           terminalOutputs={terminalOutputs}
           onSelectSession={handleSelectSession}
           onCloseSession={handleCloseSession}
+          onCloseLogs={() => setActiveView(lastNonLogViewRef.current)}
           connectionError={connectionError}
           onDismissError={() => setConnectionError(null)}
         />
         <RightSidebar
-          isOpen={isRightSidebarOpen}
+          isOpen={activeView !== "logs" && isRightSidebarOpen}
           activeServer={activeServer}
           activeCategory={activeCategory}
           isUncategorizedSelected={isUncategorizedSelected}

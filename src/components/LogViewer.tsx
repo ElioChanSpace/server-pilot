@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { FaTimes } from 'react-icons/fa';
 import styles from './LogViewer.module.css';
 
-const LogViewer: React.FC = () => {
+interface LogViewerProps {
+  onClose: () => void;
+}
+
+const LogViewer: React.FC<LogViewerProps> = ({ onClose }) => {
   const [logs, setLogs] = useState<string[]>([]);
   const [isAutoScroll, setIsAutoScroll] = useState(true);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -44,6 +49,14 @@ const LogViewer: React.FC = () => {
       <div className={styles.header}>
         <h3>应用日志</h3>
         <div className={styles.controls}>
+          <button
+            className={styles.closeBtn}
+            onClick={onClose}
+            title="关闭日志"
+          >
+            <FaTimes size={12} />
+            <span>关闭</span>
+          </button>
           <button
             className={styles.toggleBtn}
             onClick={toggleAutoScroll}
