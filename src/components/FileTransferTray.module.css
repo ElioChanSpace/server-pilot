@@ -194,13 +194,11 @@
 }
 
 .browserContent {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
   min-height: 240px;
 }
 
-.treePanel,
 .listPanel {
   display: flex;
   flex-direction: column;
@@ -208,75 +206,12 @@
   min-width: 0;
 }
 
-.panelHeader,
-.listSectionTitle {
+.panelHeader {
   font-size: 12px;
   font-weight: 700;
   color: var(--sidebar-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-
-.treeRoot {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 0;
-}
-
-.treeNode,
-.treeChildren {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.treeButton {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: var(--sidebar-item-bg);
-  border: 1px solid var(--sidebar-border);
-  box-shadow: none;
-  transform: none;
-  color: var(--text-primary);
-  justify-content: flex-start;
-}
-
-.treeButton:hover {
-  background: var(--sidebar-item-hover-bg);
-  border-color: var(--accent-color);
-}
-
-.treeButton[data-active="true"] {
-  border-color: var(--accent-color);
-  background: rgba(116, 93, 255, 0.14);
-}
-
-.treeCaret {
-  width: 12px;
-  flex-shrink: 0;
-  color: var(--sidebar-text-secondary);
-  transition: transform 0.18s ease;
-}
-
-.treeCaret[data-expanded="true"] {
-  transform: rotate(90deg);
-}
-
-.treeIcon {
-  flex-shrink: 0;
-  color: var(--primary-color);
-}
-
-.treeLabel {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .browserList {

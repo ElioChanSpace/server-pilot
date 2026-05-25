@@ -30,12 +30,6 @@ interface RemoteDirectoryListing {
   entries: RemoteDirectoryEntry[];
 }
 
-interface DirectoryTreeNode {
-  path: string;
-  name: string;
-  children: DirectoryTreeNode[];
-}
-
 interface NormalizedRemoteDirectoryListing {
   currentPath: string;
   parentPath: string | null;
@@ -99,37 +93,6 @@ const buildBreadcrumbs = (path: string) => {
   ];
 };
 
-const buildDirectoryTree = (
-  path: string,
-  cache: Record<string, NormalizedRemoteDirectoryListing>
-): DirectoryTreeNode[] => {
-  const listing = cache[path];
-  if (!listing) {
-    return [];
-  }
-
-  return listing.entries
-    .filter(entry => entry.isDir)
-    .map(entry => ({
-      path: entry.path,
-      name: entry.name,
-      children: buildDirectoryTree(entry.path, cache),
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
-};
-
-const getAncestorPaths = (path: string) => {
-  if (path === "/") {
-    return ["/"];
-  }
-
-  const segments = path.split("/").filter(Boolean);
-  return [
-    "/",
-    ...segments.map((_, index) => `/${segments.slice(0, index + 1).join("/")}`),
-  ];
-};
-
 const normalizeRemotePath = (path: string) => {
   if (!path.trim()) {
     return "/";
@@ -159,8 +122,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const [remoteEntries, setRemoteEntries] = React.useState<RemoteDirectoryEntry[]>([]);
   const [remoteBrowserError, setRemoteBrowserError] = React.useState<string | null>(null);
   const [isLoadingRemoteEntries, setIsLoadingRemoteEntries] = React.useState(false);
-  const [directoryCache, setDirectoryCache] = React.useState<Record<string, NormalizedRemoteDirectoryListing>>({});
-  const [expandedPaths, setExpandedPaths] = React.useState<string[]>(["/"]);
   const activeDirectoryRequestRef = React.useRef(0);
 
   const isLinux = server?.osType === "linux";
@@ -193,8 +154,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
       setRemoteBrowserPath(requestedPath);
     }
 
-    setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(requestedPath)])));
-
     try {
       const listing = await invoke<RemoteDirectoryListing>("list_remote_directory", {
         id: server.id,
@@ -213,12 +172,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
         setRemoteBrowserParentPath(parentPath);
         setRemoteEntries(entries);
       }
-
-      setDirectoryCache(prev => ({
-        ...prev,
-        [currentPath]: normalizedListing,
-      }));
-      setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(currentPath)])));
     } catch (error) {
       if (activate) {
         setRemoteBrowserError(getErrorMessage(error));
@@ -242,8 +195,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     setRemoteEntries([]);
     setRemoteBrowserError(null);
     setIsLoadingRemoteEntries(false);
-    setDirectoryCache({});
-    setExpandedPaths([]);
 
     if (server && canTransferFiles && isOpen) {
       void loadRemoteDirectory("");
@@ -255,66 +206,12 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   }
 
   const breadcrumbs = buildBreadcrumbs(remoteBrowserPath);
-  const directoryTree = buildDirectoryTree("/", directoryCache);
 
   const handleSelectDirectory = async (path: string) => {
     setDownloadRemotePath("");
     setTransferError(null);
-    setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(path)])));
     await loadRemoteDirectory(path, { activate: true });
   };
-
-  const toggleDirectoryExpansion = async (path: string) => {
-    const normalizedPath = normalizeRemotePath(path);
-    const isExpanded = expandedPaths.includes(path);
-    if (isExpanded && normalizedPath !== remoteBrowserPath) {
-      setExpandedPaths(prev => prev.filter(item => item !== normalizedPath));
-      return;
-    }
-
-    if (!directoryCache[normalizedPath]) {
-      await loadRemoteDirectory(normalizedPath, { activate: false });
-    } else {
-      setExpandedPaths(prev => (prev.includes(normalizedPath) ? prev : [...prev, normalizedPath]));
-    }
-  };
-
-  const renderTreeNodes = (nodes: DirectoryTreeNode[], depth = 0): React.ReactNode =>
-    nodes.map(node => {
-      const isExpanded = expandedPaths.includes(node.path);
-      const isActive = remoteBrowserPath === node.path;
-
-      return (
-        <div key={node.path} className={styles.treeNode}>
-          <button
-            type="button"
-            className={styles.treeButton}
-            data-active={isActive}
-            style={{ paddingLeft: `${12 + depth * 16}px` }}
-            onClick={() => {
-              void handleSelectDirectory(node.path);
-            }}
-            disabled={!canTransferFiles}
-          >
-            <span
-              className={styles.treeCaret}
-              data-expanded={isExpanded}
-              onClick={event => {
-                event.stopPropagation();
-                void toggleDirectoryExpansion(node.path);
-              }}
-            >
-              ▸
-            </span>
-            <FaFolder className={styles.treeIcon} />
-            <span className={styles.treeLabel}>{node.name}</span>
-          </button>
-          {isExpanded && node.children.length > 0 && (
-            <div className={styles.treeChildren}>{renderTreeNodes(node.children, depth + 1)}</div>
-          )}
-        </div>
-      );
-    });
 
   const handleUpload = async () => {
     if (!server || !canTransferFiles) {
@@ -521,41 +418,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
         )}
 
         <div className={styles.browserContent}>
-          <div className={styles.treePanel}>
-            <div className={styles.panelHeader}>目录树</div>
-            {!server ? (
-              <div className={styles.browserEmpty}>请选择一台服务器后再进行文件传输。</div>
-            ) : (
-              <div className={styles.treeRoot}>
-                <button
-                  type="button"
-                  className={styles.treeButton}
-                  data-active={remoteBrowserPath === "/"}
-                  onClick={() => {
-                    void handleSelectDirectory("/");
-                  }}
-                  disabled={!canTransferFiles}
-                >
-                  <span
-                    className={styles.treeCaret}
-                    data-expanded={expandedPaths.includes("/")}
-                    onClick={event => {
-                      event.stopPropagation();
-                      void toggleDirectoryExpansion("/");
-                    }}
-                  >
-                    ▸
-                  </span>
-                  <FaFolder className={styles.treeIcon} />
-                  <span className={styles.treeLabel}>/</span>
-                </button>
-                {expandedPaths.includes("/") && directoryTree.length > 0 && (
-                  <div className={styles.treeChildren}>{renderTreeNodes(directoryTree, 1)}</div>
-                )}
-              </div>
-            )}
-          </div>
-
           <div className={styles.listPanel}>
             <div className={styles.panelHeader}>当前目录内容</div>
             <div className={styles.directoryTable}>
