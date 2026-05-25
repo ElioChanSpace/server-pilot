@@ -973,7 +973,6 @@ pub async fn list_remote_directory(
     path: Option<String>,
 ) -> Result<RemoteDirectoryListing, String> {
     let requested_path = path.unwrap_or_default().trim().to_string();
-    info!("查询目录:{}", requested_path);
 
     let (username, host, port, password) = resolve_transfer_server(&state, &id)?;
     let remote_command = build_list_directory_command(&requested_path);
@@ -988,8 +987,6 @@ pub async fn list_remote_directory(
             SSH_COMMAND_TIMEOUT,
             "list remote directory",
         )?;
-
-        info!("查询[{}]目录结果:{}", requested_path, output);
         parse_remote_directory_output(&output)
     })
     .await
