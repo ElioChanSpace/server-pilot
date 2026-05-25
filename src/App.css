@@ -141,6 +141,21 @@ select {
   z-index: 1;
 }
 
+.workspace-shell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.log-viewer-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: var(--bg-primary);
+}
+
 .menuBar,
 .bottomBar {
   position: relative;
