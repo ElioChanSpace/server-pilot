@@ -38,7 +38,7 @@ const getDescendantIds = (startCategoryId: string | null, allCategories: Categor
 
 
 export const CategoryDashboard: React.FC<CategoryDashboardProps> = ({ category, servers, allCategories }) => {
-  const categoryName = category ? category.name : "Uncategorized";
+  const categoryName = category ? category.name : "未分类";
   
   const relevantCategoryIds: Array<string | null> = category
     ? [category.id, ...getDescendantIds(category.id, allCategories)]
@@ -56,25 +56,25 @@ export const CategoryDashboard: React.FC<CategoryDashboardProps> = ({ category, 
     <div style={{ padding: '32px 36px' }}>
       <div style={heroStyle}>
         <div>
-          <p style={eyebrowStyle}>Overview</p>
+          <p style={eyebrowStyle}>总览</p>
           <h1 style={titleStyle}>{categoryName}</h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: '8px', maxWidth: '560px' }}>
-        Statistics for this category and all its sub-categories.
+        这里展示当前分类及其所有子分类下的服务器统计情况。
           </p>
         </div>
       </div>
       <div style={{ display: 'flex', gap: '20px', marginTop: '30px', flexWrap: 'wrap' }}>
         <div style={statCardStyle}>
           <div style={statValueStyle}>{totalServers}</div>
-          <div style={statLabelStyle}>Total Servers</div>
+          <div style={statLabelStyle}>服务器总数</div>
         </div>
         <div style={statCardStyle}>
           <div style={statValueStyle}>{connectedCount}</div>
-          <div style={statLabelStyle}>Connected</div>
+          <div style={statLabelStyle}>已连接</div>
         </div>
         <div style={statCardStyle}>
           <div style={statValueStyle}>{disconnectedCount}</div>
-          <div style={statLabelStyle}>Disconnected</div>
+          <div style={statLabelStyle}>未连接</div>
         </div>
       </div>
     </div>

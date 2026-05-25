@@ -123,10 +123,10 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <h2 style={{ marginBottom: '20px' }}>{isEditMode ? 'Edit Server' : 'Add New Server'}</h2>
+        <h2 style={{ marginBottom: '20px' }}>{isEditMode ? '编辑服务器' : '新增服务器'}</h2>
         <form onSubmit={handleSubmit}>
           <div style={formGroupStyle}>
-            <label style={labelStyle}>Operating System</label>
+            <label style={labelStyle}>操作系统</label>
             <select value={osType} onChange={handleOsChange} className="select-css">
               <option value={OsType.Linux}>Linux</option>
               <option value={OsType.Windows}>Windows</option>
@@ -134,20 +134,20 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
           </div>
 
           <div style={formGroupStyle}>
-            <label style={labelStyle}>Name</label>
+            <label style={labelStyle}>名称</label>
             <input
               type="text"
               required
               autoFocus
               value={formData.name}
               onChange={e => handleFieldChange('name', e.target.value)}
-              placeholder="Production Server"
+              placeholder="生产服务器"
             />
           </div>
 
           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
             <div style={{ ...formGroupStyle, flex: 3 }}>
-              <label style={labelStyle}>Host</label>
+              <label style={labelStyle}>主机地址</label>
               <input
                 type="text"
                 required
@@ -157,7 +157,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
               />
             </div>
             <div style={{ ...formGroupStyle, flex: 1 }}>
-              <label style={labelStyle}>Port</label>
+              <label style={labelStyle}>端口</label>
               <input
                 type="number"
                 required
@@ -170,7 +170,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
           </div>
 
           <div style={formGroupStyle}>
-            <label style={labelStyle}>Username</label>
+            <label style={labelStyle}>用户名</label>
             <input
               type="text"
               required
@@ -184,19 +184,19 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
           </div>
 
           <div style={formGroupStyle}>
-            <label style={labelStyle}>Password</label>
+            <label style={labelStyle}>密码</label>
             <input
               type="password"
               value={formData.password}
               onChange={e => handleFieldChange('password', e.target.value)}
-              placeholder={osType === OsType.Windows ? 'Optional' : 'SSH password (optional)'}
+              placeholder={osType === OsType.Windows ? '选填' : 'SSH 密码（选填）'}
             />
           </div>
 
           <div style={formGroupStyle}>
-            <label style={labelStyle}>Category</label>
+            <label style={labelStyle}>分组</label>
             <select value={formData.categoryId} onChange={e => handleFieldChange('categoryId', e.target.value)} className="select-css">
-              <option value="">Uncategorized</option>
+              <option value="">未分类</option>
               {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
@@ -217,9 +217,9 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
           )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-            <button type="button" onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--glass-border)' }}>Cancel</button>
+            <button type="button" onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--glass-border)' }}>取消</button>
             <button type="submit" disabled={loading}>
-              {loading ? (isEditMode ? 'Saving...' : 'Adding...') : (isEditMode ? 'Save Changes' : 'Add Server')}
+              {loading ? (isEditMode ? '保存中...' : '添加中...') : (isEditMode ? '保存修改' : '新增服务器')}
             </button>
           </div>
         </form>

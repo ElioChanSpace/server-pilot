@@ -15,6 +15,19 @@ interface RightSidebarProps {
   onDismissError: () => void;
 }
 
+const formatServerStatus = (status: string) => {
+  switch (status) {
+    case 'connected':
+      return '已连接';
+    case 'connecting':
+      return '连接中';
+    case 'disconnected':
+      return '未连接';
+    default:
+      return status;
+  }
+};
+
 export const RightSidebar: React.FC<RightSidebarProps> = ({
   isOpen,
   activeServer,
@@ -141,7 +154,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                         <p className={styles.serverMeta}>{server.username}@{server.host}:{server.port}</p>
                       </div>
                       <span className={styles.serverState} data-status={server.status}>
-                        {server.status}
+                        {formatServerStatus(server.status)}
                       </span>
                     </div>
                   ))}

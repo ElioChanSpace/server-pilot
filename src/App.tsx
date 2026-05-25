@@ -63,21 +63,21 @@ const MenuBar: React.FC<{
   return (
     <div className="menuBar" ref={menuRef}>
       <div className="menuItem">
-        <button className="menuButton" onClick={() => setOpenMenu(openMenu === 'file' ? null : 'file')} data-active={openMenu === 'file'}>File</button>
+        <button className="menuButton" onClick={() => setOpenMenu(openMenu === 'file' ? null : 'file')} data-active={openMenu === 'file'}>文件</button>
         {openMenu === 'file' && (
           <div className="dropdown">
-            <button className="dropdownItem" onClick={() => handleItemClick(onNewCategory)}>New Category...</button>
-            <button className="dropdownItem" onClick={() => handleItemClick(onNewServer)}>New Server...</button>
+            <button className="dropdownItem" onClick={() => handleItemClick(onNewCategory)}>新建分类...</button>
+            <button className="dropdownItem" onClick={() => handleItemClick(onNewServer)}>新建服务器...</button>
             <div className="separator" />
-            <button className="dropdownItem" onClick={() => window.close()}>Quit</button>
+            <button className="dropdownItem" onClick={() => window.close()}>退出</button>
           </div>
         )}
       </div>
       <div className="menuItem">
-        <button className="menuButton" onClick={() => setOpenMenu(openMenu === 'system' ? null : 'system')} data-active={openMenu === 'system'}>System</button>
+        <button className="menuButton" onClick={() => setOpenMenu(openMenu === 'system' ? null : 'system')} data-active={openMenu === 'system'}>系统</button>
         {openMenu === 'system' && (
           <div className="dropdown">
-            <button className="dropdownItem" onClick={() => handleItemClick(onViewLogs)}>View Logs</button>
+            <button className="dropdownItem" onClick={() => handleItemClick(onViewLogs)}>查看日志</button>
           </div>
         )}
       </div>
@@ -85,11 +85,11 @@ const MenuBar: React.FC<{
       <button
         className="themeToggle"
         onClick={onToggleTheme}
-        title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        title={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+        aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
       >
         {theme === "dark" ? <FaSun size={14} /> : <FaMoon size={14} />}
-        <span>{theme === "dark" ? "Light" : "Dark"}</span>
+        <span>{theme === "dark" ? "浅色" : "深色"}</span>
       </button>
     </div>
   );
@@ -230,7 +230,7 @@ const AppContent: React.FC = () => {
       }
       setCurrentSessionId(server.id);
       setActiveView("dashboard");
-      resetTerminalOutput(server.id, [`[INFO] Connecting to ${server.username}@${server.host}:${server.port} ...\r\n`]);
+      resetTerminalOutput(server.id, [`[信息] 正在连接 ${server.username}@${server.host}:${server.port} ...\r\n`]);
       
       try {
         await connectToServer(server.id);
@@ -244,7 +244,7 @@ const AppContent: React.FC = () => {
 
   const handleCloseSession = (sessionId: string) => {
     // --- 新增：调用后端断开连接 ---
-    disconnectServer(sessionId).catch(err => console.error("Failed to disconnect:", err));
+    disconnectServer(sessionId).catch(err => console.error("断开连接失败:", err));
 
     setSessions(prev => {
       const newSessions = prev.filter(s => s.id !== sessionId);
@@ -291,7 +291,7 @@ const AppContent: React.FC = () => {
     try {
       await disconnectServer(server.id);
     } catch (err) {
-      console.error("Failed to disconnect:", err);
+      console.error("断开连接失败:", err);
     }
   };
 
@@ -303,8 +303,8 @@ const AppContent: React.FC = () => {
 
   const handleCategoryContextMenu = (event: React.MouseEvent, category: Category | null) => {
     const actions: ContextMenuAction[] = [
-      { label: "New Server", icon: <FaPlus />, action: () => { setEditingServer(undefined); setInitialCategoryId(category?.id); setIsServerModalOpen(true); }},
-      { label: "New Sub-Category", icon: <FaFolderPlus />, action: () => { setInitialParentId(category?.id); setIsCategoryModalOpen(true); }}
+      { label: "新建服务器", icon: <FaPlus />, action: () => { setEditingServer(undefined); setInitialCategoryId(category?.id); setIsServerModalOpen(true); }},
+      { label: "新建子分类", icon: <FaFolderPlus />, action: () => { setInitialParentId(category?.id); setIsCategoryModalOpen(true); }}
     ];
     setContextMenu({ x: event.clientX, y: event.clientY, actions });
   };
@@ -313,14 +313,14 @@ const AppContent: React.FC = () => {
   const handleServerContextMenu = (event: React.MouseEvent, server: Server) => {
     const actions: ContextMenuAction[] = [
       {
-        label: server.status === 'connected' ? "Open Terminal" : "Connect",
+        label: server.status === 'connected' ? "打开终端" : "连接服务器",
         icon: <FaPlug />,
         action: () => {
           handleConnectServer(server);
         }
       },
       {
-        label: "Edit",
+        label: "编辑",
         icon: <FaEdit />,
         action: () => {
           setEditingServer(server);
@@ -332,7 +332,7 @@ const AppContent: React.FC = () => {
     
     if (server.status === 'connected' || server.status === 'connecting') {
       actions.push({
-        label: "Disconnect",
+        label: "断开连接",
         icon: <FaUnlink />,
         action: () => {
           // 断开连接并关闭会话（如果存在）

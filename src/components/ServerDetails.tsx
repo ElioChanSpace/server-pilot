@@ -15,6 +15,19 @@ interface ServerDetailsProps {
 
 type ServerDetailsTab = 'overview' | 'monitoring';
 
+const formatServerStatus = (status: string) => {
+  switch (status) {
+    case 'connected':
+      return '已连接';
+    case 'connecting':
+      return '连接中';
+    case 'disconnected':
+      return '未连接';
+    default:
+      return status;
+  }
+};
+
 const ServerDetails: React.FC<ServerDetailsProps> = ({
   server,
   onConnectServer,
@@ -30,7 +43,7 @@ const ServerDetails: React.FC<ServerDetailsProps> = ({
   const isLinux = server.osType === 'linux';
   const primaryActionLabel = isConnected ? '打开终端' : isConnecting ? '查看连接中' : '连接服务器';
   const statusText = isConnected ? '已连接，可直接进入终端操作。' : isConnecting ? '连接正在建立，请稍候。' : '当前未连接，适合先检查主机和账号信息。';
-  const protocolLabel = isLinux ? 'SSH' : 'Remote Desktop';
+  const protocolLabel = isLinux ? 'SSH' : '远程桌面';
   const credentialStatus = server.password ? '已保存密码' : '未保存密码';
 
   React.useEffect(() => {
@@ -48,7 +61,7 @@ const ServerDetails: React.FC<ServerDetailsProps> = ({
           <div className={styles.titleRow}>
             <h2>{server.name}</h2>
             <span className={styles.statusBadge} data-status={server.status}>
-              {server.status}
+              {formatServerStatus(server.status)}
             </span>
           </div>
           <p className={styles.heroMeta}>{server.host}:{server.port}</p>
@@ -106,7 +119,7 @@ const ServerDetails: React.FC<ServerDetailsProps> = ({
             <div className={styles.section}>
               <div className={styles.sectionHeader}>
                 <h3>基础信息</h3>
-                <span className={styles.sectionMeta}>Overview</span>
+                <span className={styles.sectionMeta}>概览</span>
               </div>
               <div className={styles.tableCard}>
                 <table className={styles.infoTable}>
@@ -157,14 +170,14 @@ const ServerDetails: React.FC<ServerDetailsProps> = ({
                       <td>{protocolLabel}</td>
                     </tr>
                     <tr>
-                      <th>Endpoint</th>
+                      <th>连接地址</th>
                       <td>{server.username}@{server.host}:{server.port}</td>
                     </tr>
                     <tr>
                       <th>连接状态</th>
                       <td>
                         <span className={styles.endpointStatus} data-status={server.status}>
-                          {server.status}
+                          {formatServerStatus(server.status)}
                         </span>
                       </td>
                     </tr>
@@ -176,7 +189,7 @@ const ServerDetails: React.FC<ServerDetailsProps> = ({
             <div className={styles.section}>
               <div className={styles.sectionHeader}>
                 <h3>凭据与传输</h3>
-                <span className={styles.sectionMeta}>Access</span>
+                <span className={styles.sectionMeta}>访问</span>
               </div>
               <div className={styles.tableCard}>
                 <table className={styles.infoTable}>

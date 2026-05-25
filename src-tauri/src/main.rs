@@ -16,12 +16,12 @@ use tauri::{CustomMenuItem, Manager, Menu, Submenu};
 
 fn main() {
     log4rs::init_file("log4rs.yaml", Default::default()).expect("初始化日志失败");
-    let system_menu = Submenu::new("System", Menu::new());
+    let system_menu = Submenu::new("系统", Menu::new());
 
     #[cfg(debug_assertions)]
     let dev_menu = Submenu::new(
-        "Developer",
-        Menu::new().add_item(CustomMenuItem::new("inspect", "Inspect Element")),
+        "开发",
+        Menu::new().add_item(CustomMenuItem::new("inspect", "检查元素")),
     );
 
     let mut menu = Menu::new().add_submenu(system_menu);

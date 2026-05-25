@@ -221,7 +221,7 @@ const ServerMonitoringPanel: React.FC<ServerMonitoringPanelProps> = ({ server })
             </tr>
             <tr>
               <th>GPU 占用</th>
-              <td>{latestSample?.gpu ? formatPercent(latestSample.gpu.usage) : latestSample ? "N/A" : "--"}</td>
+              <td>{latestSample?.gpu ? formatPercent(latestSample.gpu.usage) : latestSample ? "不适用" : "--"}</td>
             </tr>
             <tr>
               <th>GPU 信息</th>
@@ -300,7 +300,7 @@ const ServerMonitoringPanel: React.FC<ServerMonitoringPanelProps> = ({ server })
               <thead>
                 <tr>
                   <th>进程</th>
-                  <th>PID</th>
+                  <th>进程 ID</th>
                   <th>CPU</th>
                   <th>内存</th>
                 </tr>
