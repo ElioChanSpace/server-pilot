@@ -461,28 +461,30 @@ const AppContent: React.FC = () => {
             onDismissError={() => setConnectionError(null)}
           />
           {!isLogViewerOpen && isRightSidebarOpen && (
-            <div
-              className="right-sidebar-resizer"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                setIsResizingRightSidebar(true);
-              }}
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="调整服务器详情宽度"
-            />
+            <div className="right-sidebar-overlay">
+              <div
+                className="right-sidebar-resizer"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  setIsResizingRightSidebar(true);
+                }}
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="调整服务器详情宽度"
+              />
+              <RightSidebar
+                isOpen={true}
+                width={rightSidebarWidth}
+                activeServer={activeServer}
+                activeCategory={activeCategory}
+                isUncategorizedSelected={isUncategorizedSelected}
+                connectionError={connectionError}
+                onConnectServer={handleConnectServer}
+                onDisconnectServer={handleDisconnectServer}
+                onDismissError={() => setConnectionError(null)}
+              />
+            </div>
           )}
-          <RightSidebar
-            isOpen={!isLogViewerOpen && isRightSidebarOpen}
-            width={rightSidebarWidth}
-            activeServer={activeServer}
-            activeCategory={activeCategory}
-            isUncategorizedSelected={isUncategorizedSelected}
-            connectionError={connectionError}
-            onConnectServer={handleConnectServer}
-            onDisconnectServer={handleDisconnectServer}
-            onDismissError={() => setConnectionError(null)}
-          />
           {isLogViewerOpen && (
             <div className="log-viewer-overlay">
               <LogViewer onClose={() => setIsLogViewerOpen(false)} />

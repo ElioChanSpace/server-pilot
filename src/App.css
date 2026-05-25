@@ -149,6 +149,17 @@ select {
   overflow: hidden;
 }
 
+.right-sidebar-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+  max-width: min(100%, calc(100% - 80px));
+  z-index: 1;
+}
+
 .right-sidebar-resizer {
   width: 10px;
   flex-shrink: 0;
@@ -172,6 +183,19 @@ select {
 
 .right-sidebar-resizer:hover::before {
   background: var(--accent-color);
+}
+
+.console-shell {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.console-shell::-webkit-scrollbar {
+  height: 10px;
+}
+
+.console-shell .xterm {
+  min-width: max-content;
 }
 
 .log-viewer-overlay {

@@ -24,6 +24,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({ server, outputChunks, 
 
   return (
     <div
+      className="console-shell"
       style={{
         height: '100%',
         width: '100%',
