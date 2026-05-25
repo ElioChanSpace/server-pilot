@@ -16,8 +16,7 @@ use std::{
 };
 use url::Url;
 use webkit2gtk::{
-  prelude::*,
-  traits::*, LoadEvent, NavigationPolicyDecision, PolicyDecisionType, URIRequest,
+  traits::*, LoadEvent, NavigationPolicyDecision, PolicyDecisionType, SettingsExt, URIRequest,
   UserContentInjectedFrames, UserContentManager, UserScript, UserScriptInjectionTime, WebView,
   WebViewBuilder,
 };
