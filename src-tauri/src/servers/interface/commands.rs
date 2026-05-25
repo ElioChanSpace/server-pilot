@@ -84,16 +84,19 @@ pub struct AppLogSnapshot {
     pub lines: Vec<String>,
 }
 
-fn resolve_app_log_path() -> Result<PathBuf, String> {
-    let current_dir = std::env::current_dir().map_err(|err| err.to_string())?;
-    let direct_log_path = current_dir.join("logs").join("app.log");
-    let nested_log_path = current_dir.join("src-tauri").join("logs").join("app.log");
+fn resolve_app_log_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
+    let log_dir = app_handle
+        .path_resolver()
+        .app_log_dir()
+        .or_else(|| {
+            app_handle
+                .path_resolver()
+                .app_local_data_dir()
+                .map(|path| path.join("logs"))
+        })
+        .ok_or_else(|| "无法解析应用日志目录".to_string())?;
 
-    if direct_log_path.exists() || !nested_log_path.exists() {
-        Ok(direct_log_path)
-    } else {
-        Ok(nested_log_path)
-    }
+    Ok(log_dir.join("app.log"))
 }
 
 fn build_metrics_command() -> &'static str {
@@ -1065,8 +1068,8 @@ pub async fn download_file_from_server(
 }
 
 #[tauri::command]
-pub async fn read_app_logs(limit: Option<usize>) -> Result<AppLogSnapshot, String> {
-    let log_path = resolve_app_log_path()?;
+pub async fn read_app_logs(app_handle: AppHandle, limit: Option<usize>) -> Result<AppLogSnapshot, String> {
+    let log_path = resolve_app_log_path(&app_handle)?;
     let max_lines = limit.unwrap_or(500).max(1);
     let content = match fs::read_to_string(&log_path) {
         Ok(content) => content,
@@ -1091,8 +1094,8 @@ pub async fn read_app_logs(limit: Option<usize>) -> Result<AppLogSnapshot, Strin
 }
 
 #[tauri::command]
-pub async fn clear_app_logs() -> Result<(), String> {
-    let log_path = resolve_app_log_path()?;
+pub async fn clear_app_logs(app_handle: AppHandle) -> Result<(), String> {
+    let log_path = resolve_app_log_path(&app_handle)?;
 
     if let Some(parent) = log_path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("创建日志目录失败: {}", err))?;
