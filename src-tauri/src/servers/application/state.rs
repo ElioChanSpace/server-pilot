@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
 use crate::servers::domain::AppData;
 use crate::servers::domain::Repository;
+use std::sync::{Arc, Mutex};
 
 pub struct AppState {
     pub data: Arc<Mutex<AppData>>,

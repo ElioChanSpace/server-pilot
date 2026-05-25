@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tauri::{State, Window};
+use tauri::{Emitter, State, Window};
 
 // 代表一个活动的 PTY 会话
 pub struct Session {

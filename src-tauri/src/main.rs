@@ -19,17 +19,29 @@ use log4rs::{
     encode::pattern::PatternEncoder,
 };
 use std::{fs, path::PathBuf, sync::Arc};
-use tauri::{CustomMenuItem, Manager, Menu, PathResolver, Submenu};
+use tauri::{
+    menu::{MenuBuilder, SubmenuBuilder},
+    path::PathResolver,
+    Manager,
+};
 
-fn resolve_app_log_path(path_resolver: &PathResolver) -> Result<PathBuf, String> {
+fn resolve_app_log_path<R: tauri::Runtime>(
+    path_resolver: &PathResolver<R>,
+) -> Result<PathBuf, String> {
     let log_dir = path_resolver
         .app_log_dir()
-        .or_else(|| path_resolver.app_local_data_dir().map(|path| path.join("logs")))
-        .ok_or_else(|| "无法解析应用日志目录".to_string())?;
+        .or_else(|_| {
+            path_resolver
+                .app_local_data_dir()
+                .map(|path| path.join("logs"))
+        })
+        .map_err(|_| "无法解析应用日志目录".to_string())?;
     Ok(log_dir.join("app.log"))
 }
 
-fn initialize_logging(path_resolver: &PathResolver) -> Result<(), String> {
+fn initialize_logging<R: tauri::Runtime>(
+    path_resolver: &PathResolver<R>,
+) -> Result<(), String> {
     let log_path = resolve_app_log_path(path_resolver)?;
     if let Some(parent) = log_path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("创建日志目录失败: {}", err))?;
@@ -64,33 +76,42 @@ fn initialize_logging(path_resolver: &PathResolver) -> Result<(), String> {
 }
 
 fn main() {
-    let system_menu = Submenu::new("系统", Menu::new());
-
-    #[cfg(debug_assertions)]
-    let dev_menu = Submenu::new(
-        "开发",
-        Menu::new().add_item(CustomMenuItem::new("inspect", "检查元素")),
-    );
-
-    let mut menu = Menu::new().add_submenu(system_menu);
-    #[cfg(debug_assertions)]
-    {
-        menu = menu.add_submenu(dev_menu);
-    }
     tauri::Builder::default()
-        .menu(menu)
-        .on_menu_event(|event| {
-            #[cfg(debug_assertions)]
-            if event.menu_item_id() == "inspect" {
-                event.window().open_devtools();
-            }
-        })
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(SessionManagerState::default())
         .setup(|app| {
-            initialize_logging(&app.path_resolver())?;
+            initialize_logging(app.path())?;
+
+            let system_menu = SubmenuBuilder::new(app, "系统")
+                .build()
+                .map_err(|err| err.to_string())?;
+            let mut menu_builder = MenuBuilder::new(app).item(&system_menu);
+
+            #[cfg(debug_assertions)]
+            {
+                let dev_menu = SubmenuBuilder::new(app, "开发")
+                    .text("inspect", "检查元素")
+                    .build()
+                    .map_err(|err| err.to_string())?;
+                menu_builder = menu_builder.item(&dev_menu);
+            }
+
+            let menu = menu_builder.build().map_err(|err| err.to_string())?;
+            app.set_menu(menu).map_err(|err| err.to_string())?;
+
+            #[cfg(debug_assertions)]
+            app.on_menu_event(|app, event| {
+                if event.id() == "inspect" {
+                    if let Some(window) = app.get_webview_window("main") {
+                        window.open_devtools();
+                    }
+                }
+            });
 
             // --- Dependency Injection ---
-            let repository = Arc::new(FileRepository::new(app.handle()));
+            let repository = Arc::new(FileRepository::new(app.handle().clone()));
             let app_state = AppState::new(repository);
 
             app.manage(app_state);

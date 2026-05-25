@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaTimes } from 'react-icons/fa';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import styles from './LogViewer.module.css';
 
 interface LogViewerProps {
