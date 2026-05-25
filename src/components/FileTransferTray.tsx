@@ -124,6 +124,15 @@ const getAncestorPaths = (path: string) => {
   ];
 };
 
+const normalizeRemotePath = (path: string) => {
+  if (!path.trim()) {
+    return "/";
+  }
+
+  const normalized = path.replace(/\/+/g, "/");
+  return normalized.length > 1 ? normalized.replace(/\/$/, "") : normalized;
+};
+
 export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, server }) => {
   const [uploadRemotePath, setUploadRemotePath] = React.useState("");
   const [downloadRemotePath, setDownloadRemotePath] = React.useState("");
@@ -137,6 +146,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const [isLoadingRemoteEntries, setIsLoadingRemoteEntries] = React.useState(false);
   const [directoryCache, setDirectoryCache] = React.useState<Record<string, RemoteDirectoryListing>>({});
   const [expandedPaths, setExpandedPaths] = React.useState<string[]>(["/"]);
+  const activeDirectoryRequestRef = React.useRef(0);
 
   const isLinux = server?.osType === "linux";
   const hasSavedPassword = Boolean(server?.password);
@@ -149,31 +159,68 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
         ? "请先为当前服务器保存 SSH 密码，再执行上传或下载。"
         : "支持本地与服务器之间的单文件上传、下载，并可按目录层级浏览远程文件。";
 
-  const loadRemoteDirectory = React.useCallback(async (path: string) => {
+  const loadRemoteDirectory = React.useCallback(async (
+    path: string,
+    options?: { activate?: boolean }
+  ) => {
     if (!server || !canTransferFiles) {
       return;
     }
 
-    setIsLoadingRemoteEntries(true);
-    setRemoteBrowserError(null);
+    const activate = options?.activate ?? true;
+    const requestedPath = normalizeRemotePath(path);
+    const requestId = activate ? activeDirectoryRequestRef.current + 1 : activeDirectoryRequestRef.current;
+
+    if (activate) {
+      activeDirectoryRequestRef.current = requestId;
+      setIsLoadingRemoteEntries(true);
+      setRemoteBrowserError(null);
+      setRemoteBrowserPath(requestedPath);
+    }
+
+    setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(requestedPath)])));
 
     try {
       const listing = await invoke<RemoteDirectoryListing>("list_remote_directory", {
         id: server.id,
-        path,
+        path: requestedPath,
       });
-      setRemoteBrowserPath(listing.currentPath);
-      setRemoteBrowserParentPath(listing.parentPath ?? null);
-      setRemoteEntries(listing.entries);
+
+      if (activate && requestId !== activeDirectoryRequestRef.current) {
+        return;
+      }
+
+      const currentPath = normalizeRemotePath(listing.currentPath);
+      const parentPath = listing.parentPath ? normalizeRemotePath(listing.parentPath) : null;
+      const entries = listing.entries.map(entry => ({
+        ...entry,
+        path: normalizeRemotePath(entry.path),
+      }));
+      const normalizedListing: RemoteDirectoryListing = {
+        currentPath,
+        parentPath,
+        entries,
+      };
+
+      if (activate) {
+        setRemoteBrowserPath(currentPath);
+        setRemoteBrowserParentPath(parentPath);
+        setRemoteEntries(entries);
+      }
+
       setDirectoryCache(prev => ({
         ...prev,
-        [listing.currentPath]: listing,
+        [currentPath]: normalizedListing,
       }));
-      setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(listing.currentPath)])));
+      setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(currentPath)])));
     } catch (error) {
-      setRemoteBrowserError(getErrorMessage(error));
+      if (activate) {
+        setRemoteBrowserError(getErrorMessage(error));
+      }
     } finally {
-      setIsLoadingRemoteEntries(false);
+      if (activate && requestId === activeDirectoryRequestRef.current) {
+        setIsLoadingRemoteEntries(false);
+      }
     }
   }, [canTransferFiles, server]);
 
@@ -208,20 +255,22 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const handleSelectDirectory = async (path: string) => {
     setDownloadRemotePath("");
     setTransferError(null);
-    await loadRemoteDirectory(path);
+    setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(path)])));
+    await loadRemoteDirectory(path, { activate: true });
   };
 
   const toggleDirectoryExpansion = async (path: string) => {
+    const normalizedPath = normalizeRemotePath(path);
     const isExpanded = expandedPaths.includes(path);
-    if (isExpanded && path !== remoteBrowserPath) {
-      setExpandedPaths(prev => prev.filter(item => item !== path));
+    if (isExpanded && normalizedPath !== remoteBrowserPath) {
+      setExpandedPaths(prev => prev.filter(item => item !== normalizedPath));
       return;
     }
 
-    if (!directoryCache[path]) {
-      await loadRemoteDirectory(path);
+    if (!directoryCache[normalizedPath]) {
+      await loadRemoteDirectory(normalizedPath, { activate: false });
     } else {
-      setExpandedPaths(prev => (prev.includes(path) ? prev : [...prev, path]));
+      setExpandedPaths(prev => (prev.includes(normalizedPath) ? prev : [...prev, normalizedPath]));
     }
   };
 
