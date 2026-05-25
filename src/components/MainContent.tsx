@@ -11,6 +11,7 @@ interface MainContentProps {
 
   sessions: Server[];
   currentSessionId: string | null;
+  terminalOutputs: Record<string, { chunks: string[]; resetToken: number }>;
   onSelectSession: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
 
@@ -23,6 +24,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   activeCategory,
   sessions,
   currentSessionId,
+  terminalOutputs,
   onSelectSession,
   onCloseSession,
 }) => {
@@ -80,7 +82,11 @@ export const MainContent: React.FC<MainContentProps> = ({
               left: 0,
             }}
           >
-            <ConsoleView server={session} />
+            <ConsoleView
+              server={session}
+              outputChunks={terminalOutputs[session.id]?.chunks ?? []}
+              resetToken={terminalOutputs[session.id]?.resetToken ?? 0}
+            />
           </div>
         ))}
       </div>

@@ -40,7 +40,9 @@ const getDescendantIds = (startCategoryId: string | null, allCategories: Categor
 export const CategoryDashboard: React.FC<CategoryDashboardProps> = ({ category, servers, allCategories }) => {
   const categoryName = category ? category.name : "Uncategorized";
   
-  const relevantCategoryIds = category ? [category.id, ...getDescendantIds(category.id, allCategories)] : [null];
+  const relevantCategoryIds: Array<string | null> = category
+    ? [category.id, ...getDescendantIds(category.id, allCategories)]
+    : [null];
   
   const relevantServers = servers.filter(s => 
     relevantCategoryIds.includes(s.categoryId || null)
@@ -51,12 +53,17 @@ export const CategoryDashboard: React.FC<CategoryDashboardProps> = ({ category, 
   const disconnectedCount = totalServers - connectedCount;
 
   return (
-    <div style={{ padding: '20px' }}>
-      <h1>{categoryName}</h1>
-      <p style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>
+    <div style={{ padding: '32px 36px' }}>
+      <div style={heroStyle}>
+        <div>
+          <p style={eyebrowStyle}>Overview</p>
+          <h1 style={titleStyle}>{categoryName}</h1>
+          <p style={{ color: 'var(--text-secondary)', marginTop: '8px', maxWidth: '560px' }}>
         Statistics for this category and all its sub-categories.
-      </p>
-      <div style={{ display: 'flex', gap: '20px', marginTop: '30px' }}>
+          </p>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '20px', marginTop: '30px', flexWrap: 'wrap' }}>
         <div style={statCardStyle}>
           <div style={statValueStyle}>{totalServers}</div>
           <div style={statLabelStyle}>Total Servers</div>
@@ -76,20 +83,42 @@ export const CategoryDashboard: React.FC<CategoryDashboardProps> = ({ category, 
 
 const statCardStyle: React.CSSProperties = {
   backgroundColor: 'var(--glass-bg)',
-  padding: '20px',
-  borderRadius: '12px',
-  flex: 1,
-  textAlign: 'center',
+  padding: '24px',
+  borderRadius: '20px',
+  flex: '1 1 220px',
+  textAlign: 'left',
   border: '1px solid var(--glass-border)',
+  boxShadow: '0 16px 36px -28px var(--shadow-color)',
 };
 
 const statValueStyle: React.CSSProperties = {
   fontSize: '36px',
   fontWeight: '600',
+  letterSpacing: '-0.03em',
 };
 
 const statLabelStyle: React.CSSProperties = {
   fontSize: '14px',
   color: 'var(--text-secondary)',
   marginTop: '8px',
+};
+
+const heroStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+};
+
+const eyebrowStyle: React.CSSProperties = {
+  fontSize: '12px',
+  fontWeight: '600',
+  letterSpacing: '0.18em',
+  textTransform: 'uppercase',
+  color: 'var(--accent-color)',
+};
+
+const titleStyle: React.CSSProperties = {
+  fontSize: '32px',
+  fontWeight: '600',
+  letterSpacing: '-0.03em',
 };

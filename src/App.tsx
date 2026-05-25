@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { listen } from '@tauri-apps/api/event';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { ServerProvider, Server, Category, useServer } from "./context/ServerContext";
-import { TerminalProvider, useTerminalManager } from "./context/TerminalContext";
 import { AddServerModal } from "./components/AddServerModal";
 import { AddCategoryModal } from "./components/AddCategoryModal";
 import { LeftSidebar } from "./components/LeftSidebar";
@@ -9,15 +8,33 @@ import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
 import { MainContent } from "./components/MainContent";
 import { ContextMenu, ContextMenuAction } from "./components/ContextMenu";
-import { FaPlus, FaFolderPlus, FaUnlink } from 'react-icons/fa'; // <-- 引入 FaUnlink 图标
+import { FaEdit, FaPlus, FaFolderPlus, FaMoon, FaPlug, FaSun, FaUnlink } from 'react-icons/fa';
 import "./App.css";
 
-// MenuBar 保持不变...
+type ThemeMode = "light" | "dark";
+
+const THEME_STORAGE_KEY = "server-pilot-theme";
+
+const getInitialTheme = (): ThemeMode => {
+  if (typeof window === "undefined") {
+    return "dark";
+  }
+
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (storedTheme === "light" || storedTheme === "dark") {
+    return storedTheme;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+};
+
 const MenuBar: React.FC<{
   onNewCategory: () => void;
   onNewServer: () => void;
   onViewLogs: () => void;
-}> = ({ onNewCategory, onNewServer, onViewLogs }) => {
+  theme: ThemeMode;
+  onToggleTheme: () => void;
+}> = ({ onNewCategory, onNewServer, onViewLogs, theme, onToggleTheme }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +74,16 @@ const MenuBar: React.FC<{
           </div>
         )}
       </div>
+      <div className="menuBarSpacer" />
+      <button
+        className="themeToggle"
+        onClick={onToggleTheme}
+        title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      >
+        {theme === "dark" ? <FaSun size={14} /> : <FaMoon size={14} />}
+        <span>{theme === "dark" ? "Light" : "Dark"}</span>
+      </button>
     </div>
   );
 };
@@ -67,6 +94,11 @@ interface ContextMenuState {
   actions: ContextMenuAction[];
 }
 
+interface TerminalOutputState {
+  chunks: string[];
+  resetToken: number;
+}
+
 const AppContent: React.FC = () => {
   const [sessions, setSessions] = useState<Server[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -75,43 +107,94 @@ const AppContent: React.FC = () => {
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
   const [activeServer, setActiveServer] = useState<Server | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
+  const [isUncategorizedSelected, setIsUncategorizedSelected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"dashboard" | "settings" | "logs">("dashboard");
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [initialCategoryId, setInitialCategoryId] = useState<string | undefined>(undefined);
   const [initialParentId, setInitialParentId] = useState<string | undefined>(undefined);
+  const [editingServer, setEditingServer] = useState<Server | undefined>(undefined);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+  const [terminalOutputs, setTerminalOutputs] = useState<Record<string, TerminalOutputState>>({});
   
-  const { connectToServer, disconnectServer } = useServer(); // <-- 获取 disconnectServer
-  const { terminalRefs } = useTerminalManager();
+  const { connectToServer, disconnectServer, servers } = useServer();
 
   useEffect(() => {
-    console.log("App.tsx: Setting up global event listeners.");
-    const unlistenPty = listen<[string, string]>('pty-data', (event) => {
-      const [serverId, data] = event.payload;
-      const terminal = terminalRefs.current.get(serverId);
-      if (terminal) {
-        terminal.write(data);
-      }
-    });
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
-    const unlistenLog = listen<string>('connection-log', (event) => {
-      terminalRefs.current.forEach(terminal => {
-        terminal.write(`[INFO] ${event.payload.replace(/\n/g, '\r\n')}\r\n`);
-      });
+  const appendTerminalChunk = (serverId: string, chunk: string) => {
+    setTerminalOutputs(prev => ({
+      ...prev,
+      [serverId]: {
+        chunks: [...(prev[serverId]?.chunks ?? []), chunk],
+        resetToken: prev[serverId]?.resetToken ?? 0,
+      },
+    }));
+  };
+
+  const resetTerminalOutput = (serverId: string, initialChunks: string[] = []) => {
+    setTerminalOutputs(prev => ({
+      ...prev,
+      [serverId]: {
+        chunks: initialChunks,
+        resetToken: (prev[serverId]?.resetToken ?? 0) + 1,
+      },
+    }));
+  };
+
+  const removeTerminalOutput = (serverId: string) => {
+    setTerminalOutputs(prev => {
+      const next = { ...prev };
+      delete next[serverId];
+      return next;
     });
+  };
+
+  const writeTerminalNotice = (serverId: string, level: "INFO" | "ERROR", message: string) => {
+    appendTerminalChunk(serverId, `[${level}] ${message}\r\n`);
+  };
+
+  useEffect(() => {
+    const unlistenPromises: Array<Promise<UnlistenFn>> = [
+      listen<[string, string]>("pty-data", (event) => {
+        const [serverId, chunk] = event.payload;
+        appendTerminalChunk(serverId, chunk);
+      }),
+      listen<[string, string]>("connection-log", (event) => {
+        const [serverId, message] = event.payload;
+        appendTerminalChunk(serverId, `[INFO] ${message}\r\n`);
+      }),
+    ];
 
     return () => {
-      console.log("App.tsx: Cleaning up global event listeners.");
-      unlistenPty.then(f => f());
-      unlistenLog.then(f => f());
+      unlistenPromises.forEach(unlistenPromise => {
+        unlistenPromise.then(unlisten => unlisten());
+      });
     };
-  }, [terminalRefs]);
+  }, []);
+
+  useEffect(() => {
+    setActiveServer(prev => {
+      if (!prev) {
+        return prev;
+      }
+
+      return servers.find(server => server.id === prev.id) ?? prev;
+    });
+    setSessions(prev =>
+      prev.map(session => servers.find(server => server.id === session.id) ?? session)
+    );
+  }, [servers]);
 
   const clearSelection = () => {
     setActiveServer(null);
     setActiveCategory(null);
+    setIsUncategorizedSelected(false);
     setConnectionError(null);
   };
 
@@ -122,20 +205,26 @@ const AppContent: React.FC = () => {
 
   const handleConnectServer = async (server: Server) => {
     clearSelection();
+    setActiveServer(server);
     
     const existingSession = sessions.find(s => s.id === server.id);
-    if (existingSession) {
+    if (existingSession && (server.status === 'connected' || server.status === 'connecting')) {
       setCurrentSessionId(server.id);
       setActiveView("dashboard");
     } else {
-      setSessions(prev => [...prev, server]);
+      if (!existingSession) {
+        setSessions(prev => [...prev, server]);
+      }
       setCurrentSessionId(server.id);
       setActiveView("dashboard");
+      resetTerminalOutput(server.id, [`[INFO] Connecting to ${server.username}@${server.host}:${server.port} ...\r\n`]);
       
       try {
         await connectToServer(server.id);
       } catch (err) {
-        setConnectionError(err as string);
+        const message = err as string;
+        writeTerminalNotice(server.id, "ERROR", message);
+        setConnectionError(message);
       }
     }
   };
@@ -151,6 +240,7 @@ const AppContent: React.FC = () => {
       }
       return newSessions;
     });
+    removeTerminalOutput(sessionId);
   };
 
   const handleSelectSession = (sessionId: string) => {
@@ -161,13 +251,33 @@ const AppContent: React.FC = () => {
   const handleSelectCategory = (category: Category | null) => {
     clearSelection();
     setActiveCategory(category);
+    setIsUncategorizedSelected(category === null);
     setActiveView("dashboard");
     setCurrentSessionId(null); 
   };
 
+  const handleDisconnectServer = async (server: Server) => {
+    if (sessions.some(session => session.id === server.id)) {
+      handleCloseSession(server.id);
+      return;
+    }
+
+    try {
+      await disconnectServer(server.id);
+    } catch (err) {
+      console.error("Failed to disconnect:", err);
+    }
+  };
+
+  const handleEditServerSaved = (updatedServer: Server) => {
+    setActiveServer(prev => (prev?.id === updatedServer.id ? updatedServer : prev));
+    setSessions(prev => prev.map(session => (session.id === updatedServer.id ? { ...session, ...updatedServer } : session)));
+    setEditingServer(undefined);
+  };
+
   const handleCategoryContextMenu = (event: React.MouseEvent, category: Category | null) => {
     const actions: ContextMenuAction[] = [
-      { label: "New Server", icon: <FaPlus />, action: () => { setInitialCategoryId(category?.id); setIsServerModalOpen(true); }},
+      { label: "New Server", icon: <FaPlus />, action: () => { setEditingServer(undefined); setInitialCategoryId(category?.id); setIsServerModalOpen(true); }},
       { label: "New Sub-Category", icon: <FaFolderPlus />, action: () => { setInitialParentId(category?.id); setIsCategoryModalOpen(true); }}
     ];
     setContextMenu({ x: event.clientX, y: event.clientY, actions });
@@ -175,7 +285,24 @@ const AppContent: React.FC = () => {
 
   // --- 新增：处理服务器右键菜单 ---
   const handleServerContextMenu = (event: React.MouseEvent, server: Server) => {
-    const actions: ContextMenuAction[] = [];
+    const actions: ContextMenuAction[] = [
+      {
+        label: server.status === 'connected' ? "Open Terminal" : "Connect",
+        icon: <FaPlug />,
+        action: () => {
+          handleConnectServer(server);
+        }
+      },
+      {
+        label: "Edit",
+        icon: <FaEdit />,
+        action: () => {
+          setEditingServer(server);
+          setInitialCategoryId(server.categoryId);
+          setIsServerModalOpen(true);
+        }
+      }
+    ];
     
     if (server.status === 'connected' || server.status === 'connecting') {
       actions.push({
@@ -206,21 +333,27 @@ const AppContent: React.FC = () => {
 
 
   return (
-    <div className="app-wrapper" onContextMenu={(e) => e.preventDefault()}>
+    <div className="app-wrapper">
       <MenuBar 
         onNewCategory={() => { setInitialParentId(undefined); setIsCategoryModalOpen(true); }}
-        onNewServer={() => { setInitialCategoryId(undefined); setIsServerModalOpen(true); }}
+        onNewServer={() => { setEditingServer(undefined); setInitialCategoryId(undefined); setIsServerModalOpen(true); }}
         onViewLogs={() => setActiveView("logs")}
+        theme={theme}
+        onToggleTheme={() => setTheme(prev => (prev === "dark" ? "light" : "dark"))}
       />
       <div className="content-wrapper">
         <LeftSidebar 
           isOpen={isLeftSidebarOpen} 
           activeServer={activeServer}
           activeCategory={activeCategory}
+          isUncategorizedActive={isUncategorizedSelected}
           onSelectServer={handleSelectServer}
           onSelectCategory={handleSelectCategory}
           onCategoryContextMenu={handleCategoryContextMenu}
-          onDoubleClickServer={handleConnectServer}
+          onCreateServer={(category) => { setEditingServer(undefined); setInitialCategoryId(category?.id); setIsServerModalOpen(true); }}
+          onCreateSubCategory={(category) => { setInitialParentId(category?.id); setIsCategoryModalOpen(true); }}
+          onConnectServer={handleConnectServer}
+          onDisconnectServer={handleDisconnectServer}
           onServerContextMenu={handleServerContextMenu} // <-- 传递新的处理函数
         />
         <MainContent 
@@ -228,12 +361,22 @@ const AppContent: React.FC = () => {
           activeCategory={activeCategory} 
           sessions={sessions}
           currentSessionId={currentSessionId}
+          terminalOutputs={terminalOutputs}
           onSelectSession={handleSelectSession}
           onCloseSession={handleCloseSession}
           connectionError={connectionError}
           onDismissError={() => setConnectionError(null)}
         />
-        <RightSidebar isOpen={isRightSidebarOpen} activeServer={activeServer} />
+        <RightSidebar
+          isOpen={isRightSidebarOpen}
+          activeServer={activeServer}
+          activeCategory={activeCategory}
+          isUncategorizedSelected={isUncategorizedSelected}
+          connectionError={connectionError}
+          onConnectServer={handleConnectServer}
+          onDisconnectServer={handleDisconnectServer}
+          onDismissError={() => setConnectionError(null)}
+        />
       </div>
       <BottomBar 
         isLeftSidebarOpen={isLeftSidebarOpen}
@@ -241,7 +384,17 @@ const AppContent: React.FC = () => {
         toggleLeftSidebar={() => setIsLeftSidebarOpen(prev => !prev)}
         toggleRightSidebar={() => setIsRightSidebarOpen(prev => !prev)}
       />
-      {isServerModalOpen && <AddServerModal onClose={() => setIsServerModalOpen(false)} initialCategoryId={initialCategoryId} />}
+      {isServerModalOpen && (
+        <AddServerModal
+          onClose={() => {
+            setIsServerModalOpen(false);
+            setEditingServer(undefined);
+          }}
+          initialCategoryId={initialCategoryId}
+          existingServer={editingServer}
+          onSaved={handleEditServerSaved}
+        />
+      )}
       {isCategoryModalOpen && <AddCategoryModal onClose={() => setIsCategoryModalOpen(false)} parentId={initialParentId} />}
       {contextMenu && <ContextMenu {...contextMenu} onClose={closeContextMenu} />}
     </div>
@@ -251,9 +404,7 @@ const AppContent: React.FC = () => {
 function App() {
   return (
     <ServerProvider>
-      <TerminalProvider>
-        <AppContent />
-      </TerminalProvider>
+      <AppContent />
     </ServerProvider>
   );
 }

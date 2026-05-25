@@ -2,7 +2,7 @@ import React from "react";
 import { useServer } from "../context/ServerContext";
 import { ServerList } from "./ServerList";
 import styles from "./Dashboard.module.css";
-import { FaServer, FaFolder, FaNetworkWired, FaUser } from "react-icons/fa";
+import { FaServer, FaFolder } from "react-icons/fa";
 
 export const Dashboard: React.FC = () => {
   const { servers, categories } = useServer();

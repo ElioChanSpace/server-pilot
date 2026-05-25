@@ -19,12 +19,12 @@ export const ServerList: React.FC<ServerListProps> = ({ servers, categories }) =
     }
   };
 
-  const uncategorizedServers = servers.filter(s => !s.category_id);
+  const uncategorizedServers = servers.filter(s => !s.categoryId);
 
   return (
     <div className={styles.list}>
       {categories.map(category => {
-        const categoryServers = servers.filter(s => s.category_id === category.id);
+        const categoryServers = servers.filter(s => s.categoryId === category.id);
         if (categoryServers.length === 0) return null;
         
         return (
