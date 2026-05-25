@@ -1,6 +1,6 @@
 .bottomBar {
   background-color: var(--glass-bg);
-  padding: 4px 12px;
+  padding: 6px 12px;
   border-top: 1px solid var(--glass-border);
   display: flex;
   align-items: center;
@@ -13,18 +13,21 @@
 .toggleButton {
   background: transparent;
   color: var(--text-secondary);
-  padding: 4px;
-  border-radius: 4px;
+  padding: 8px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: none;
+  transform: none;
 }
 
 .toggleButton:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--surface-hover);
   color: var(--text-primary);
 }
 
 .toggleButton[data-active="true"] {
   color: var(--accent-color);
+  background-color: var(--surface-active);
 }
