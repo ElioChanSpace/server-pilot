@@ -13,8 +13,12 @@
 
 .rightSidebar[data-closed="true"] {
   width: 0;
+  min-width: 0;
+  max-width: 0;
   padding: 0;
   border-left: none;
+  border-right: none;
+  overflow: hidden;
 }
 
 .content {
