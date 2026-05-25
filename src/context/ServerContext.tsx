@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
 
@@ -31,6 +31,7 @@ interface ServerContextType {
   refreshServers: () => Promise<void>;
   refreshCategories: () => Promise<void>;
   addServer: (server: Omit<Server, 'id' | 'status'>) => Promise<void>;
+  updateServer: (server: Omit<Server, 'status'>) => Promise<Server>;
   addCategory: (name: string, parentId?: string) => Promise<void>;
   connectToServer: (id: string) => Promise<void>;
   disconnectServer: (id: string) => Promise<void>; // <-- 新增
@@ -66,6 +67,17 @@ export const ServerProvider = ({ children }: { children: ReactNode }) => {
       await refreshServers();
     } catch (error) {
       console.error("Invoke 'create_server' FAILED:", error);
+      throw error;
+    }
+  };
+
+  const updateServer = async (server: Omit<Server, 'status'>) => {
+    try {
+      const updated = await invoke<Server>('update_server', { ...server });
+      await refreshServers();
+      return updated;
+    } catch (error) {
+      console.error("Invoke 'update_server' FAILED:", error);
       throw error;
     }
   };
@@ -114,7 +126,7 @@ export const ServerProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <ServerContext.Provider value={{ servers, categories, refreshServers, refreshCategories, addServer, addCategory, connectToServer, disconnectServer }}>
+    <ServerContext.Provider value={{ servers, categories, refreshServers, refreshCategories, addServer, updateServer, addCategory, connectToServer, disconnectServer }}>
       {children}
     </ServerContext.Provider>
   );
