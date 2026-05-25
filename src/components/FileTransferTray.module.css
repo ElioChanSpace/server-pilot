@@ -287,6 +287,31 @@
   overflow-y: auto;
 }
 
+.listTables {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.directoryTable {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tableTitle {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--sidebar-item-bg);
+  border: 1px solid var(--sidebar-border);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
 .browserEmpty {
   padding: 14px;
   border-radius: 12px;
@@ -320,6 +345,11 @@
 .browserEntry[data-selected="true"] {
   border-color: var(--accent-color);
   background: rgba(116, 93, 255, 0.14);
+}
+
+.browserEntry[data-previewed="true"] {
+  border-color: rgba(116, 93, 255, 0.5);
+  background: rgba(116, 93, 255, 0.08);
 }
 
 .browserEntryMain {
@@ -372,5 +402,11 @@
   .actionGrid,
   .browserContent {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 981px) {
+  .listTables {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
