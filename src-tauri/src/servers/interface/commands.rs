@@ -213,8 +213,21 @@ fn needs_remote_path_escaping(path: &str) -> bool {
         ch.is_whitespace()
             || matches!(
                 ch,
-                '\'' | '"' | '\\' | '(' | ')' | '[' | ']' | '{' | '}' | '&' | ';' | '<'
-                    | '>' | '|' | '$' | '`'
+                '\'' | '"'
+                    | '\\'
+                    | '('
+                    | ')'
+                    | '['
+                    | ']'
+                    | '{'
+                    | '}'
+                    | '&'
+                    | ';'
+                    | '<'
+                    | '>'
+                    | '|'
+                    | '$'
+                    | '`'
             )
     })
 }
@@ -491,12 +504,10 @@ fn run_ssh_command(
         .map_err(|err| err.to_string())?;
 
     let mut cmd = CommandBuilder::new("ssh");
-    cmd.arg(format!("{}@{}", username, host));
     cmd.arg("-p");
     cmd.arg(port.to_string());
-    cmd.arg("sh");
-    cmd.arg("-lc");
-    cmd.arg(remote_command);
+    cmd.arg(format!("{}@{}", username, host));
+    cmd.arg(format!("sh -lc {}", shell_quote(remote_command)));
 
     let mut child = pair
         .slave
@@ -506,10 +517,7 @@ fn run_ssh_command(
         .master
         .try_clone_reader()
         .map_err(|err| err.to_string())?;
-    let writer = pair
-        .master
-        .take_writer()
-        .map_err(|err| err.to_string())?;
+    let writer = pair.master.take_writer().map_err(|err| err.to_string())?;
 
     let (tx, rx) = mpsc::channel::<Result<Vec<u8>, String>>();
     thread::spawn(move || {
@@ -600,7 +608,11 @@ fn run_ssh_command(
     if status.success() {
         Ok(output)
     } else {
-        Err(command_error_message(action_label, &output, &status.to_string()))
+        Err(command_error_message(
+            action_label,
+            &output,
+            &status.to_string(),
+        ))
     }
 }
 
@@ -630,10 +642,7 @@ fn run_scp_transfer(
         .master
         .try_clone_reader()
         .map_err(|err| err.to_string())?;
-    let writer = pair
-        .master
-        .take_writer()
-        .map_err(|err| err.to_string())?;
+    let writer = pair.master.take_writer().map_err(|err| err.to_string())?;
 
     let (tx, rx) = mpsc::channel::<Result<Vec<u8>, String>>();
     thread::spawn(move || {
@@ -703,7 +712,11 @@ fn run_scp_transfer(
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
                     if !status.success() {
-                        return Err(command_error_message(action_label, &output, &status.to_string()));
+                        return Err(command_error_message(
+                            action_label,
+                            &output,
+                            &status.to_string(),
+                        ));
                     }
                     break;
                 }
@@ -716,7 +729,11 @@ fn run_scp_transfer(
     if status.success() {
         Ok(())
     } else {
-        Err(command_error_message(action_label, &output, &status.to_string()))
+        Err(command_error_message(
+            action_label,
+            &output,
+            &status.to_string(),
+        ))
     }
 }
 
@@ -922,10 +939,8 @@ pub async fn list_remote_directory(
     id: String,
     path: Option<String>,
 ) -> Result<RemoteDirectoryListing, String> {
-    let requested_path = path
-        .unwrap_or_else(|| "/".to_string())
-        .trim()
-        .to_string();
+    let requested_path = path.unwrap_or_else(|| "/".to_string()).trim().to_string();
+    info!("查询目录:{}", requested_path);
     let requested_path = if requested_path.is_empty() {
         "/".to_string()
     } else {
@@ -945,6 +960,8 @@ pub async fn list_remote_directory(
             SSH_COMMAND_TIMEOUT,
             "list remote directory",
         )?;
+
+        info!("查询[{}]目录结果:{}", requested_path, output);
         parse_remote_directory_output(&output)
     })
     .await
@@ -973,13 +990,7 @@ pub async fn upload_file_to_server(
     let remote_path_for_result = remote_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        run_scp_transfer(
-            port,
-            &password,
-            &local_path,
-            &target,
-            "upload file",
-        )?;
+        run_scp_transfer(port, &password, &local_path, &target, "upload file")?;
 
         Ok(FileTransferResult {
             direction: "upload".to_string(),
@@ -1015,13 +1026,7 @@ pub async fn download_file_from_server(
     let remote_path_for_result = remote_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        run_scp_transfer(
-            port,
-            &password,
-            &source,
-            &local_path,
-            "download file",
-        )?;
+        run_scp_transfer(port, &password, &source, &local_path, "download file")?;
 
         Ok(FileTransferResult {
             direction: "download".to_string(),
