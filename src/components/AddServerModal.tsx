@@ -216,8 +216,8 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
             </div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-            <button type="button" onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--glass-border)' }}>取消</button>
+          <div className="modalActions">
+            <button type="button" onClick={onClose} className="modalSecondaryButton">取消</button>
             <button type="submit" disabled={loading}>
               {loading ? (isEditMode ? '保存中...' : '添加中...') : (isEditMode ? '保存修改' : '新增服务器')}
             </button>

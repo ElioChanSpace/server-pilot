@@ -41,8 +41,8 @@ export const AddCategoryModal: React.FC<AddCategoryModalProps> = ({ onClose, par
               autoFocus
             />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-            <button type="button" onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--glass-border)' }}>取消</button>
+          <div className="modalActions">
+            <button type="button" onClick={onClose} className="modalSecondaryButton">取消</button>
             <button type="submit" disabled={loading}>{loading ? '添加中...' : '新增分类'}</button>
           </div>
         </form>

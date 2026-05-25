@@ -180,6 +180,29 @@ select {
   width: 400px;
 }
 
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.modalSecondaryButton {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--glass-border);
+  box-shadow: none;
+  transform: none;
+}
+
+.modalSecondaryButton:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-color);
+  box-shadow: none;
+  transform: none;
+}
+
 button {
   cursor: pointer;
   border: none;
