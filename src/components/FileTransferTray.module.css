@@ -287,20 +287,6 @@
   overflow-y: auto;
 }
 
-.listColumns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  min-width: 0;
-}
-
-.listSection {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
 .browserEmpty {
   padding: 14px;
   border-radius: 12px;
@@ -384,8 +370,7 @@
 @media (max-width: 980px) {
   .controlBar,
   .actionGrid,
-  .browserContent,
-  .listColumns {
+  .browserContent {
     grid-template-columns: 1fr;
   }
 }
