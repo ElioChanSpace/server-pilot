@@ -248,8 +248,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   }
 
   const breadcrumbs = buildBreadcrumbs(remoteBrowserPath);
-  const currentDirectories = remoteEntries.filter(entry => entry.isDir);
-  const currentFiles = remoteEntries.filter(entry => !entry.isDir);
   const directoryTree = buildDirectoryTree("/", directoryCache);
 
   const handleSelectDirectory = async (path: string) => {
@@ -558,58 +556,37 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
             ) : remoteEntries.length === 0 ? (
               <div className={styles.browserEmpty}>当前目录为空。</div>
             ) : (
-              <div className={styles.listColumns}>
-                <div className={styles.listSection}>
-                  <div className={styles.listSectionTitle}>子目录</div>
-                  <div className={styles.browserList}>
-                    {currentDirectories.length > 0 ? currentDirectories.map(entry => (
-                      <button
-                        key={entry.path}
-                        type="button"
-                        className={styles.browserEntry}
-                        onClick={() => {
-                          void handleSelectDirectory(entry.path);
-                        }}
-                        disabled={!canTransferFiles}
-                      >
-                        <div className={styles.browserEntryMain}>
-                          <FaFolder className={styles.browserEntryIcon} />
-                          <span className={styles.browserEntryName}>{entry.name}</span>
-                        </div>
-                        <span className={styles.browserEntryMeta}>目录</span>
-                      </button>
-                    )) : (
-                      <div className={styles.browserEmpty}>当前层级没有子目录。</div>
-                    )}
-                  </div>
-                </div>
+              <div className={styles.browserList}>
+                {remoteEntries.map(entry => (
+                  <button
+                    key={entry.path}
+                    type="button"
+                    className={styles.browserEntry}
+                    data-selected={!entry.isDir && downloadRemotePath === entry.path}
+                    onClick={() => {
+                      if (entry.isDir) {
+                        void handleSelectDirectory(entry.path);
+                        return;
+                      }
 
-                <div className={styles.listSection}>
-                  <div className={styles.listSectionTitle}>文件</div>
-                  <div className={styles.browserList}>
-                    {currentFiles.length > 0 ? currentFiles.map(entry => (
-                      <button
-                        key={entry.path}
-                        type="button"
-                        className={styles.browserEntry}
-                        data-selected={downloadRemotePath === entry.path}
-                        onClick={() => {
-                          setDownloadRemotePath(entry.path);
-                          setTransferError(null);
-                        }}
-                        disabled={!canTransferFiles}
-                      >
-                        <div className={styles.browserEntryMain}>
-                          <FaFileAlt className={styles.browserEntryIcon} />
-                          <span className={styles.browserEntryName}>{entry.name}</span>
-                        </div>
-                        <span className={styles.browserEntryMeta}>{formatFileSize(entry.size)}</span>
-                      </button>
-                    )) : (
-                      <div className={styles.browserEmpty}>当前层级没有文件。</div>
-                    )}
-                  </div>
-                </div>
+                      setDownloadRemotePath(entry.path);
+                      setTransferError(null);
+                    }}
+                    disabled={!canTransferFiles}
+                  >
+                    <div className={styles.browserEntryMain}>
+                      {entry.isDir ? (
+                        <FaFolder className={styles.browserEntryIcon} />
+                      ) : (
+                        <FaFileAlt className={styles.browserEntryIcon} />
+                      )}
+                      <span className={styles.browserEntryName}>{entry.name}</span>
+                    </div>
+                    <span className={styles.browserEntryMeta}>
+                      {entry.isDir ? "目录" : formatFileSize(entry.size)}
+                    </span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
