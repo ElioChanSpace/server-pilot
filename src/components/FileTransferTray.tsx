@@ -154,7 +154,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const [transferStatus, setTransferStatus] = React.useState<string | null>(null);
   const [transferError, setTransferError] = React.useState<string | null>(null);
   const [activeTransfer, setActiveTransfer] = React.useState<"upload" | "download" | null>(null);
-  const [remoteBrowserPath, setRemoteBrowserPath] = React.useState("/");
+  const [remoteBrowserPath, setRemoteBrowserPath] = React.useState("");
   const [remoteBrowserParentPath, setRemoteBrowserParentPath] = React.useState<string | null>(null);
   const [remoteEntries, setRemoteEntries] = React.useState<RemoteDirectoryEntry[]>([]);
   const [remoteBrowserError, setRemoteBrowserError] = React.useState<string | null>(null);
@@ -188,7 +188,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     }
 
     const activate = options?.activate ?? true;
-    const requestedPath = normalizeRemotePath(path);
+    const requestedPath = path.trim() ? normalizeRemotePath(path) : "";
     const requestId = activate ? activeDirectoryRequestRef.current + 1 : activeDirectoryRequestRef.current;
 
     if (activate) {
@@ -243,20 +243,20 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     setTransferStatus(null);
     setTransferError(null);
     setActiveTransfer(null);
-    setRemoteBrowserPath("/");
+    setRemoteBrowserPath("");
     setRemoteBrowserParentPath(null);
     setRemoteEntries([]);
     setRemoteBrowserError(null);
     setIsLoadingRemoteEntries(false);
     setDirectoryCache({});
-    setExpandedPaths(["/"]);
+    setExpandedPaths([]);
     setPreviewDirectoryPath(null);
     setPreviewDirectoryEntries([]);
     setPreviewDirectoryError(null);
     setIsLoadingPreviewDirectory(false);
 
     if (server && canTransferFiles && isOpen) {
-      void loadRemoteDirectory("/");
+      void loadRemoteDirectory("");
     }
   }, [canTransferFiles, isOpen, loadRemoteDirectory, server]);
 

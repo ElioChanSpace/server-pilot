@@ -125,9 +125,13 @@ fn shell_double_quote(value: &str) -> String {
 }
 
 fn build_list_directory_command(path: &str) -> String {
-    let quoted_path = shell_double_quote(path);
+    let target_dir = if path.trim().is_empty() {
+        "\"${HOME:-/}\"".to_string()
+    } else {
+        shell_double_quote(path)
+    };
     format!(
-        r#"TARGET_DIR={quoted_path}
+        r#"TARGET_DIR={target_dir}
 if ! cd "$TARGET_DIR" 2>/dev/null; then
   echo "Unable to access directory: $TARGET_DIR"
   exit 1
@@ -143,7 +147,7 @@ printf "current_path=%s\n" "$CURRENT_DIR"
 printf "parent_path=%s\n" "$PARENT_DIR"
 find "$CURRENT_DIR" -mindepth 1 -maxdepth 1 -printf "entry=%P\t%y\t%s\n" 2>/dev/null | sort
 echo "{directory_output_end}""#,
-        quoted_path = quoted_path,
+        target_dir = target_dir,
         directory_output_start = DIRECTORY_OUTPUT_START,
         directory_output_end = DIRECTORY_OUTPUT_END
     )
@@ -948,13 +952,8 @@ pub async fn list_remote_directory(
     id: String,
     path: Option<String>,
 ) -> Result<RemoteDirectoryListing, String> {
-    let requested_path = path.unwrap_or_else(|| "/".to_string()).trim().to_string();
+    let requested_path = path.unwrap_or_default().trim().to_string();
     info!("查询目录:{}", requested_path);
-    let requested_path = if requested_path.is_empty() {
-        "/".to_string()
-    } else {
-        requested_path
-    };
 
     let (username, host, port, password) = resolve_transfer_server(&state, &id)?;
     let remote_command = build_list_directory_command(&requested_path);
