@@ -21,6 +21,15 @@
   font-weight: 600;
 }
 
+.logMeta {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: monospace;
+  word-break: break-all;
+}
+
 .controls {
   display: flex;
   gap: 8px;
@@ -82,6 +91,13 @@
   background-color: var(--danger-color-hover);
 }
 
+.clearBtn:disabled,
+.toggleBtn:disabled,
+.closeBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .logContainer {
   flex: 1;
   overflow-y: auto;
@@ -97,6 +113,7 @@
   margin-bottom: 8px;
   padding: 8px 0;
   border-bottom: 1px solid var(--border-color);
+  word-break: break-word;
 }
 
 .logTimestamp {

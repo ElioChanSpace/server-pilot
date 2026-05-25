@@ -7,9 +7,10 @@ use crate::servers::application::AppState;
 use crate::servers::infrastructure::session_manager::SessionManagerState;
 use crate::servers::infrastructure::FileRepository;
 use crate::servers::interface::commands::{
-    connect_server, create_category, create_server, disconnect_server, download_file_from_server,
-    fetch_server_metrics, get_categories, get_servers, list_remote_directory, pty_resize,
-    pty_write, update_server, upload_file_to_server,
+    clear_app_logs, connect_server, create_category, create_server, disconnect_server,
+    download_file_from_server, fetch_server_metrics, get_categories, get_servers,
+    list_remote_directory, pty_resize, pty_write, read_app_logs, update_server,
+    upload_file_to_server,
 };
 use std::sync::Arc;
 use tauri::{CustomMenuItem, Manager, Menu, Submenu};
@@ -58,6 +59,8 @@ fn main() {
             disconnect_server,
             fetch_server_metrics,
             list_remote_directory,
+            read_app_logs,
+            clear_app_logs,
             upload_file_to_server,
             download_file_from_server
         ])
