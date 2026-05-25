@@ -19,7 +19,6 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   toggleLeftSidebar,
   toggleRightSidebar,
 }) => {
-  console.log(isLeftSidebarOpen);
   return (
     <div className={styles.bottomBar}>
       <button

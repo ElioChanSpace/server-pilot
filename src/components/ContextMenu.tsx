@@ -1,5 +1,4 @@
 import React from 'react';
-import { FaPlus } from 'react-icons/fa';
 import styles from './ContextMenu.module.css';
 
 export interface ContextMenuAction {
