@@ -41,33 +41,23 @@
   background: var(--surface-hover);
 }
 
-.tableCard {
-  padding: 14px;
-  background: var(--sidebar-item-bg);
+.controlBar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.infoPill {
+  padding: 12px 14px;
+  border-radius: 14px;
   border: 1px solid var(--sidebar-border);
-  border-radius: 16px;
+  background: var(--sidebar-item-bg);
+  min-width: 0;
 }
 
-.infoTable {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.infoTable th,
-.infoTable td {
-  padding: 12px 10px;
-  border-bottom: 1px solid var(--sidebar-border);
-  text-align: left;
-  vertical-align: top;
-}
-
-.infoTable tr:last-child th,
-.infoTable tr:last-child td {
-  border-bottom: none;
-}
-
-.infoTable th {
-  width: 120px;
+.infoLabel {
+  display: block;
+  margin-bottom: 6px;
   font-size: 12px;
   font-weight: 700;
   color: var(--sidebar-text-secondary);
@@ -75,7 +65,8 @@
   letter-spacing: 0.04em;
 }
 
-.infoTable td {
+.infoPill strong {
+  display: block;
   font-size: 14px;
   color: var(--text-primary);
   word-break: break-word;
@@ -113,6 +104,40 @@
   background: rgba(255, 255, 255, 0.02);
 }
 
+.browserTopBar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.transferHint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sidebar-text-secondary);
+}
+
+.actionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.fieldBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fieldBlock span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sidebar-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .browserToolbar {
   display: flex;
   flex-wrap: wrap;
@@ -144,12 +169,136 @@
   word-break: break-all;
 }
 
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.breadcrumbButton {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: none;
+  transform: none;
+  padding: 6px 10px;
+}
+
+.breadcrumbButton:hover {
+  background: var(--surface-hover);
+}
+
+.breadcrumbButton[data-active="true"] {
+  background: rgba(116, 93, 255, 0.14);
+  border-color: var(--accent-color);
+}
+
+.browserContent {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 240px;
+}
+
+.treePanel,
+.listPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.panelHeader,
+.listSectionTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sidebar-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.treeRoot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+
+.treeNode,
+.treeChildren {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.treeButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--sidebar-item-bg);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: none;
+  transform: none;
+  color: var(--text-primary);
+  justify-content: flex-start;
+}
+
+.treeButton:hover {
+  background: var(--sidebar-item-hover-bg);
+  border-color: var(--accent-color);
+}
+
+.treeButton[data-active="true"] {
+  border-color: var(--accent-color);
+  background: rgba(116, 93, 255, 0.14);
+}
+
+.treeCaret {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--sidebar-text-secondary);
+  transition: transform 0.18s ease;
+}
+
+.treeCaret[data-expanded="true"] {
+  transform: rotate(90deg);
+}
+
+.treeIcon {
+  flex-shrink: 0;
+  color: var(--primary-color);
+}
+
+.treeLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .browserList {
   display: flex;
   flex-direction: column;
   gap: 8px;
   max-height: 220px;
   overflow-y: auto;
+}
+
+.listColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.listSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 .browserEmpty {
@@ -232,22 +381,11 @@
   color: var(--danger-color);
 }
 
-@media (max-width: 680px) {
-  .infoTable th,
-  .infoTable td {
-    display: block;
-    width: 100%;
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  .infoTable th {
-    padding-bottom: 4px;
-    border-bottom: none;
-  }
-
-  .infoTable td {
-    padding-top: 0;
-    padding-bottom: 12px;
+@media (max-width: 980px) {
+  .controlBar,
+  .actionGrid,
+  .browserContent,
+  .listColumns {
+    grid-template-columns: 1fr;
   }
 }
