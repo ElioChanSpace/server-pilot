@@ -111,7 +111,7 @@ const AppContent: React.FC = () => {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
-  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
   const [activeServer, setActiveServer] = useState<Server | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [isUncategorizedSelected, setIsUncategorizedSelected] = useState(false);
