@@ -14,6 +14,7 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, rese
   const termRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
   const renderedChunkCountRef = useRef(0);
+  const fitFrameRef = useRef<number | null>(null);
 
   const focusTerminal = () => {
     const terminal = termInstance.current;
@@ -38,6 +39,17 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, rese
       cursor: styles.getPropertyValue('--terminal-cursor').trim() || '#7eb99f',
       selectionBackground: styles.getPropertyValue('--terminal-selection').trim() || 'rgba(126, 185, 159, 0.28)',
     };
+  };
+
+  const scheduleFit = (addon: FitAddon) => {
+    if (fitFrameRef.current !== null) {
+      cancelAnimationFrame(fitFrameRef.current);
+    }
+
+    fitFrameRef.current = requestAnimationFrame(() => {
+      addon.fit();
+      fitFrameRef.current = null;
+    });
   };
 
   useEffect(() => {
@@ -105,17 +117,21 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, rese
       });
 
       const resizeObserver = new ResizeObserver(() => {
-        addon.fit();
+        scheduleFit(addon);
       });
       resizeObserver.observe(termRef.current);
 
       setTimeout(() => {
-        addon.fit();
+        scheduleFit(addon);
         focusTerminal();
       }, 50);
 
       return () => {
         resizeObserver.disconnect();
+        if (fitFrameRef.current !== null) {
+          cancelAnimationFrame(fitFrameRef.current);
+          fitFrameRef.current = null;
+        }
         if (termInstance.current) {
           termInstance.current.dispose();
           termInstance.current = null;

@@ -6,7 +6,6 @@
   background-color: var(--glass-bg);
   border-left: 1px solid var(--glass-border);
   padding: 18px;
-  transition: width 0.2s ease-in-out, padding 0.2s ease-in-out;
   overflow: hidden;
   z-index: 1; /* Match the left sidebar's stacking context */
 }
