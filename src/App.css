@@ -149,6 +149,31 @@ select {
   overflow: hidden;
 }
 
+.right-sidebar-resizer {
+  width: 10px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+.right-sidebar-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--glass-border);
+  transition: background-color 0.18s ease;
+}
+
+.right-sidebar-resizer:hover::before {
+  background: var(--accent-color);
+}
+
 .log-viewer-overlay {
   position: absolute;
   inset: 0;

@@ -16,6 +16,9 @@ import "./App.css";
 type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "server-pilot-theme";
+const RIGHT_SIDEBAR_WIDTH_KEY = "server-pilot-right-sidebar-width";
+const MIN_RIGHT_SIDEBAR_WIDTH = 320;
+const MAX_RIGHT_SIDEBAR_WIDTH = 840;
 
 const getInitialTheme = (): ThemeMode => {
   if (typeof window === "undefined") {
@@ -28,6 +31,18 @@ const getInitialTheme = (): ThemeMode => {
   }
 
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+};
+
+const clampRightSidebarWidth = (width: number) =>
+  Math.min(MAX_RIGHT_SIDEBAR_WIDTH, Math.max(MIN_RIGHT_SIDEBAR_WIDTH, width));
+
+const getInitialRightSidebarWidth = () => {
+  if (typeof window === "undefined") {
+    return 420;
+  }
+
+  const storedWidth = Number(window.localStorage.getItem(RIGHT_SIDEBAR_WIDTH_KEY));
+  return Number.isFinite(storedWidth) ? clampRightSidebarWidth(storedWidth) : 420;
 };
 
 const MenuBar: React.FC<{
@@ -113,6 +128,8 @@ const AppContent: React.FC = () => {
   
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(getInitialRightSidebarWidth);
+  const [isResizingRightSidebar, setIsResizingRightSidebar] = useState(false);
   const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
   const [activeServer, setActiveServer] = useState<Server | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
@@ -137,6 +154,39 @@ const AppContent: React.FC = () => {
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(rightSidebarWidth));
+  }, [rightSidebarWidth]);
+
+  useEffect(() => {
+    if (!isResizingRightSidebar) {
+      return;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const nextWidth = clampRightSidebarWidth(window.innerWidth - event.clientX);
+      setRightSidebarWidth(nextWidth);
+    };
+
+    const handlePointerUp = () => {
+      setIsResizingRightSidebar(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [isResizingRightSidebar]);
 
   const appendTerminalChunk = (serverId: string, chunk: string) => {
     setTerminalOutputs(prev => ({
@@ -410,8 +460,21 @@ const AppContent: React.FC = () => {
             connectionError={connectionError}
             onDismissError={() => setConnectionError(null)}
           />
+          {!isLogViewerOpen && isRightSidebarOpen && (
+            <div
+              className="right-sidebar-resizer"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                setIsResizingRightSidebar(true);
+              }}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整服务器详情宽度"
+            />
+          )}
           <RightSidebar
             isOpen={!isLogViewerOpen && isRightSidebarOpen}
+            width={rightSidebarWidth}
             activeServer={activeServer}
             activeCategory={activeCategory}
             isUncategorizedSelected={isUncategorizedSelected}
