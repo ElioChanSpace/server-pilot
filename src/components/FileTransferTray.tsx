@@ -36,6 +36,12 @@ interface DirectoryTreeNode {
   children: DirectoryTreeNode[];
 }
 
+interface NormalizedRemoteDirectoryListing {
+  currentPath: string;
+  parentPath: string | null;
+  entries: RemoteDirectoryEntry[];
+}
+
 const getBaseName = (filePath: string) => {
   const segments = filePath.split(/[\\/]/).filter(Boolean);
   return segments[segments.length - 1] ?? "file";
@@ -133,6 +139,15 @@ const normalizeRemotePath = (path: string) => {
   return normalized.length > 1 ? normalized.replace(/\/$/, "") : normalized;
 };
 
+const normalizeDirectoryListing = (listing: RemoteDirectoryListing): NormalizedRemoteDirectoryListing => ({
+  currentPath: normalizeRemotePath(listing.currentPath),
+  parentPath: listing.parentPath ? normalizeRemotePath(listing.parentPath) : null,
+  entries: listing.entries.map(entry => ({
+    ...entry,
+    path: normalizeRemotePath(entry.path),
+  })),
+});
+
 export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, server }) => {
   const [uploadRemotePath, setUploadRemotePath] = React.useState("");
   const [downloadRemotePath, setDownloadRemotePath] = React.useState("");
@@ -147,6 +162,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const [directoryCache, setDirectoryCache] = React.useState<Record<string, RemoteDirectoryListing>>({});
   const [expandedPaths, setExpandedPaths] = React.useState<string[]>(["/"]);
   const [previewDirectoryPath, setPreviewDirectoryPath] = React.useState<string | null>(null);
+  const [previewDirectoryEntries, setPreviewDirectoryEntries] = React.useState<RemoteDirectoryEntry[]>([]);
   const [previewDirectoryError, setPreviewDirectoryError] = React.useState<string | null>(null);
   const [isLoadingPreviewDirectory, setIsLoadingPreviewDirectory] = React.useState(false);
   const activeDirectoryRequestRef = React.useRef(0);
@@ -194,17 +210,8 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
         return;
       }
 
-      const currentPath = normalizeRemotePath(listing.currentPath);
-      const parentPath = listing.parentPath ? normalizeRemotePath(listing.parentPath) : null;
-      const entries = listing.entries.map(entry => ({
-        ...entry,
-        path: normalizeRemotePath(entry.path),
-      }));
-      const normalizedListing: RemoteDirectoryListing = {
-        currentPath,
-        parentPath,
-        entries,
-      };
+      const normalizedListing = normalizeDirectoryListing(listing);
+      const { currentPath, parentPath, entries } = normalizedListing;
 
       if (activate) {
         setRemoteBrowserPath(currentPath);
@@ -242,6 +249,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     setDirectoryCache({});
     setExpandedPaths(["/"]);
     setPreviewDirectoryPath(null);
+    setPreviewDirectoryEntries([]);
     setPreviewDirectoryError(null);
     setIsLoadingPreviewDirectory(false);
 
@@ -256,12 +264,12 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
 
   const breadcrumbs = buildBreadcrumbs(remoteBrowserPath);
   const directoryTree = buildDirectoryTree("/", directoryCache);
-  const previewListing = previewDirectoryPath ? directoryCache[previewDirectoryPath] : undefined;
 
   const handleSelectDirectory = async (path: string) => {
     setDownloadRemotePath("");
     setTransferError(null);
     setPreviewDirectoryPath(null);
+    setPreviewDirectoryEntries([]);
     setPreviewDirectoryError(null);
     setIsLoadingPreviewDirectory(false);
     setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(path)])));
@@ -277,18 +285,36 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     const requestId = previewDirectoryRequestRef.current + 1;
     previewDirectoryRequestRef.current = requestId;
     setPreviewDirectoryPath(normalizedPath);
+    setPreviewDirectoryEntries([]);
     setPreviewDirectoryError(null);
     setIsLoadingPreviewDirectory(true);
     setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(normalizedPath)])));
 
     try {
-      if (!directoryCache[normalizedPath]) {
-        await loadRemoteDirectory(normalizedPath, { activate: false });
+      const cachedListing = directoryCache[normalizedPath];
+      if (cachedListing) {
+        setPreviewDirectoryPath(cachedListing.currentPath);
+        setPreviewDirectoryEntries(cachedListing.entries);
+        setIsLoadingPreviewDirectory(false);
+        return;
       }
+
+      const listing = await invoke<RemoteDirectoryListing>("list_remote_directory", {
+        id: server.id,
+        path: normalizedPath,
+      });
 
       if (requestId !== previewDirectoryRequestRef.current) {
         return;
       }
+
+      const normalizedListing = normalizeDirectoryListing(listing);
+      setPreviewDirectoryPath(normalizedListing.currentPath);
+      setPreviewDirectoryEntries(normalizedListing.entries);
+      setDirectoryCache(prev => ({
+        ...prev,
+        [normalizedListing.currentPath]: normalizedListing,
+      }));
     } catch (error) {
       if (requestId === previewDirectoryRequestRef.current) {
         setPreviewDirectoryError(getErrorMessage(error));
@@ -650,11 +676,11 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
                     <div className={styles.browserEmpty}>{previewDirectoryError}</div>
                   ) : isLoadingPreviewDirectory ? (
                     <div className={styles.browserEmpty}>正在加载子目录...</div>
-                  ) : !previewListing || previewListing.entries.length === 0 ? (
+                  ) : previewDirectoryEntries.length === 0 ? (
                     <div className={styles.browserEmpty}>当前子目录为空。</div>
                   ) : (
                     <div className={styles.browserList}>
-                      {previewListing.entries.map(entry => (
+                      {previewDirectoryEntries.map(entry => (
                         <button
                           key={entry.path}
                           type="button"
