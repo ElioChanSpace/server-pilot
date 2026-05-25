@@ -102,60 +102,41 @@
   background: var(--surface-hover);
 }
 
-.detailsGrid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.detailItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px;
-  min-width: 0;
-  background-color: var(--sidebar-item-bg);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 14px;
-  transition: background-color 0.18s ease, border-color 0.18s ease;
-}
-
-.detailItem:hover {
-  background-color: var(--sidebar-item-hover-bg);
-  border-color: var(--accent-color);
-}
-
-.detailIcon {
-  font-size: 18px;
-  color: var(--primary-color);
-  margin-top: 2px;
-}
-
-.detailLabel {
-  font-size: 12px;
-  color: var(--sidebar-text-secondary);
-  margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.detailValue {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--sidebar-text);
-  word-break: break-word;
-}
-
-.detailHint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--sidebar-text-secondary);
-  line-height: 1.4;
-}
-
 .section {
   margin-top: 24px;
+}
+
+.tabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.tabButton {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: none;
+  transform: none;
+}
+
+.tabButton:hover {
+  background: var(--surface-hover);
+}
+
+.tabButton[data-active="true"] {
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-strong));
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.tabPanel {
+  min-width: 0;
+}
+
+.tabPanel .section:first-child {
+  margin-top: 0;
 }
 
 .sectionHeader {
@@ -175,29 +156,191 @@
   color: var(--sidebar-text-secondary);
 }
 
-.endpointCard,
-.passwordSection {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
+.tableCard {
   padding: 14px;
   background: var(--sidebar-item-bg);
   border: 1px solid var(--sidebar-border);
   border-radius: 16px;
 }
 
-.endpointValue {
-  margin-top: 4px;
+.infoTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.infoTable th,
+.infoTable td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--sidebar-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.infoTable tr:last-child th,
+.infoTable tr:last-child td {
+  border-bottom: none;
+}
+
+.infoTable th {
+  width: 120px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sidebar-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.infoTable td {
   font-size: 14px;
-  font-weight: 600;
   color: var(--text-primary);
+  word-break: break-word;
+}
+
+.transferCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+}
+
+.transferActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.browserCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--sidebar-border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.browserToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.browserButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: none;
+  transform: none;
+}
+
+.browserButton:hover {
+  background: var(--surface-hover);
+}
+
+.browserPath {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--sidebar-item-bg);
+  border: 1px solid var(--sidebar-border);
+  color: var(--text-primary);
+  font-size: 13px;
   word-break: break-all;
 }
 
-.endpointStatus {
+.browserList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.browserEmpty {
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--sidebar-item-bg);
+  border: 1px dashed var(--sidebar-border);
+  color: var(--sidebar-text-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
+.browserEntry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--sidebar-item-bg);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: none;
+  transform: none;
+  color: var(--text-primary);
+}
+
+.browserEntry:hover {
+  background: var(--sidebar-item-hover-bg);
+  border-color: var(--accent-color);
+}
+
+.browserEntry[data-selected="true"] {
+  border-color: var(--accent-color);
+  background: rgba(116, 93, 255, 0.14);
+}
+
+.browserEntryMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.browserEntryIcon {
   flex-shrink: 0;
+  color: var(--primary-color);
+}
+
+.browserEntryName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browserEntryMeta {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--sidebar-text-secondary);
+}
+
+.transferFeedback {
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.transferFeedback[data-tone="success"] {
+  background: rgba(61, 166, 107, 0.14);
+  border: 1px solid rgba(61, 166, 107, 0.28);
+  color: var(--success-color);
+}
+
+.transferFeedback[data-tone="error"] {
+  background: rgba(217, 108, 108, 0.12);
+  border: 1px solid rgba(217, 108, 108, 0.28);
+  color: var(--danger-color);
+}
+
+.endpointStatus {
+  display: inline-flex;
+  align-items: center;
   padding: 5px 10px;
   border-radius: 999px;
   font-size: 12px;
@@ -262,25 +405,6 @@
   color: var(--danger-color);
 }
 
-.passwordSection {
-  align-items: flex-start;
-  flex-direction: column;
-}
-
-.passwordLabel {
-  font-size: 12px;
-  color: var(--sidebar-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.passwordValue {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--sidebar-text);
-  font-family: monospace;
-}
-
 .placeholder {
   display: flex;
   flex-direction: column;
@@ -321,8 +445,22 @@
   color: white;
 }
 
-@media (min-width: 980px) {
-  .detailsGrid {
-    grid-template-columns: 1fr 1fr;
+@media (max-width: 680px) {
+  .infoTable th,
+  .infoTable td {
+    display: block;
+    width: 100%;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .infoTable th {
+    padding-bottom: 4px;
+    border-bottom: none;
+  }
+
+  .infoTable td {
+    padding-top: 0;
+    padding-bottom: 12px;
   }
 }

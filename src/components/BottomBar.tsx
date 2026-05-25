@@ -4,20 +4,25 @@ import {
   TbLayoutSidebarLeftCollapse,
   TbLayoutSidebarRightCollapse,
 } from "react-icons/tb";
+import { FaExchangeAlt } from "react-icons/fa";
 import styles from "./BottomBar.module.css";
 
 interface BottomBarProps {
   isLeftSidebarOpen: boolean;
   isRightSidebarOpen: boolean;
+  isTransferTrayOpen: boolean;
   toggleLeftSidebar: () => void;
   toggleRightSidebar: () => void;
+  toggleTransferTray: () => void;
 }
 
 export const BottomBar: React.FC<BottomBarProps> = ({
   isLeftSidebarOpen,
   isRightSidebarOpen,
+  isTransferTrayOpen,
   toggleLeftSidebar,
   toggleRightSidebar,
+  toggleTransferTray,
 }) => {
   return (
     <div className={styles.bottomBar}>
@@ -36,6 +41,14 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         title="Toggle Details Panel"
       >
         <TbLayoutSidebarRightCollapse size={16} />
+      </button>
+      <button
+        className={styles.toggleButton}
+        onClick={toggleTransferTray}
+        data-active={isTransferTrayOpen}
+        title="Toggle File Transfer"
+      >
+        <FaExchangeAlt size={14} />
       </button>
     </div>
   );

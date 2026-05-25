@@ -58,6 +58,8 @@ const formatMemory = (usedMb: number, totalMb: number) => {
   return `${usedGb.toFixed(1)} / ${totalGb.toFixed(1)} GB`;
 };
 
+const formatProcessMemory = (value: number) => `${value.toFixed(1)}%`;
+
 const formatTime = (timestamp: number) =>
   new Date(timestamp).toLocaleTimeString("zh-CN", {
     hour: "2-digit",
@@ -202,42 +204,40 @@ const ServerMonitoringPanel: React.FC<ServerMonitoringPanelProps> = ({ server })
         <span>{latestSample ? `最近更新 ${formatTime(latestSample.collectedAt)}` : "正在采样"}</span>
       </div>
 
-      <div className={styles.summaryGrid}>
-        <div className={styles.summaryCard}>
-          <div className={styles.summaryLabel}>CPU 占用</div>
-          <div className={styles.summaryValue}>{latestSample ? formatPercent(latestSample.cpuUsage) : "--"}</div>
-          <div className={styles.progressTrack}>
-            <div
-              className={styles.progressFill}
-              style={{ width: `${Math.max(0, Math.min(100, latestSample?.cpuUsage ?? 0))}%` }}
-            />
-          </div>
-        </div>
-
-        <div className={styles.summaryCard}>
-          <div className={styles.summaryLabel}>内存占用</div>
-          <div className={styles.summaryValue}>{latestSample ? formatPercent(latestSample.memoryUsage) : "--"}</div>
-          <div className={styles.summaryMeta}>
-            {latestSample ? formatMemory(latestSample.memoryUsedMb, latestSample.memoryTotalMb) : "等待首个样本"}
-          </div>
-        </div>
-
-        <div className={styles.summaryCard}>
-          <div className={styles.summaryLabel}>GPU 占用</div>
-          <div className={styles.summaryValue}>
-            {latestSample?.gpu ? formatPercent(latestSample.gpu.usage) : latestSample ? "N/A" : "--"}
-          </div>
-          <div className={styles.summaryMeta}>
-            {latestSample?.gpu
-              ? `${latestSample.gpu.name} · ${formatMemory(
-                  latestSample.gpu.memoryUsedMb,
-                  latestSample.gpu.memoryTotalMb
-                )}`
-              : latestSample?.gpuStatus === "idle"
-                ? "已检测到 GPU，但当前未返回使用率"
-                : "未检测到可用 GPU"}
-          </div>
-        </div>
+      <div className={styles.tableCard}>
+        <table className={styles.infoTable}>
+          <tbody>
+            <tr>
+              <th>CPU 占用</th>
+              <td>{latestSample ? formatPercent(latestSample.cpuUsage) : "--"}</td>
+            </tr>
+            <tr>
+              <th>内存占用</th>
+              <td>{latestSample ? formatPercent(latestSample.memoryUsage) : "--"}</td>
+            </tr>
+            <tr>
+              <th>内存使用</th>
+              <td>{latestSample ? formatMemory(latestSample.memoryUsedMb, latestSample.memoryTotalMb) : "等待首个样本"}</td>
+            </tr>
+            <tr>
+              <th>GPU 占用</th>
+              <td>{latestSample?.gpu ? formatPercent(latestSample.gpu.usage) : latestSample ? "N/A" : "--"}</td>
+            </tr>
+            <tr>
+              <th>GPU 信息</th>
+              <td>
+                {latestSample?.gpu
+                  ? `${latestSample.gpu.name} · ${formatMemory(
+                      latestSample.gpu.memoryUsedMb,
+                      latestSample.gpu.memoryTotalMb
+                    )}`
+                  : latestSample?.gpuStatus === "idle"
+                    ? "已检测到 GPU，但当前未返回使用率"
+                    : "未检测到可用 GPU"}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       {error && <div className={styles.errorBanner}>{error}</div>}
@@ -295,19 +295,27 @@ const ServerMonitoringPanel: React.FC<ServerMonitoringPanelProps> = ({ server })
           <span>按 CPU 排序</span>
         </div>
         {latestSample?.topProcesses?.length ? (
-          <div className={styles.processList}>
-            {latestSample.topProcesses.map((process, index) => (
-              <div key={`${process.pid}-${process.command}-${index}`} className={styles.processRow}>
-                <div className={styles.processMeta}>
-                  <strong>{process.command}</strong>
-                  <span>PID {process.pid}</span>
-                </div>
-                <div className={styles.processStats}>
-                  <span>CPU {formatPercent(process.cpuUsage)}</span>
-                  <span>MEM {formatPercent(process.memoryUsage)}</span>
-                </div>
-              </div>
-            ))}
+          <div className={styles.tableWrap}>
+            <table className={styles.processTable}>
+              <thead>
+                <tr>
+                  <th>进程</th>
+                  <th>PID</th>
+                  <th>CPU</th>
+                  <th>内存</th>
+                </tr>
+              </thead>
+              <tbody>
+                {latestSample.topProcesses.map((process, index) => (
+                  <tr key={`${process.pid}-${process.command}-${index}`}>
+                    <td>{process.command}</td>
+                    <td>{process.pid}</td>
+                    <td>{formatPercent(process.cpuUsage)}</td>
+                    <td>{formatProcessMemory(process.memoryUsage)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className={styles.emptyState}>还没有进程数据，通常在首个样本返回后显示。</div>

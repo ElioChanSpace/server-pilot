@@ -1,6 +1,6 @@
 import React from 'react';
 import { Server } from '../context/ServerContext';
-import { FaDatabase, FaFolder, FaNetworkWired, FaPlug, FaServer, FaShieldAlt, FaUnlink, FaUser } from 'react-icons/fa';
+import { FaPlug, FaServer, FaUnlink } from 'react-icons/fa';
 import { useServer } from '../context/ServerContext';
 import ServerMonitoringPanel from './ServerMonitoringPanel';
 import styles from './ServerDetails.module.css';
@@ -13,6 +13,8 @@ interface ServerDetailsProps {
   onDismissError: () => void;
 }
 
+type ServerDetailsTab = 'overview' | 'monitoring';
+
 const ServerDetails: React.FC<ServerDetailsProps> = ({
   server,
   onConnectServer,
@@ -21,11 +23,19 @@ const ServerDetails: React.FC<ServerDetailsProps> = ({
   onDismissError,
 }) => {
   const { categories } = useServer();
+  const [activeTab, setActiveTab] = React.useState<ServerDetailsTab>('overview');
   const category = categories.find(item => item.id === server.categoryId);
   const isConnected = server.status === 'connected';
   const isConnecting = server.status === 'connecting';
+  const isLinux = server.osType === 'linux';
   const primaryActionLabel = isConnected ? '打开终端' : isConnecting ? '查看连接中' : '连接服务器';
   const statusText = isConnected ? '已连接，可直接进入终端操作。' : isConnecting ? '连接正在建立，请稍候。' : '当前未连接，适合先检查主机和账号信息。';
+  const protocolLabel = isLinux ? 'SSH' : 'Remote Desktop';
+  const credentialStatus = server.password ? '已保存密码' : '未保存密码';
+
+  React.useEffect(() => {
+    setActiveTab('overview');
+  }, [server.id]);
 
   return (
     <div className={styles.container}>
@@ -71,94 +81,123 @@ const ServerDetails: React.FC<ServerDetailsProps> = ({
         </div>
       )}
 
-      <div className={styles.detailsGrid}>
-        <div className={styles.detailItem}>
-          <FaNetworkWired className={styles.detailIcon} />
-          <div>
-            <div className={styles.detailLabel}>访问地址</div>
-            <div className={styles.detailValue}>{server.host}</div>
-            <div className={styles.detailHint}>主机地址或域名</div>
-          </div>
-        </div>
+      <div className={styles.tabBar} role="tablist" aria-label="服务器功能标签">
+        <button
+          type="button"
+          className={styles.tabButton}
+          data-active={activeTab === 'overview'}
+          onClick={() => setActiveTab('overview')}
+        >
+          概览
+        </button>
+        <button
+          type="button"
+          className={styles.tabButton}
+          data-active={activeTab === 'monitoring'}
+          onClick={() => setActiveTab('monitoring')}
+        >
+          监控
+        </button>
+      </div>
 
-        <div className={styles.detailItem}>
-          <FaNetworkWired className={styles.detailIcon} />
-          <div>
-            <div className={styles.detailLabel}>连接端口</div>
-            <div className={styles.detailValue}>{server.port}</div>
-            <div className={styles.detailHint}>{server.osType === 'windows' ? '默认远程桌面端口' : '默认 SSH 端口'}</div>
-          </div>
-        </div>
-
-        <div className={styles.detailItem}>
-          <FaUser className={styles.detailIcon} />
-          <div>
-            <div className={styles.detailLabel}>登录账号</div>
-            <div className={styles.detailValue}>{server.username}</div>
-            <div className={styles.detailHint}>终端连接默认使用此账号</div>
-          </div>
-        </div>
-
-        <div className={styles.detailItem}>
-          <FaDatabase className={styles.detailIcon} />
-          <div>
-            <div className={styles.detailLabel}>系统类型</div>
-            <div className={styles.detailValue}>
-              {server.osType === 'linux' ? 'Linux' : 'Windows'}
+      <div className={styles.tabPanel}>
+        {activeTab === 'overview' && (
+          <>
+            <div className={styles.section}>
+              <div className={styles.sectionHeader}>
+                <h3>基础信息</h3>
+                <span className={styles.sectionMeta}>Overview</span>
+              </div>
+              <div className={styles.tableCard}>
+                <table className={styles.infoTable}>
+                  <tbody>
+                    <tr>
+                      <th>服务器名称</th>
+                      <td>{server.name}</td>
+                    </tr>
+                    <tr>
+                      <th>所属分组</th>
+                      <td>{category?.name ?? '未分类'}</td>
+                    </tr>
+                    <tr>
+                      <th>系统类型</th>
+                      <td>{isLinux ? 'Linux' : 'Windows'}</td>
+                    </tr>
+                    <tr>
+                      <th>状态说明</th>
+                      <td>{statusText}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div className={styles.detailHint}>{server.osType === 'linux' ? '偏向命令行维护' : '偏向图形化远程管理'}</div>
-          </div>
-        </div>
 
-        <div className={styles.detailItem}>
-          <FaFolder className={styles.detailIcon} />
-          <div>
-            <div className={styles.detailLabel}>所属分组</div>
-            <div className={styles.detailValue}>{category?.name ?? '未分类'}</div>
-            <div className={styles.detailHint}>用于树结构整理和批量查看</div>
-          </div>
-        </div>
+            <div className={styles.section}>
+              <div className={styles.sectionHeader}>
+                <h3>连接信息</h3>
+                <span className={styles.sectionMeta}>{protocolLabel}</span>
+              </div>
+              <div className={styles.tableCard}>
+                <table className={styles.infoTable}>
+                  <tbody>
+                    <tr>
+                      <th>访问地址</th>
+                      <td>{server.host}</td>
+                    </tr>
+                    <tr>
+                      <th>连接端口</th>
+                      <td>{server.port}</td>
+                    </tr>
+                    <tr>
+                      <th>登录账号</th>
+                      <td>{server.username}</td>
+                    </tr>
+                    <tr>
+                      <th>连接协议</th>
+                      <td>{protocolLabel}</td>
+                    </tr>
+                    <tr>
+                      <th>Endpoint</th>
+                      <td>{server.username}@{server.host}:{server.port}</td>
+                    </tr>
+                    <tr>
+                      <th>连接状态</th>
+                      <td>
+                        <span className={styles.endpointStatus} data-status={server.status}>
+                          {server.status}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
-        <div className={styles.detailItem}>
-          <FaShieldAlt className={styles.detailIcon} />
-          <div>
-            <div className={styles.detailLabel}>凭据状态</div>
-            <div className={styles.detailValue}>{server.password ? '已保存密码' : '未保存密码'}</div>
-            <div className={styles.detailHint}>{server.password ? '连接时可直接复用' : '建议补充凭据避免重复输入'}</div>
-          </div>
-        </div>
+            <div className={styles.section}>
+              <div className={styles.sectionHeader}>
+                <h3>凭据与传输</h3>
+                <span className={styles.sectionMeta}>Access</span>
+              </div>
+              <div className={styles.tableCard}>
+                <table className={styles.infoTable}>
+                  <tbody>
+                    <tr>
+                      <th>凭据状态</th>
+                      <td>{credentialStatus}</td>
+                    </tr>
+                    <tr>
+                      <th>密码展示</th>
+                      <td>{server.password ? '••••••••' : '未保存'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'monitoring' && <ServerMonitoringPanel server={server} />}
       </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h3>连接摘要</h3>
-          <span className={styles.sectionMeta}>{server.osType === 'linux' ? 'SSH' : 'Remote Desktop'}</span>
-        </div>
-        <div className={styles.endpointCard}>
-          <div>
-            <div className={styles.detailLabel}>Endpoint</div>
-            <div className={styles.endpointValue}>{server.username}@{server.host}:{server.port}</div>
-          </div>
-          <div className={styles.endpointStatus} data-status={server.status}>
-            {server.status}
-          </div>
-        </div>
-      </div>
-
-      <ServerMonitoringPanel server={server} />
-
-      {server.password && (
-        <div className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h3>安全信息</h3>
-            <span className={styles.sectionMeta}>已隐藏</span>
-          </div>
-          <div className={styles.passwordSection}>
-            <div className={styles.passwordLabel}>密码占位</div>
-            <div className={styles.passwordValue}>••••••••</div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
