@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useServer, Server, Category } from '../context/ServerContext';
-import { FaChevronDown, FaChevronRight, FaFolder, FaFolderOpen, FaPlus, FaPlug, FaUnlink } from 'react-icons/fa';
+import { useServer, Server, Category, OsType } from '../context/ServerContext';
+import { FaChevronDown, FaChevronRight, FaFolder, FaFolderOpen, FaLinux, FaPlus, FaPlug, FaUnlink, FaWindows } from 'react-icons/fa';
 import treeStyles from './TreeView.module.css';
 import sidebarStyles from './LeftSidebar.module.css';
 
@@ -15,14 +15,21 @@ const getStatusColor = (status: string) => {
   }
 };
 
+const getServerIcon = (osType: OsType) => (
+  osType === OsType.Windows
+    ? <FaWindows className={treeStyles.serverOsIcon} title="Windows" />
+    : <FaLinux className={treeStyles.serverOsIcon} title="Linux" />
+);
+
 const ServerNode: React.FC<{
   server: Server;
+  depth: number;
   activeServer: Server | null;
   onSelectServer: (server: Server) => void;
   onConnectServer: (server: Server) => void;
   onDisconnectServer: (server: Server) => void;
   onServerContextMenu?: (event: React.MouseEvent, server: Server) => void;
-}> = ({ server, activeServer, onSelectServer, onConnectServer, onDisconnectServer, onServerContextMenu }) => {
+}> = ({ server, depth, activeServer, onSelectServer, onConnectServer, onDisconnectServer, onServerContextMenu }) => {
   const handleActionClick = (event: React.MouseEvent) => {
     event.stopPropagation();
     if (server.status === 'connected' || server.status === 'connecting') {
@@ -36,6 +43,7 @@ const ServerNode: React.FC<{
     <div
       className={treeStyles.serverItem}
       data-active={activeServer?.id === server.id}
+      style={{ paddingLeft: `${24 + depth * 20}px` }}
       onClick={() => onSelectServer(server)}
       onDoubleClick={() => onConnectServer(server)}
       onContextMenu={(e) => {
@@ -47,6 +55,7 @@ const ServerNode: React.FC<{
       }}
     >
       <div className={treeStyles.statusDot} style={{ backgroundColor: getStatusColor(server.status) }} />
+      {getServerIcon(server.osType)}
       <div className={treeStyles.nodeBody}>
         <span className={treeStyles.nodeTitle}>{server.name}</span>
         <span className={treeStyles.nodeMeta}>
@@ -82,7 +91,8 @@ const CategoryNode: React.FC<{
   activeServer: Server | null;
   activeCategory: Category | null;
   categoryServerCounts: Map<string, number>;
-}> = ({ category, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory, categoryServerCounts }) => {
+  depth: number;
+}> = ({ category, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory, categoryServerCounts, depth }) => {
   const isExpanded = expandedCategories.has(category.id);
   const childCategories = allCategories.filter(c => c.parentId === category.id);
   const childServers = allServers.filter(s => s.categoryId === category.id);
@@ -93,6 +103,7 @@ const CategoryNode: React.FC<{
     <div className={treeStyles.treeNode}>
       <div
         className={treeStyles.header}
+        style={{ paddingLeft: `${depth * 20}px` }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onCategoryContextMenu(e, category); }}
         data-active={activeCategory?.id === category.id}
       >
@@ -153,12 +164,13 @@ const CategoryNode: React.FC<{
       {isExpanded && (
         <div>
           {childCategories.map(child => (
-            <CategoryNode key={child.id} {...{ category: child, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory, categoryServerCounts }} />
+            <CategoryNode key={child.id} {...{ category: child, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory, categoryServerCounts, depth: depth + 1 }} />
           ))}
           {childServers.map(server => (
             <ServerNode
               key={server.id}
               server={server}
+              depth={depth + 1}
               activeServer={activeServer}
               onSelectServer={onSelectServer}
               onConnectServer={onConnectServer}
@@ -232,7 +244,7 @@ export const LeftSidebar: React.FC<{
   return (
     <div className={sidebarStyles.leftSidebar} data-closed={!isOpen}>
       {rootCategories.map(category => (
-        <CategoryNode key={category.id} {...{ category, allCategories: categories, allServers: servers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory, categoryServerCounts }} />
+        <CategoryNode key={category.id} {...{ category, allCategories: categories, allServers: servers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory, categoryServerCounts, depth: 0 }} />
       ))}
       
       <div className={treeStyles.treeNode}>
@@ -290,6 +302,7 @@ export const LeftSidebar: React.FC<{
           <ServerNode
             key={server.id}
             server={server}
+            depth={1}
             activeServer={activeServer}
             onSelectServer={onSelectServer}
             onConnectServer={onConnectServer}
