@@ -3,7 +3,6 @@ import { CategoryDashboard } from "./CategoryDashboard";
 import { Settings } from "./Settings";
 import { ConsoleView } from "./ConsoleView";
 import { TabBar } from "./TabBar";
-import LogViewer from "./LogViewer";
 
 interface MainContentProps {
   activeView: "dashboard" | "settings" | "logs";
@@ -14,7 +13,6 @@ interface MainContentProps {
   terminalOutputs: Record<string, { chunks: string[]; resetToken: number }>;
   onSelectSession: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
-  onCloseLogs: () => void;
 
   connectionError: string | null;
   onDismissError: () => void;
@@ -28,14 +26,12 @@ export const MainContent: React.FC<MainContentProps> = ({
   terminalOutputs,
   onSelectSession,
   onCloseSession,
-  onCloseLogs,
 }) => {
   const { servers, categories } = useServer();
 
   // 这个组件不再需要处理事件或 refs，大大简化了
 
   if (activeView === "settings") return <Settings />;
-  if (activeView === "logs") return <LogViewer onClose={onCloseLogs} />;
 
   const hasActiveSessions = sessions.length > 0 && currentSessionId;
 

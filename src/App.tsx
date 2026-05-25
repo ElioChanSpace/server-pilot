@@ -8,6 +8,7 @@ import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
 import { FileTransferTray } from "./components/FileTransferTray";
 import { MainContent } from "./components/MainContent";
+import LogViewer from "./components/LogViewer";
 import { ContextMenu, ContextMenuAction } from "./components/ContextMenu";
 import { FaEdit, FaPlus, FaFolderPlus, FaMoon, FaPlug, FaSun, FaUnlink } from 'react-icons/fa';
 import "./App.css";
@@ -112,12 +113,12 @@ const AppContent: React.FC = () => {
   
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
+  const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
   const [activeServer, setActiveServer] = useState<Server | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [isUncategorizedSelected, setIsUncategorizedSelected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"dashboard" | "settings" | "logs">("dashboard");
-  const lastNonLogViewRef = useRef<"dashboard" | "settings">("dashboard");
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [initialCategoryId, setInitialCategoryId] = useState<string | undefined>(undefined);
@@ -136,12 +137,6 @@ const AppContent: React.FC = () => {
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
-
-  useEffect(() => {
-    if (activeView !== "logs") {
-      lastNonLogViewRef.current = activeView;
-    }
-  }, [activeView]);
 
   const appendTerminalChunk = (serverId: string, chunk: string) => {
     setTerminalOutputs(prev => ({
@@ -384,7 +379,7 @@ const AppContent: React.FC = () => {
       <MenuBar 
         onNewCategory={() => { setInitialParentId(undefined); setIsCategoryModalOpen(true); }}
         onNewServer={() => { setEditingServer(undefined); setInitialCategoryId(undefined); setIsServerModalOpen(true); }}
-        onViewLogs={() => setActiveView("logs")}
+        onViewLogs={() => setIsLogViewerOpen(true)}
         theme={theme}
         onToggleTheme={() => setTheme(prev => (prev === "dark" ? "light" : "dark"))}
       />
@@ -403,28 +398,34 @@ const AppContent: React.FC = () => {
           onDisconnectServer={handleDisconnectServer}
           onServerContextMenu={handleServerContextMenu} // <-- 传递新的处理函数
         />
-        <MainContent 
-          activeView={activeView} 
-          activeCategory={activeCategory} 
-          sessions={sessions}
-          currentSessionId={currentSessionId}
-          terminalOutputs={terminalOutputs}
-          onSelectSession={handleSelectSession}
-          onCloseSession={handleCloseSession}
-          onCloseLogs={() => setActiveView(lastNonLogViewRef.current)}
-          connectionError={connectionError}
-          onDismissError={() => setConnectionError(null)}
-        />
-        <RightSidebar
-          isOpen={activeView !== "logs" && isRightSidebarOpen}
-          activeServer={activeServer}
-          activeCategory={activeCategory}
-          isUncategorizedSelected={isUncategorizedSelected}
-          connectionError={connectionError}
-          onConnectServer={handleConnectServer}
-          onDisconnectServer={handleDisconnectServer}
-          onDismissError={() => setConnectionError(null)}
-        />
+        <div className="workspace-shell">
+          <MainContent 
+            activeView={activeView} 
+            activeCategory={activeCategory} 
+            sessions={sessions}
+            currentSessionId={currentSessionId}
+            terminalOutputs={terminalOutputs}
+            onSelectSession={handleSelectSession}
+            onCloseSession={handleCloseSession}
+            connectionError={connectionError}
+            onDismissError={() => setConnectionError(null)}
+          />
+          <RightSidebar
+            isOpen={!isLogViewerOpen && isRightSidebarOpen}
+            activeServer={activeServer}
+            activeCategory={activeCategory}
+            isUncategorizedSelected={isUncategorizedSelected}
+            connectionError={connectionError}
+            onConnectServer={handleConnectServer}
+            onDisconnectServer={handleDisconnectServer}
+            onDismissError={() => setConnectionError(null)}
+          />
+          {isLogViewerOpen && (
+            <div className="log-viewer-overlay">
+              <LogViewer onClose={() => setIsLogViewerOpen(false)} />
+            </div>
+          )}
+        </div>
       </div>
       <FileTransferTray
         isOpen={isTransferTrayOpen}
