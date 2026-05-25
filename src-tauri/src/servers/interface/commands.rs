@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, State, Window};
+use tauri::{AppHandle, Emitter, Manager, State, Window};
 
 const METRICS_OUTPUT_START: &str = "__SERVER_PILOT_METRICS_START__";
 const METRICS_OUTPUT_END: &str = "__SERVER_PILOT_METRICS_END__";
@@ -86,15 +86,15 @@ pub struct AppLogSnapshot {
 
 fn resolve_app_log_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
     let log_dir = app_handle
-        .path_resolver()
+        .path()
         .app_log_dir()
-        .or_else(|| {
+        .or_else(|_| {
             app_handle
-                .path_resolver()
+                .path()
                 .app_local_data_dir()
                 .map(|path| path.join("logs"))
         })
-        .ok_or_else(|| "无法解析应用日志目录".to_string())?;
+        .map_err(|_| "无法解析应用日志目录".to_string())?;
 
     Ok(log_dir.join("app.log"))
 }
@@ -1068,7 +1068,10 @@ pub async fn download_file_from_server(
 }
 
 #[tauri::command]
-pub async fn read_app_logs(app_handle: AppHandle, limit: Option<usize>) -> Result<AppLogSnapshot, String> {
+pub async fn read_app_logs(
+    app_handle: AppHandle,
+    limit: Option<usize>,
+) -> Result<AppLogSnapshot, String> {
     let log_path = resolve_app_log_path(&app_handle)?;
     let max_lines = limit.unwrap_or(500).max(1);
     let content = match fs::read_to_string(&log_path) {

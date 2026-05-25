@@ -23,7 +23,15 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(name: String, host: String, port: u16, username: String, category_id: Option<String>, os_type: OsType, password: Option<String>) -> Self {
+    pub fn new(
+        name: String,
+        host: String,
+        port: u16,
+        username: String,
+        category_id: Option<String>,
+        os_type: OsType,
+        password: Option<String>,
+    ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             name,

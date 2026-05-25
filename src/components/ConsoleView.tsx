@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { Server } from '../context/ServerContext';
 import { XtermTerminal } from './XtermTerminal';
 

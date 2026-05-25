@@ -1,6 +1,6 @@
 import React from "react";
-import { open, save } from "@tauri-apps/api/dialog";
-import { invoke } from "@tauri-apps/api/tauri";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { FaDownload, FaFileAlt, FaFolder, FaRedo, FaUpload } from "react-icons/fa";
 import { Server } from "../context/ServerContext";
 import styles from "./FileTransferTray.module.css";
