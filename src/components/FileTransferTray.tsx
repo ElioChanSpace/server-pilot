@@ -161,12 +161,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const [isLoadingRemoteEntries, setIsLoadingRemoteEntries] = React.useState(false);
   const [directoryCache, setDirectoryCache] = React.useState<Record<string, NormalizedRemoteDirectoryListing>>({});
   const [expandedPaths, setExpandedPaths] = React.useState<string[]>(["/"]);
-  const [previewDirectoryPath, setPreviewDirectoryPath] = React.useState<string | null>(null);
-  const [previewDirectoryEntries, setPreviewDirectoryEntries] = React.useState<RemoteDirectoryEntry[]>([]);
-  const [previewDirectoryError, setPreviewDirectoryError] = React.useState<string | null>(null);
-  const [isLoadingPreviewDirectory, setIsLoadingPreviewDirectory] = React.useState(false);
   const activeDirectoryRequestRef = React.useRef(0);
-  const previewDirectoryRequestRef = React.useRef(0);
 
   const isLinux = server?.osType === "linux";
   const hasSavedPassword = Boolean(server?.password);
@@ -237,7 +232,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
 
   React.useEffect(() => {
     activeDirectoryRequestRef.current += 1;
-    previewDirectoryRequestRef.current += 1;
     setUploadRemotePath("");
     setDownloadRemotePath("");
     setTransferStatus(null);
@@ -250,10 +244,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     setIsLoadingRemoteEntries(false);
     setDirectoryCache({});
     setExpandedPaths([]);
-    setPreviewDirectoryPath(null);
-    setPreviewDirectoryEntries([]);
-    setPreviewDirectoryError(null);
-    setIsLoadingPreviewDirectory(false);
 
     if (server && canTransferFiles && isOpen) {
       void loadRemoteDirectory("");
@@ -268,57 +258,10 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const directoryTree = buildDirectoryTree("/", directoryCache);
 
   const handleSelectDirectory = async (path: string) => {
-    previewDirectoryRequestRef.current += 1;
     setDownloadRemotePath("");
     setTransferError(null);
-    setPreviewDirectoryPath(null);
-    setPreviewDirectoryEntries([]);
-    setPreviewDirectoryError(null);
-    setIsLoadingPreviewDirectory(false);
     setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(path)])));
     await loadRemoteDirectory(path, { activate: true });
-  };
-
-  const handlePreviewDirectory = async (path: string) => {
-    if (!server || !canTransferFiles) {
-      return;
-    }
-
-    const normalizedPath = normalizeRemotePath(path);
-    const requestId = previewDirectoryRequestRef.current + 1;
-    previewDirectoryRequestRef.current = requestId;
-    setPreviewDirectoryPath(normalizedPath);
-    setPreviewDirectoryEntries([]);
-    setPreviewDirectoryError(null);
-    setIsLoadingPreviewDirectory(true);
-    setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(normalizedPath)])));
-
-    try {
-      const listing = await invoke<RemoteDirectoryListing>("list_remote_directory", {
-        id: server.id,
-        path: normalizedPath,
-      });
-
-      if (requestId !== previewDirectoryRequestRef.current) {
-        return;
-      }
-
-      const normalizedListing = normalizeDirectoryListing(listing);
-      setPreviewDirectoryPath(normalizedPath);
-      setPreviewDirectoryEntries(normalizedListing.entries);
-      setDirectoryCache(prev => ({
-        ...prev,
-        [normalizedListing.currentPath]: normalizedListing,
-      }));
-    } catch (error) {
-      if (requestId === previewDirectoryRequestRef.current) {
-        setPreviewDirectoryError(getErrorMessage(error));
-      }
-    } finally {
-      if (requestId === previewDirectoryRequestRef.current) {
-        setIsLoadingPreviewDirectory(false);
-      }
-    }
   };
 
   const toggleDirectoryExpansion = async (path: string) => {
@@ -615,106 +558,47 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
 
           <div className={styles.listPanel}>
             <div className={styles.panelHeader}>当前目录内容</div>
-            <div className={styles.listTables}>
-              <div className={styles.directoryTable}>
-                <div className={styles.tableTitle}>{remoteBrowserPath}</div>
-                {isLoadingRemoteEntries ? (
-                  <div className={styles.browserEmpty}>正在加载远程目录...</div>
-                ) : remoteEntries.length === 0 ? (
-                  <div className={styles.browserEmpty}>当前目录为空。</div>
-                ) : (
-                  <div className={styles.browserList}>
-                    {remoteEntries.map(entry => (
-                      <button
-                        key={entry.path}
-                        type="button"
-                        className={styles.browserEntry}
-                        data-selected={!entry.isDir && downloadRemotePath === entry.path}
-                        data-previewed={entry.isDir && previewDirectoryPath === entry.path}
-                        onClick={() => {
-                          if (entry.isDir) {
-                            void handlePreviewDirectory(entry.path);
-                            return;
-                          }
+            <div className={styles.directoryTable}>
+              <div className={styles.tableTitle}>{remoteBrowserPath}</div>
+              {isLoadingRemoteEntries ? (
+                <div className={styles.browserEmpty}>正在加载远程目录...</div>
+              ) : remoteEntries.length === 0 ? (
+                <div className={styles.browserEmpty}>当前目录为空。</div>
+              ) : (
+                <div className={styles.browserList}>
+                  {remoteEntries.map(entry => (
+                    <button
+                      key={entry.path}
+                      type="button"
+                      className={styles.browserEntry}
+                      data-selected={!entry.isDir && downloadRemotePath === entry.path}
+                      onClick={() => {
+                        if (entry.isDir) {
+                          void handleSelectDirectory(entry.path);
+                          return;
+                        }
 
-                          setDownloadRemotePath(entry.path);
-                          setTransferError(null);
-                        }}
-                        onDoubleClick={() => {
-                          if (entry.isDir) {
-                            void handleSelectDirectory(entry.path);
-                          }
-                        }}
-                        disabled={!canTransferFiles}
-                      >
-                        <div className={styles.browserEntryMain}>
-                          {entry.isDir ? (
-                            <FaFolder className={styles.browserEntryIcon} />
-                          ) : (
-                            <FaFileAlt className={styles.browserEntryIcon} />
-                          )}
-                          <span className={styles.browserEntryName}>{entry.name}</span>
-                        </div>
-                        <span className={styles.browserEntryMeta}>
-                          {entry.isDir ? "目录" : formatFileSize(entry.size)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {previewDirectoryPath && (
-                <div className={styles.directoryTable}>
-                  <div className={styles.tableTitle}>{previewDirectoryPath}</div>
-                  {previewDirectoryError ? (
-                    <div className={styles.browserEmpty}>{previewDirectoryError}</div>
-                  ) : isLoadingPreviewDirectory ? (
-                    <div className={styles.browserEmpty}>正在加载子目录...</div>
-                  ) : previewDirectoryEntries.length === 0 ? (
-                    <div className={styles.browserEmpty}>当前子目录为空。</div>
-                  ) : (
-                    <div className={styles.browserList}>
-                      {previewDirectoryEntries.map(entry => (
-                        <button
-                          key={entry.path}
-                          type="button"
-                          className={styles.browserEntry}
-                          data-selected={!entry.isDir && downloadRemotePath === entry.path}
-                          onClick={() => {
-                            if (entry.isDir) {
-                              void handlePreviewDirectory(entry.path);
-                              return;
-                            }
-
-                            setDownloadRemotePath(entry.path);
-                            setTransferError(null);
-                          }}
-                          onDoubleClick={() => {
-                            if (entry.isDir) {
-                              void handleSelectDirectory(entry.path);
-                            }
-                          }}
-                          disabled={!canTransferFiles}
-                        >
-                          <div className={styles.browserEntryMain}>
-                            {entry.isDir ? (
-                              <FaFolder className={styles.browserEntryIcon} />
-                            ) : (
-                              <FaFileAlt className={styles.browserEntryIcon} />
-                            )}
-                            <span className={styles.browserEntryName}>{entry.name}</span>
-                          </div>
-                          <span className={styles.browserEntryMeta}>
-                            {entry.isDir ? "目录" : formatFileSize(entry.size)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                        setDownloadRemotePath(entry.path);
+                        setTransferError(null);
+                      }}
+                      disabled={!canTransferFiles}
+                    >
+                      <div className={styles.browserEntryMain}>
+                        {entry.isDir ? (
+                          <FaFolder className={styles.browserEntryIcon} />
+                        ) : (
+                          <FaFileAlt className={styles.browserEntryIcon} />
+                        )}
+                        <span className={styles.browserEntryName}>{entry.name}</span>
+                      </div>
+                      <span className={styles.browserEntryMeta}>
+                        {entry.isDir ? "目录" : formatFileSize(entry.size)}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               )}
-              </div>
+            </div>
           </div>
         </div>
       </div>
