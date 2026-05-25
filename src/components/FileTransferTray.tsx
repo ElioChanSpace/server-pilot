@@ -101,7 +101,7 @@ const buildBreadcrumbs = (path: string) => {
 
 const buildDirectoryTree = (
   path: string,
-  cache: Record<string, RemoteDirectoryListing>
+  cache: Record<string, NormalizedRemoteDirectoryListing>
 ): DirectoryTreeNode[] => {
   const listing = cache[path];
   if (!listing) {
@@ -159,7 +159,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const [remoteEntries, setRemoteEntries] = React.useState<RemoteDirectoryEntry[]>([]);
   const [remoteBrowserError, setRemoteBrowserError] = React.useState<string | null>(null);
   const [isLoadingRemoteEntries, setIsLoadingRemoteEntries] = React.useState(false);
-  const [directoryCache, setDirectoryCache] = React.useState<Record<string, RemoteDirectoryListing>>({});
+  const [directoryCache, setDirectoryCache] = React.useState<Record<string, NormalizedRemoteDirectoryListing>>({});
   const [expandedPaths, setExpandedPaths] = React.useState<string[]>(["/"]);
   const [previewDirectoryPath, setPreviewDirectoryPath] = React.useState<string | null>(null);
   const [previewDirectoryEntries, setPreviewDirectoryEntries] = React.useState<RemoteDirectoryEntry[]>([]);
@@ -221,6 +221,10 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
 
       setDirectoryCache(prev => ({
         ...prev,
+        [requestedPath]: {
+          ...normalizedListing,
+          currentPath: requestedPath,
+        },
         [currentPath]: normalizedListing,
       }));
       setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(currentPath)])));
@@ -293,7 +297,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     try {
       const cachedListing = directoryCache[normalizedPath];
       if (cachedListing) {
-        setPreviewDirectoryPath(cachedListing.currentPath);
+        setPreviewDirectoryPath(normalizedPath);
         setPreviewDirectoryEntries(cachedListing.entries);
         setIsLoadingPreviewDirectory(false);
         return;
@@ -309,10 +313,14 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
       }
 
       const normalizedListing = normalizeDirectoryListing(listing);
-      setPreviewDirectoryPath(normalizedListing.currentPath);
+      setPreviewDirectoryPath(normalizedPath);
       setPreviewDirectoryEntries(normalizedListing.entries);
       setDirectoryCache(prev => ({
         ...prev,
+        [normalizedPath]: {
+          ...normalizedListing,
+          currentPath: normalizedPath,
+        },
         [normalizedListing.currentPath]: normalizedListing,
       }));
     } catch (error) {
