@@ -221,10 +221,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
 
       setDirectoryCache(prev => ({
         ...prev,
-        [requestedPath]: {
-          ...normalizedListing,
-          currentPath: requestedPath,
-        },
         [currentPath]: normalizedListing,
       }));
       setExpandedPaths(prev => Array.from(new Set([...prev, ...getAncestorPaths(currentPath)])));
@@ -317,10 +313,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
       setPreviewDirectoryEntries(normalizedListing.entries);
       setDirectoryCache(prev => ({
         ...prev,
-        [normalizedPath]: {
-          ...normalizedListing,
-          currentPath: normalizedPath,
-        },
         [normalizedListing.currentPath]: normalizedListing,
       }));
     } catch (error) {
