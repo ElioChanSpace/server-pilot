@@ -44,7 +44,7 @@
       {
         "fullscreen": false,
         "resizable": true,
-        "title": "服务器领航",
+        "title": "Server Pilot",
         "width": 1200,
         "height": 800,
         "transparent": true,
