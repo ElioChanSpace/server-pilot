@@ -40,13 +40,19 @@ const MenuBar: React.FC<{
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+    const handlePointerOutside = (event: PointerEvent | MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && menuRef.current && !menuRef.current.contains(target)) {
         setOpenMenu(null);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+
+    document.addEventListener('pointerdown', handlePointerOutside, true);
+    document.addEventListener('contextmenu', handlePointerOutside, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerOutside, true);
+      document.removeEventListener('contextmenu', handlePointerOutside, true);
+    };
   }, []);
 
   const handleItemClick = (action: () => void) => {
@@ -117,6 +123,7 @@ const AppContent: React.FC = () => {
   const [initialParentId, setInitialParentId] = useState<string | undefined>(undefined);
   const [editingServer, setEditingServer] = useState<Server | undefined>(undefined);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [terminalOutputs, setTerminalOutputs] = useState<Record<string, TerminalOutputState>>({});
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
@@ -344,10 +351,24 @@ const AppContent: React.FC = () => {
   const closeContextMenu = () => setContextMenu(null);
 
   useEffect(() => {
-    if (contextMenu) {
-      window.addEventListener('click', closeContextMenu);
-      return () => window.removeEventListener('click', closeContextMenu);
+    if (!contextMenu) {
+      return;
     }
+
+    const handlePointerOutside = (event: PointerEvent | MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && contextMenuRef.current?.contains(target)) {
+        return;
+      }
+      closeContextMenu();
+    };
+
+    document.addEventListener('pointerdown', handlePointerOutside, true);
+    document.addEventListener('contextmenu', handlePointerOutside, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerOutside, true);
+      document.removeEventListener('contextmenu', handlePointerOutside, true);
+    };
   }, [contextMenu]);
 
 
@@ -421,7 +442,7 @@ const AppContent: React.FC = () => {
         />
       )}
       {isCategoryModalOpen && <AddCategoryModal onClose={() => setIsCategoryModalOpen(false)} parentId={initialParentId} />}
-      {contextMenu && <ContextMenu {...contextMenu} onClose={closeContextMenu} />}
+      {contextMenu && <ContextMenu {...contextMenu} menuRef={contextMenuRef} onClose={closeContextMenu} />}
     </div>
   );
 }
