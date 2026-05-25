@@ -31,7 +31,7 @@ export const TabBar: React.FC<TabBarProps> = ({ sessions, currentSessionId, onSe
               e.stopPropagation(); // 防止点击关闭按钮时触发标签页的切换事件
               onCloseSession(session.id);
             }}
-            title={`Close ${session.name}`}
+            title={`关闭 ${session.name}`}
           >
             <FaTimes />
           </button>

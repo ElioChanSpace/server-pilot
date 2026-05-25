@@ -10,17 +10,17 @@ export const Dashboard: React.FC = () => {
   return (
     <div className={styles.dashboard}>
       <div className={styles.header}>
-        <h1>Server Dashboard</h1>
+        <h1>服务器总览</h1>
         <div className={styles.stats}>
           <div className={styles.statItem}>
             <FaServer className={styles.statIcon} />
             <span className={styles.statValue}>{servers.length}</span>
-            <span className={styles.statLabel}>Servers</span>
+            <span className={styles.statLabel}>服务器</span>
           </div>
           <div className={styles.statItem}>
             <FaFolder className={styles.statIcon} />
             <span className={styles.statValue}>{categories.length}</span>
-            <span className={styles.statLabel}>Categories</span>
+            <span className={styles.statLabel}>分类</span>
           </div>
         </div>
       </div>

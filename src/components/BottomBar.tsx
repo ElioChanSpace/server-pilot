@@ -30,7 +30,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         className={styles.toggleButton}
         onClick={toggleLeftSidebar}
         data-active={isLeftSidebarOpen}
-        title="Toggle Server List"
+        title="切换服务器列表"
       >
         <TbLayoutSidebarLeftCollapse size={16} />
       </button>
@@ -38,7 +38,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         className={styles.toggleButton}
         onClick={toggleRightSidebar}
         data-active={isRightSidebarOpen}
-        title="Toggle Details Panel"
+        title="切换详情面板"
       >
         <TbLayoutSidebarRightCollapse size={16} />
       </button>
@@ -46,7 +46,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         className={styles.toggleButton}
         onClick={toggleTransferTray}
         data-active={isTransferTrayOpen}
-        title="Toggle File Transfer"
+        title="切换文件传输面板"
       >
         <FaExchangeAlt size={14} />
       </button>

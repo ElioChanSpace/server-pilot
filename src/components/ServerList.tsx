@@ -8,6 +8,19 @@ interface ServerListProps {
   categories: Category[];
 }
 
+const formatServerStatus = (status: string) => {
+  switch (status) {
+    case 'connected':
+      return '已连接';
+    case 'connecting':
+      return '连接中';
+    case 'disconnected':
+      return '未连接';
+    default:
+      return status;
+  }
+};
+
 export const ServerList: React.FC<ServerListProps> = ({ servers, categories }) => {
   const { connectToServer } = useServer();
 
@@ -46,7 +59,7 @@ export const ServerList: React.FC<ServerListProps> = ({ servers, categories }) =
 
       {uncategorizedServers.length > 0 && (
         <div className={styles.categoryGroup}>
-          <h3 className={styles.categoryTitle}>Uncategorized</h3>
+          <h3 className={styles.categoryTitle}>未分类</h3>
           <div className={styles.grid}>
             {uncategorizedServers.map(server => (
               <ServerCard 
@@ -62,7 +75,7 @@ export const ServerList: React.FC<ServerListProps> = ({ servers, categories }) =
       
       {servers.length === 0 && (
         <div className={styles.emptyState}>
-          No servers added yet. Click "New Server" to get started.
+          还没有添加任何服务器，点击“新建服务器”即可开始。
         </div>
       )}
     </div>
@@ -74,7 +87,7 @@ const ServerCard = ({ server, onConnect, statusColor }: { server: Server, onConn
     <div className={styles.cardHeader}>
       <div className={styles.statusIndicator} style={{ color: statusColor }}>
         <FaCircle size={10} />
-        <span>{server.status}</span>
+        <span>{formatServerStatus(server.status)}</span>
       </div>
       <button className={styles.connectBtn} onClick={onConnect} disabled={server.status === 'connected'}>
         <FaTerminal />

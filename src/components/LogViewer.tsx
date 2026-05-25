@@ -9,16 +9,16 @@ const LogViewer: React.FC = () => {
   // 模拟日志数据
   useEffect(() => {
     const mockLogs = [
-      "[INFO] Application started",
-      "[DEBUG] Initializing server connections",
-      "[WARN] Low disk space detected",
-      "[ERROR] Failed to connect to server 192.168.1.100",
-      "[INFO] Server connection established",
-      "[DEBUG] Processing user request",
-      "[INFO] User authentication successful",
-      "[WARN] Memory usage at 85%",
-      "[INFO] Backup completed successfully",
-      "[ERROR] Database connection timeout"
+      "[信息] 应用已启动",
+      "[调试] 正在初始化服务器连接",
+      "[警告] 检测到磁盘空间不足",
+      "[错误] 连接服务器 192.168.1.100 失败",
+      "[信息] 服务器连接已建立",
+      "[调试] 正在处理用户请求",
+      "[信息] 用户认证成功",
+      "[警告] 内存使用率达到 85%",
+      "[信息] 备份已成功完成",
+      "[错误] 数据库连接超时"
     ];
 
     setLogs(mockLogs);
@@ -42,17 +42,17 @@ const LogViewer: React.FC = () => {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h3>Application Logs</h3>
+        <h3>应用日志</h3>
         <div className={styles.controls}>
           <button
             className={styles.toggleBtn}
             onClick={toggleAutoScroll}
             data-active={isAutoScroll}
           >
-            {isAutoScroll ? 'Auto Scroll ON' : 'Auto Scroll OFF'}
+            {isAutoScroll ? '自动滚动：开' : '自动滚动：关'}
           </button>
           <button className={styles.clearBtn} onClick={clearLogs}>
-            Clear Logs
+            清空日志
           </button>
         </div>
       </div>
@@ -72,7 +72,7 @@ const LogViewer: React.FC = () => {
           ))
         ) : (
           <div className={styles.emptyState}>
-            No logs available. Connect to servers to see logs.
+            暂无日志。连接服务器后可在这里查看日志。
           </div>
         )}
       </div>

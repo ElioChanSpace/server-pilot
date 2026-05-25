@@ -54,7 +54,7 @@ const formatFileSize = (size: number) => {
     return "-";
   }
 
-  const units = ["B", "KB", "MB", "GB"];
+  const units = ["字节", "KB", "MB", "GB"];
   let value = size;
   let unitIndex = 0;
 
@@ -346,7 +346,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
             {server ? `${server.name} · ${server.username}@${server.host}:${server.port}` : "未选择服务器"}
           </p>
         </div>
-        <span className={styles.headerTag}>SCP</span>
+        <span className={styles.headerTag}>文件传输</span>
       </div>
 
       <div className={styles.controlBar}>
