@@ -1,0 +1,382 @@
+import React from "react";
+import { open, save } from "@tauri-apps/api/dialog";
+import { invoke } from "@tauri-apps/api/tauri";
+import { FaDownload, FaFileAlt, FaFolder, FaRedo, FaUpload } from "react-icons/fa";
+import { Server } from "../context/ServerContext";
+import styles from "./FileTransferTray.module.css";
+
+interface FileTransferTrayProps {
+  isOpen: boolean;
+  server: Server | null;
+}
+
+interface FileTransferResult {
+  direction: string;
+  localPath: string;
+  remotePath: string;
+  message: string;
+}
+
+interface RemoteDirectoryEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+}
+
+interface RemoteDirectoryListing {
+  currentPath: string;
+  parentPath?: string | null;
+  entries: RemoteDirectoryEntry[];
+}
+
+const getBaseName = (filePath: string) => {
+  const segments = filePath.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? "file";
+};
+
+const joinRemotePath = (basePath: string, name: string) => {
+  if (basePath === "/") {
+    return `/${name}`;
+  }
+
+  return `${basePath.replace(/\/+$/, "")}/${name}`;
+};
+
+const formatFileSize = (size: number) => {
+  if (!Number.isFinite(size) || size <= 0) {
+    return "-";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let value = size;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+};
+
+const getErrorMessage = (error: unknown) => {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "文件传输失败，请稍后重试。";
+};
+
+export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, server }) => {
+  const [uploadRemotePath, setUploadRemotePath] = React.useState("");
+  const [downloadRemotePath, setDownloadRemotePath] = React.useState("");
+  const [transferStatus, setTransferStatus] = React.useState<string | null>(null);
+  const [transferError, setTransferError] = React.useState<string | null>(null);
+  const [activeTransfer, setActiveTransfer] = React.useState<"upload" | "download" | null>(null);
+  const [remoteBrowserPath, setRemoteBrowserPath] = React.useState("/");
+  const [remoteBrowserParentPath, setRemoteBrowserParentPath] = React.useState<string | null>(null);
+  const [remoteEntries, setRemoteEntries] = React.useState<RemoteDirectoryEntry[]>([]);
+  const [remoteBrowserError, setRemoteBrowserError] = React.useState<string | null>(null);
+  const [isLoadingRemoteEntries, setIsLoadingRemoteEntries] = React.useState(false);
+
+  const isLinux = server?.osType === "linux";
+  const hasSavedPassword = Boolean(server?.password);
+  const canTransferFiles = Boolean(server) && isLinux && hasSavedPassword;
+  const transferHint = !server
+    ? "先在左侧或会话区域选中一台服务器，再使用底部文件传输模块。"
+    : !isLinux
+      ? "当前仅支持 Linux 服务器传输文件。"
+      : !hasSavedPassword
+        ? "请先为当前服务器保存 SSH 密码，再执行上传或下载。"
+        : "支持本地与服务器之间的单文件上传、下载，并可按目录层级浏览远程文件。";
+
+  const loadRemoteDirectory = React.useCallback(async (path: string) => {
+    if (!server || !canTransferFiles) {
+      return;
+    }
+
+    setIsLoadingRemoteEntries(true);
+    setRemoteBrowserError(null);
+
+    try {
+      const listing = await invoke<RemoteDirectoryListing>("list_remote_directory", {
+        id: server.id,
+        path,
+      });
+      setRemoteBrowserPath(listing.currentPath);
+      setRemoteBrowserParentPath(listing.parentPath ?? null);
+      setRemoteEntries(listing.entries);
+    } catch (error) {
+      setRemoteBrowserError(getErrorMessage(error));
+    } finally {
+      setIsLoadingRemoteEntries(false);
+    }
+  }, [canTransferFiles, server]);
+
+  React.useEffect(() => {
+    setUploadRemotePath("");
+    setDownloadRemotePath("");
+    setTransferStatus(null);
+    setTransferError(null);
+    setActiveTransfer(null);
+    setRemoteBrowserPath("/");
+    setRemoteBrowserParentPath(null);
+    setRemoteEntries([]);
+    setRemoteBrowserError(null);
+    setIsLoadingRemoteEntries(false);
+
+    if (server && canTransferFiles && isOpen) {
+      void loadRemoteDirectory("/");
+    }
+  }, [canTransferFiles, isOpen, loadRemoteDirectory, server]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  const handleUpload = async () => {
+    if (!server || !canTransferFiles) {
+      setTransferError(transferHint);
+      return;
+    }
+
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      title: "选择要上传的本地文件",
+    });
+
+    if (typeof selected !== "string") {
+      return;
+    }
+
+    const remotePath = uploadRemotePath.trim() || joinRemotePath(remoteBrowserPath || "/tmp", getBaseName(selected));
+    setUploadRemotePath(remotePath);
+    setTransferStatus(null);
+    setTransferError(null);
+    setActiveTransfer("upload");
+
+    try {
+      const result = await invoke<FileTransferResult>("upload_file_to_server", {
+        id: server.id,
+        localPath: selected,
+        remotePath,
+      });
+      setTransferStatus(result.message);
+    } catch (error) {
+      setTransferError(getErrorMessage(error));
+    } finally {
+      setActiveTransfer(null);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!server || !canTransferFiles) {
+      setTransferError(transferHint);
+      return;
+    }
+
+    const remotePath = downloadRemotePath.trim();
+    if (!remotePath) {
+      setTransferError("请先在下方目录中选择远程文件。");
+      return;
+    }
+
+    const selected = await save({
+      title: "选择保存位置",
+      defaultPath: getBaseName(remotePath),
+    });
+
+    if (typeof selected !== "string") {
+      return;
+    }
+
+    setTransferStatus(null);
+    setTransferError(null);
+    setActiveTransfer("download");
+
+    try {
+      const result = await invoke<FileTransferResult>("download_file_from_server", {
+        id: server.id,
+        remotePath,
+        localPath: selected,
+      });
+      setTransferStatus(result.message);
+    } catch (error) {
+      setTransferError(getErrorMessage(error));
+    } finally {
+      setActiveTransfer(null);
+    }
+  };
+
+  return (
+    <div className={styles.tray}>
+      <div className={styles.header}>
+        <div>
+          <h3>文件传输</h3>
+          <p className={styles.headerMeta}>
+            {server ? `${server.name} · ${server.username}@${server.host}:${server.port}` : "未选择服务器"}
+          </p>
+        </div>
+        <span className={styles.headerTag}>SCP</span>
+      </div>
+
+      <div className={styles.tableCard}>
+        <table className={styles.infoTable}>
+          <tbody>
+            <tr>
+              <th>目标服务器</th>
+              <td>{server ? server.name : "未选择"}</td>
+            </tr>
+            <tr>
+              <th>功能说明</th>
+              <td>{transferHint}</td>
+            </tr>
+            <tr>
+              <th>上传目标</th>
+              <td>
+                <input
+                  type="text"
+                  value={uploadRemotePath}
+                  onChange={event => setUploadRemotePath(event.target.value)}
+                  placeholder="留空时自动使用当前目录/文件名"
+                  disabled={!server}
+                />
+              </td>
+            </tr>
+            <tr>
+              <th>已选文件</th>
+              <td>
+                <input
+                  type="text"
+                  value={downloadRemotePath}
+                  readOnly
+                  placeholder="请在下方目录中选择远程文件"
+                  disabled={!server}
+                />
+              </td>
+            </tr>
+            <tr>
+              <th>传输操作</th>
+              <td>
+                <div className={styles.transferActions}>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => {
+                      void handleUpload();
+                    }}
+                    disabled={activeTransfer !== null || !canTransferFiles}
+                  >
+                    <FaUpload />
+                    <span>{activeTransfer === "upload" ? "上传中..." : "上传到当前目录"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => {
+                      void handleDownload();
+                    }}
+                    disabled={activeTransfer !== null || !canTransferFiles}
+                  >
+                    <FaDownload />
+                    <span>{activeTransfer === "download" ? "下载中..." : "下载选中文件"}</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className={styles.browserCard}>
+        <div className={styles.browserToolbar}>
+          <button
+            type="button"
+            className={styles.browserButton}
+            onClick={() => {
+              if (remoteBrowserParentPath) {
+                void loadRemoteDirectory(remoteBrowserParentPath);
+              }
+            }}
+            disabled={!remoteBrowserParentPath || isLoadingRemoteEntries || !canTransferFiles}
+          >
+            返回上级
+          </button>
+          <button
+            type="button"
+            className={styles.browserButton}
+            onClick={() => {
+              void loadRemoteDirectory(remoteBrowserPath);
+            }}
+            disabled={isLoadingRemoteEntries || !canTransferFiles}
+          >
+            <FaRedo />
+            <span>刷新</span>
+          </button>
+        </div>
+
+        <div className={styles.browserPath}>{remoteBrowserPath}</div>
+
+        {remoteBrowserError && (
+          <div className={styles.feedback} data-tone="error">
+            {remoteBrowserError}
+          </div>
+        )}
+
+        <div className={styles.browserList}>
+          {!server ? (
+            <div className={styles.browserEmpty}>请选择一台服务器后再进行文件传输。</div>
+          ) : isLoadingRemoteEntries ? (
+            <div className={styles.browserEmpty}>正在加载远程目录...</div>
+          ) : remoteEntries.length === 0 ? (
+            <div className={styles.browserEmpty}>当前目录为空。</div>
+          ) : (
+            remoteEntries.map(entry => (
+              <button
+                key={entry.path}
+                type="button"
+                className={styles.browserEntry}
+                data-selected={!entry.isDir && downloadRemotePath === entry.path}
+                onClick={() => {
+                  if (entry.isDir) {
+                    void loadRemoteDirectory(entry.path);
+                    return;
+                  }
+
+                  setDownloadRemotePath(entry.path);
+                  setTransferError(null);
+                }}
+                disabled={!canTransferFiles}
+              >
+                <div className={styles.browserEntryMain}>
+                  {entry.isDir ? <FaFolder className={styles.browserEntryIcon} /> : <FaFileAlt className={styles.browserEntryIcon} />}
+                  <span className={styles.browserEntryName}>{entry.name}</span>
+                </div>
+                <span className={styles.browserEntryMeta}>
+                  {entry.isDir ? "目录" : formatFileSize(entry.size)}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      {transferStatus && (
+        <div className={styles.feedback} data-tone="success">
+          {transferStatus}
+        </div>
+      )}
+      {transferError && (
+        <div className={styles.feedback} data-tone="error">
+          {transferError}
+        </div>
+      )}
+    </div>
+  );
+};

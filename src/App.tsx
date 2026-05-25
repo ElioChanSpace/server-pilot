@@ -6,6 +6,7 @@ import { AddCategoryModal } from "./components/AddCategoryModal";
 import { LeftSidebar } from "./components/LeftSidebar";
 import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
+import { FileTransferTray } from "./components/FileTransferTray";
 import { MainContent } from "./components/MainContent";
 import { ContextMenu, ContextMenuAction } from "./components/ContextMenu";
 import { FaEdit, FaPlus, FaFolderPlus, FaMoon, FaPlug, FaSun, FaUnlink } from 'react-icons/fa';
@@ -118,6 +119,7 @@ const AppContent: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [terminalOutputs, setTerminalOutputs] = useState<Record<string, TerminalOutputState>>({});
+  const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
   
   const { connectToServer, disconnectServer, servers } = useServer();
 
@@ -190,6 +192,10 @@ const AppContent: React.FC = () => {
       prev.map(session => servers.find(server => server.id === session.id) ?? session)
     );
   }, [servers]);
+
+  const transferTargetServer = activeServer ?? (currentSessionId
+    ? servers.find(server => server.id === currentSessionId) ?? null
+    : null);
 
   const clearSelection = () => {
     setActiveServer(null);
@@ -378,11 +384,17 @@ const AppContent: React.FC = () => {
           onDismissError={() => setConnectionError(null)}
         />
       </div>
+      <FileTransferTray
+        isOpen={isTransferTrayOpen}
+        server={transferTargetServer}
+      />
       <BottomBar 
         isLeftSidebarOpen={isLeftSidebarOpen}
         isRightSidebarOpen={isRightSidebarOpen}
+        isTransferTrayOpen={isTransferTrayOpen}
         toggleLeftSidebar={() => setIsLeftSidebarOpen(prev => !prev)}
         toggleRightSidebar={() => setIsRightSidebarOpen(prev => !prev)}
+        toggleTransferTray={() => setIsTransferTrayOpen(prev => !prev)}
       />
       {isServerModalOpen && (
         <AddServerModal
