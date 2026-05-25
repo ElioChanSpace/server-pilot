@@ -75,6 +75,23 @@ fn should_auto_fill_ssh_password(output_tail: &str) -> bool {
         || prompt_line.ends_with(" password:")
 }
 
+fn should_mark_session_connected(output_tail: &str) -> bool {
+    let sanitized = strip_ansi_sequences(output_tail);
+    let prompt_line = sanitized
+        .rsplit(|ch| ch == '\n' || ch == '\r')
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+    let normalized = prompt_line.to_ascii_lowercase();
+
+    sanitized.contains("Last login")
+        || (prompt_line.contains('@')
+            && (prompt_line.ends_with('$')
+                || prompt_line.ends_with('#')
+                || prompt_line.ends_with('>')))
+        || normalized.starts_with("welcome to ")
+}
+
 // 启动一个新的会话
 pub fn start_session(
     window: Window,
@@ -120,12 +137,14 @@ pub fn start_session(
     let reader_window = window.clone();
     let reader_server_id = server_id.clone();
     let reader_writer = writer.clone();
+    let reader_app_data = app_state.data.clone();
     let auto_password = password.filter(|password| !password.is_empty());
     tauri::async_runtime::spawn_blocking(move || {
         let mut reader = reader;
         let mut buf = [0u8; 8192];
         let mut password_prompt_buffer = String::new();
         let mut password_sent = false;
+        let mut connected_emitted = false;
         loop {
             match reader.read(&mut buf) {
                 Ok(n) if n > 0 => {
@@ -176,6 +195,41 @@ pub fn start_session(
                                             reader_server_id, err
                                         );
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    if !connected_emitted {
+                        password_prompt_buffer.push_str(&data);
+                        trim_prompt_buffer(&mut password_prompt_buffer);
+
+                        if should_mark_session_connected(&password_prompt_buffer) {
+                            match reader_app_data.lock() {
+                                Ok(mut app_data) => {
+                                    if let Some(server) = app_data
+                                        .servers
+                                        .iter_mut()
+                                        .find(|server| server.id == reader_server_id)
+                                    {
+                                        server.status = "connected".into();
+                                        if let Err(err) = reader_window
+                                            .emit("server-status-changed", server.clone())
+                                        {
+                                            warn!(
+                                                "Failed to emit connected status for {}: {}",
+                                                reader_server_id, err
+                                            );
+                                        } else {
+                                            connected_emitted = true;
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!(
+                                        "Failed to lock app data while marking {} connected: {}",
+                                        reader_server_id, err
+                                    );
                                 }
                             }
                         }
