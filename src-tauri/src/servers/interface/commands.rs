@@ -60,6 +60,22 @@ pub struct FileTransferResult {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileTransferProgressEvent {
+    pub transfer_id: String,
+    pub direction: String,
+    pub local_path: String,
+    pub remote_path: String,
+    pub status: String,
+    pub progress_percent: u8,
+    pub transferred_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+    pub bytes_per_second: Option<f64>,
+    pub eta_seconds: Option<u64>,
+    pub message: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteDirectoryEntry {
@@ -658,12 +674,107 @@ fn run_ssh_command(
     }
 }
 
+fn emit_file_transfer_progress(
+    window: Option<&Window>,
+    transfer_id: Option<&str>,
+    payload: FileTransferProgressEvent,
+) {
+    if window.is_none() || transfer_id.is_none() {
+        return;
+    }
+
+    if let Some(window) = window {
+        let _ = window.emit("file-transfer-progress", payload);
+    }
+}
+
+fn parse_scp_speed(speed: &str) -> Option<f64> {
+    let normalized = speed.trim();
+    let units = [
+        ("GB/s", 1024.0 * 1024.0 * 1024.0),
+        ("MB/s", 1024.0 * 1024.0),
+        ("KB/s", 1024.0),
+        ("B/s", 1.0),
+    ];
+
+    for (suffix, multiplier) in units {
+        if let Some(value) = normalized.strip_suffix(suffix) {
+            let parsed = value.trim().parse::<f64>().ok()?;
+            return Some(parsed * multiplier);
+        }
+    }
+
+    None
+}
+
+fn parse_scp_eta(value: &str) -> Option<u64> {
+    let parts = value
+        .split(':')
+        .map(|segment| segment.trim().parse::<u64>().ok())
+        .collect::<Option<Vec<_>>>()?;
+
+    match parts.as_slice() {
+        [minutes, seconds] => Some(minutes * 60 + seconds),
+        [hours, minutes, seconds] => Some(hours * 3600 + minutes * 60 + seconds),
+        _ => None,
+    }
+}
+
+fn parse_scp_progress(
+    chunk: &str,
+    file_name: &str,
+    total_bytes: Option<u64>,
+) -> Option<(u8, Option<u64>, Option<f64>, Option<u64>)> {
+    for line in chunk.split(['\r', '\n']).rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || !trimmed.contains('%') || !trimmed.contains(file_name) {
+            continue;
+        }
+
+        let tokens = trimmed.split_whitespace().collect::<Vec<_>>();
+        let percent_index = tokens.iter().position(|token| {
+            token.ends_with('%')
+                && token
+                    .trim_end_matches('%')
+                    .chars()
+                    .all(|ch| ch.is_ascii_digit())
+        })?;
+        let progress_percent = tokens[percent_index]
+            .trim_end_matches('%')
+            .parse::<u8>()
+            .ok()?;
+        let transferred_bytes =
+            total_bytes.map(|total| total.saturating_mul(u64::from(progress_percent)) / 100);
+        let bytes_per_second = tokens
+            .get(percent_index + 2)
+            .and_then(|value| parse_scp_speed(value));
+        let eta_seconds = tokens
+            .get(percent_index + 3)
+            .and_then(|value| parse_scp_eta(value));
+
+        return Some((
+            progress_percent,
+            transferred_bytes,
+            bytes_per_second,
+            eta_seconds,
+        ));
+    }
+
+    None
+}
+
 fn run_scp_transfer(
+    window: Option<Window>,
+    transfer_id: Option<String>,
     port: u16,
     password: &str,
     source: &str,
     target: &str,
     action_label: &str,
+    direction: &str,
+    local_path: &str,
+    remote_path: &str,
+    total_bytes: Option<u64>,
 ) -> Result<(), String> {
     let pty_system = NativePtySystem::default();
     let pair = pty_system
@@ -715,7 +826,13 @@ fn run_scp_transfer(
     let mut prompt_buffer = String::new();
     let mut password_sent = false;
     let mut host_key_confirmed = false;
+    let mut last_progress_percent = None;
     let deadline = Instant::now() + FILE_TRANSFER_TIMEOUT;
+    let file_name = Path::new(local_path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(local_path)
+        .to_string();
 
     loop {
         if Instant::now() > deadline {
@@ -733,6 +850,31 @@ fn run_scp_transfer(
                 output.push_str(&text);
                 prompt_buffer.push_str(&text);
                 trim_prompt_buffer(&mut prompt_buffer);
+
+                if let Some((progress_percent, transferred_bytes, bytes_per_second, eta_seconds)) =
+                    parse_scp_progress(&text, &file_name, total_bytes)
+                {
+                    if last_progress_percent != Some(progress_percent) {
+                        last_progress_percent = Some(progress_percent);
+                        emit_file_transfer_progress(
+                            window.as_ref(),
+                            transfer_id.as_deref(),
+                            FileTransferProgressEvent {
+                                transfer_id: transfer_id.clone().unwrap_or_default(),
+                                direction: direction.to_string(),
+                                local_path: local_path.to_string(),
+                                remote_path: remote_path.to_string(),
+                                status: "progress".to_string(),
+                                progress_percent,
+                                transferred_bytes,
+                                total_bytes,
+                                bytes_per_second,
+                                eta_seconds,
+                                message: None,
+                            },
+                        );
+                    }
+                }
 
                 if !host_key_confirmed && should_accept_host_key_prompt(&prompt_buffer) {
                     writer.write_all(b"yes\r").map_err(|err| err.to_string())?;
@@ -931,6 +1073,14 @@ pub fn pty_resize(
 }
 
 #[tauri::command]
+pub fn get_terminal_session_directory(
+    session_manager: State<'_, SessionManagerState>,
+    session_id: String,
+) -> Result<String, String> {
+    session_manager::read_session_current_directory(session_manager, session_id)
+}
+
+#[tauri::command]
 pub fn disconnect_server(
     session_manager: State<'_, SessionManagerState>,
     server_id: String,
@@ -1018,11 +1168,19 @@ pub async fn list_remote_directory(
 
 #[tauri::command]
 pub async fn upload_file_to_server(
+    window: Window,
     state: State<'_, AppState>,
     id: String,
     local_path: String,
     remote_path: String,
+    transfer_id: Option<String>,
 ) -> Result<FileTransferResult, String> {
+    let local_metadata = fs::metadata(&local_path)
+        .map_err(|_| "Local file does not exist".to_string())?;
+    if !local_metadata.is_file() {
+        return Err("Only single file upload is supported".to_string());
+    }
+
     if !Path::new(&local_path).exists() {
         return Err("Local file does not exist".to_string());
     }
@@ -1036,9 +1194,86 @@ pub async fn upload_file_to_server(
     let target = build_remote_scp_argument(&username, &host, &remote_path);
     let local_path_for_result = local_path.clone();
     let remote_path_for_result = remote_path.clone();
+    let transfer_id_for_result = transfer_id.clone();
+    let total_bytes = Some(local_metadata.len());
 
-    tauri::async_runtime::spawn_blocking(move || {
-        run_scp_transfer(port, &password, &local_path, &target, "upload file")?;
+    if let Some(current_transfer_id) = transfer_id.as_deref() {
+        emit_file_transfer_progress(
+            Some(&window),
+            Some(current_transfer_id),
+            FileTransferProgressEvent {
+                transfer_id: current_transfer_id.to_string(),
+                direction: "upload".to_string(),
+                local_path: local_path.clone(),
+                remote_path: remote_path.clone(),
+                status: "preparing".to_string(),
+                progress_percent: 0,
+                transferred_bytes: Some(0),
+                total_bytes,
+                bytes_per_second: None,
+                eta_seconds: None,
+                message: Some("准备上传文件".to_string()),
+            },
+        );
+    }
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<FileTransferResult, String> {
+        let transfer_result = run_scp_transfer(
+            Some(window.clone()),
+            transfer_id.clone(),
+            port,
+            &password,
+            &local_path,
+            &target,
+            "upload file",
+            "upload",
+            &local_path,
+            &remote_path,
+            total_bytes,
+        );
+
+        if let Err(err) = transfer_result {
+            if let Some(current_transfer_id) = transfer_id.as_deref() {
+                emit_file_transfer_progress(
+                    Some(&window),
+                    Some(current_transfer_id),
+                    FileTransferProgressEvent {
+                        transfer_id: current_transfer_id.to_string(),
+                        direction: "upload".to_string(),
+                        local_path: local_path.clone(),
+                        remote_path: remote_path.clone(),
+                        status: "failed".to_string(),
+                        progress_percent: 0,
+                        transferred_bytes: None,
+                        total_bytes,
+                        bytes_per_second: None,
+                        eta_seconds: None,
+                        message: Some(err.clone()),
+                    },
+                );
+            }
+            return Err(err);
+        }
+
+        if let Some(current_transfer_id) = transfer_id_for_result.as_deref() {
+            emit_file_transfer_progress(
+                Some(&window),
+                Some(current_transfer_id),
+                FileTransferProgressEvent {
+                    transfer_id: current_transfer_id.to_string(),
+                    direction: "upload".to_string(),
+                    local_path: local_path_for_result.clone(),
+                    remote_path: remote_path_for_result.clone(),
+                    status: "completed".to_string(),
+                    progress_percent: 100,
+                    transferred_bytes: total_bytes,
+                    total_bytes,
+                    bytes_per_second: None,
+                    eta_seconds: Some(0),
+                    message: Some(format!("已上传到 {}", remote_path_for_result)),
+                },
+            );
+        }
 
         Ok(FileTransferResult {
             direction: "upload".to_string(),
@@ -1074,7 +1309,19 @@ pub async fn download_file_from_server(
     let remote_path_for_result = remote_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        run_scp_transfer(port, &password, &source, &local_path, "download file")?;
+        run_scp_transfer(
+            None,
+            None,
+            port,
+            &password,
+            &source,
+            &local_path,
+            "download file",
+            "download",
+            &local_path,
+            &remote_path,
+            None,
+        )?;
 
         Ok(FileTransferResult {
             direction: "download".to_string(),

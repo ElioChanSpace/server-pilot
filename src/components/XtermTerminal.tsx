@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { FaCopy, FaPaste } from 'react-icons/fa';
@@ -10,6 +11,8 @@ interface XtermTerminalProps {
   resetToken: number;
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
+  isActive: boolean;
+  onFilesDropped: (paths: string[]) => void;
 }
 
 export const XtermTerminal: React.FC<XtermTerminalProps> = ({
@@ -17,6 +20,8 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({
   resetToken,
   onInput,
   onResize,
+  isActive,
+  onFilesDropped,
 }) => {
   const termRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
@@ -24,6 +29,26 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({
   const renderedChunkCountRef = useRef(0);
   const fitFrameRef = useRef<number | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDropTargetActive, setIsDropTargetActive] = useState(false);
+
+  const isPositionInsideTerminal = (x: number, y: number) => {
+    const terminalElement = termRef.current;
+    if (!terminalElement) {
+      return false;
+    }
+
+    const rect = terminalElement.getBoundingClientRect();
+    const scale = window.devicePixelRatio || 1;
+    const normalizedX = x / scale;
+    const normalizedY = y / scale;
+
+    return (
+      normalizedX >= rect.left &&
+      normalizedX <= rect.right &&
+      normalizedY >= rect.top &&
+      normalizedY <= rect.bottom
+    );
+  };
 
   const focusTerminal = () => {
     const terminal = termInstance.current;
@@ -181,6 +206,58 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({
   }, [contextMenuPosition]);
 
   useEffect(() => {
+    if (!isActive) {
+      setIsDropTargetActive(false);
+      return;
+    }
+
+    let mounted = true;
+    let unlisten: (() => void) | null = null;
+
+    void getCurrentWebview().onDragDropEvent((event) => {
+      if (!mounted) {
+        return;
+      }
+
+      if (event.payload.type === 'leave') {
+        setIsDropTargetActive(false);
+        return;
+      }
+
+      const isInsideTerminal = isPositionInsideTerminal(
+        event.payload.position.x,
+        event.payload.position.y,
+      );
+
+      if (event.payload.type === 'enter' || event.payload.type === 'over') {
+        setIsDropTargetActive(isInsideTerminal);
+        return;
+      }
+
+      if (event.payload.type === 'drop') {
+        setIsDropTargetActive(false);
+        if (isInsideTerminal && event.payload.paths.length > 0) {
+          onFilesDropped(event.payload.paths);
+        }
+      }
+    }).then(dispose => {
+      if (!mounted) {
+        dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
+
+    return () => {
+      mounted = false;
+      setIsDropTargetActive(false);
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [isActive, onFilesDropped]);
+
+  useEffect(() => {
     const terminal = termInstance.current;
     if (!terminal) {
       return;
@@ -272,7 +349,13 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({
           event.stopPropagation();
           setContextMenuPosition({ x: event.clientX, y: event.clientY });
         }}
-      />
+      >
+        {isDropTargetActive && (
+          <div className="terminal-drop-overlay">
+            <span>释放以上传到当前终端目录</span>
+          </div>
+        )}
+      </div>
       {contextMenuPosition && (
         <ContextMenu
           x={contextMenuPosition.x}

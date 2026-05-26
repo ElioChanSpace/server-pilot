@@ -3,12 +3,21 @@ use log::{info, warn};
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use std::collections::HashMap;
 use std::io::Write;
+use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, State, Window};
 use uuid::Uuid;
+
+struct PendingCwdRequest {
+    command_text: String,
+    marker_start: String,
+    marker_end: String,
+    buffer: String,
+    responder: mpsc::Sender<Result<String, String>>,
+}
 
 // 代表一个活动的 PTY 会话
 pub struct Session {
@@ -18,6 +27,7 @@ pub struct Session {
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub child_process: Box<dyn portable_pty::Child + Send>,
     pub alive: Arc<AtomicBool>,
+    pending_cwd_request: Option<PendingCwdRequest>,
 }
 
 // SessionManager 的状态
@@ -95,6 +105,83 @@ fn should_mark_session_connected(output_tail: &str) -> bool {
         || normalized.starts_with("welcome to ")
 }
 
+fn process_pending_cwd_output(
+    pending_request: &mut PendingCwdRequest,
+    chunk: &str,
+) -> (String, Option<Result<String, String>>) {
+    pending_request.buffer.push_str(chunk);
+
+    let mut display = String::new();
+
+    loop {
+        if let Some(command_index) = pending_request
+            .buffer
+            .find(&pending_request.command_text)
+        {
+            display.push_str(&pending_request.buffer[..command_index]);
+            let command_end = command_index + pending_request.command_text.len();
+            pending_request.buffer.drain(..command_end);
+            continue;
+        }
+
+        if let Some(start_index) = pending_request
+            .buffer
+            .find(&pending_request.marker_start)
+        {
+            display.push_str(&pending_request.buffer[..start_index]);
+
+            let marker_value_start = start_index + pending_request.marker_start.len();
+            if let Some(end_rel) = pending_request.buffer[marker_value_start..]
+                .find(&pending_request.marker_end)
+            {
+                let marker_value_end = marker_value_start + end_rel;
+                let cwd = pending_request.buffer[marker_value_start..marker_value_end]
+                    .trim()
+                    .to_string();
+                let marker_end = marker_value_end + pending_request.marker_end.len();
+                pending_request.buffer.drain(..marker_end);
+
+                if pending_request.buffer.starts_with("\r\n") {
+                    pending_request.buffer.drain(..2);
+                } else if pending_request.buffer.starts_with('\n')
+                    || pending_request.buffer.starts_with('\r')
+                {
+                    pending_request.buffer.drain(..1);
+                }
+
+                display.push_str(&pending_request.buffer);
+                pending_request.buffer.clear();
+
+                if cwd.is_empty() {
+                    return (
+                        display,
+                        Some(Err("无法读取当前终端目录".to_string())),
+                    );
+                }
+
+                return (display, Some(Ok(cwd)));
+            }
+
+            display.push_str(&pending_request.buffer[..start_index]);
+            pending_request.buffer.drain(..start_index);
+            break;
+        }
+
+        let preserve_tail_len = pending_request
+            .command_text
+            .len()
+            .max(pending_request.marker_start.len().saturating_sub(1))
+            .max(pending_request.marker_end.len().saturating_sub(1));
+        let carry_len = pending_request.buffer.len().min(preserve_tail_len);
+        let split_index = pending_request.buffer.len().saturating_sub(carry_len);
+        display.push_str(&pending_request.buffer[..split_index]);
+        pending_request.buffer.drain(..split_index);
+        break;
+    }
+
+    (display, None)
+}
+
 // 启动一个新的会话
 pub fn start_session(
     window: Window,
@@ -131,6 +218,7 @@ pub fn start_session(
         writer: writer.clone(),
         child_process: child,
         alive: Arc::new(AtomicBool::new(true)),
+        pending_cwd_request: None,
     }));
 
     session_manager_state
@@ -145,6 +233,7 @@ pub fn start_session(
     let reader_session_id = session_id.clone();
     let reader_writer = writer.clone();
     let reader_app_data = app_state.data.clone();
+    let reader_session = session.clone();
     let auto_password = password.filter(|password| !password.is_empty());
     tauri::async_runtime::spawn_blocking(move || {
         let mut reader = reader;
@@ -156,19 +245,6 @@ pub fn start_session(
             match reader.read(&mut buf) {
                 Ok(n) if n > 0 => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    if let Err(err) =
-                        reader_window.emit("pty-data", (reader_session_id.clone(), data.clone()))
-                    {
-                        warn!("Failed to emit PTY data for {}: {}", reader_session_id, err);
-                    }
-                    let event_name = format!("pty-data-{}", reader_session_id);
-                    if let Err(err) = reader_window.emit(&event_name, data.clone()) {
-                        warn!(
-                            "Failed to emit PTY data event for {}: {}",
-                            reader_session_id, err
-                        );
-                    }
-
                     if !password_sent {
                         if let Some(password) = auto_password.as_deref() {
                             password_prompt_buffer.push_str(&data);
@@ -241,8 +317,63 @@ pub fn start_session(
                             }
                         }
                     }
+
+                    let (display_data, cwd_response) = match reader_session.lock() {
+                        Ok(mut session_guard) => {
+                            if let Some(pending_request) = session_guard.pending_cwd_request.as_mut() {
+                                process_pending_cwd_output(pending_request, &data)
+                            } else {
+                                (data.clone(), None)
+                            }
+                        }
+                        Err(err) => {
+                            warn!(
+                                "Failed to lock session {} while processing PTY output: {}",
+                                reader_session_id, err
+                            );
+                            (data.clone(), None)
+                        }
+                    };
+
+                    if let Some(cwd_result) = cwd_response {
+                        match reader_session.lock() {
+                            Ok(mut session_guard) => {
+                                if let Some(pending_request) = session_guard.pending_cwd_request.take()
+                                {
+                                    let _ = pending_request.responder.send(cwd_result);
+                                }
+                            }
+                            Err(err) => {
+                                warn!(
+                                    "Failed to clear cwd request for session {}: {}",
+                                    reader_session_id, err
+                                );
+                            }
+                        }
+                    }
+
+                    if display_data.is_empty() {
+                        continue;
+                    }
+
+                    if let Err(err) = reader_window
+                        .emit("pty-data", (reader_session_id.clone(), display_data.clone()))
+                    {
+                        warn!("Failed to emit PTY data for {}: {}", reader_session_id, err);
+                    }
+                    let event_name = format!("pty-data-{}", reader_session_id);
+                    if let Err(err) = reader_window.emit(&event_name, display_data.clone()) {
+                        warn!(
+                            "Failed to emit PTY data event for {}: {}",
+                            reader_session_id, err
+                        );
+                    }
                 }
-                _ => break,
+                Ok(_) => break,
+                Err(err) => {
+                    warn!("Failed to read PTY output for {}: {}", reader_session_id, err);
+                    break;
+                }
             }
         }
     });
@@ -366,6 +497,69 @@ pub fn write_to_session(
         .write_all(data.as_bytes())
         .map_err(|e| e.to_string())?;
     writer_guard.flush().map_err(|e| e.to_string())
+}
+
+pub fn read_session_current_directory(
+    session_manager_state: State<'_, SessionManagerState>,
+    session_id: String,
+) -> Result<String, String> {
+    let session = session_manager_state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&session_id)
+        .cloned()
+        .ok_or_else(|| format!("No active PTY session for session {}", session_id))?;
+
+    let (command_text, responder_rx, writer) = {
+        let mut session_guard = session.lock().map_err(|e| e.to_string())?;
+        if session_guard.pending_cwd_request.is_some() {
+            return Err("正在读取当前终端目录，请稍后重试".to_string());
+        }
+
+        let request_id = Uuid::new_v4().to_string();
+        let marker_start = format!("__SERVER_PILOT_CWD_START_{}__", request_id);
+        let marker_end = format!("__SERVER_PILOT_CWD_END_{}__", request_id);
+        let command_text = format!(
+            "printf '{}%s{}' \"$PWD\"",
+            marker_start, marker_end
+        );
+        let (responder, receiver) = mpsc::channel();
+        session_guard.pending_cwd_request = Some(PendingCwdRequest {
+            command_text: command_text.clone(),
+            marker_start,
+            marker_end,
+            buffer: String::new(),
+            responder,
+        });
+
+        (command_text, receiver, session_guard.writer.clone())
+    };
+
+    {
+        let mut writer_guard = writer.lock().map_err(|e| e.to_string())?;
+        writer_guard
+            .write_all(command_text.as_bytes())
+            .map_err(|e| e.to_string())?;
+        writer_guard.write_all(b"\r").map_err(|e| e.to_string())?;
+        writer_guard.flush().map_err(|e| e.to_string())?;
+    }
+
+    match responder_rx.recv_timeout(Duration::from_secs(3)) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            if let Ok(mut session_guard) = session.lock() {
+                session_guard.pending_cwd_request = None;
+            }
+            Err("读取当前终端目录超时".to_string())
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            if let Ok(mut session_guard) = session.lock() {
+                session_guard.pending_cwd_request = None;
+            }
+            Err("读取当前终端目录失败".to_string())
+        }
+    }
 }
 
 pub fn resize_session(

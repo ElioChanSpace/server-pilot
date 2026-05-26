@@ -9,8 +9,8 @@ use crate::servers::infrastructure::FileRepository;
 use crate::servers::interface::commands::{
     clear_app_logs, close_terminal_session, connect_server, create_category, create_server,
     disconnect_server, download_file_from_server, fetch_server_metrics, get_categories,
-    get_servers, list_remote_directory, pty_resize, pty_write, read_app_logs, update_server,
-    upload_file_to_server,
+    get_servers, get_terminal_session_directory, list_remote_directory, pty_resize, pty_write,
+    read_app_logs, update_server, upload_file_to_server,
 };
 use log::LevelFilter;
 use log4rs::{
@@ -126,6 +126,7 @@ fn main() {
             get_categories,
             pty_write,
             pty_resize,
+            get_terminal_session_directory,
             disconnect_server,
             close_terminal_session,
             fetch_server_metrics,

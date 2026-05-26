@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaCopy, FaTimes } from 'react-icons/fa';
+import { FaCopy, FaServer, FaTimes, FaWindowClose } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
@@ -12,6 +12,10 @@ interface TabBarProps {
   onSelectSession: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
+  onCloseSessionsToLeft: (sessionId: string) => void;
+  onCloseSessionsToRight: (sessionId: string) => void;
+  onCloseServerSessions: (sessionId: string) => void;
+  onCloseAllSessions: () => void;
 }
 
 interface TabContextMenuState {
@@ -27,6 +31,10 @@ export const TabBar: React.FC<TabBarProps> = ({
   onSelectSession,
   onCloseSession,
   onDuplicateSession,
+  onCloseSessionsToLeft,
+  onCloseSessionsToRight,
+  onCloseServerSessions,
+  onCloseAllSessions,
 }) => {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
@@ -64,15 +72,63 @@ export const TabBar: React.FC<TabBarProps> = ({
     return null; // 如果没有会话，则不渲染任何内容
   }
 
-  const contextMenuActions: ContextMenuAction[] = contextMenu
+  const targetSession = contextMenu
+    ? sessions.find(session => session.id === contextMenu.sessionId) ?? null
+    : null;
+  const targetSessionIndex = targetSession
+    ? sessions.findIndex(session => session.id === targetSession.id)
+    : -1;
+  const hasSessionsOnLeft = targetSessionIndex > 0;
+  const hasSessionsOnRight = targetSessionIndex >= 0 && targetSessionIndex < sessions.length - 1;
+  const currentServerSessionCount = targetSession
+    ? sessions.filter(session => session.serverId === targetSession.serverId).length
+    : 0;
+
+  const contextMenuActions: ContextMenuAction[] = contextMenu && targetSession
     ? [
         {
           label: '复制终端',
           icon: <FaCopy />,
           action: () => {
-            onDuplicateSession(contextMenu.sessionId);
+            onDuplicateSession(targetSession.id);
           },
         },
+        ...(hasSessionsOnLeft
+          ? [{
+              label: '关闭左侧终端',
+              icon: <FaTimes />,
+              action: () => {
+                onCloseSessionsToLeft(targetSession.id);
+              },
+            }]
+          : []),
+        ...(hasSessionsOnRight
+          ? [{
+              label: '关闭右侧终端',
+              icon: <FaTimes />,
+              action: () => {
+                onCloseSessionsToRight(targetSession.id);
+              },
+            }]
+          : []),
+        ...(currentServerSessionCount > 0
+          ? [{
+              label: '关闭当前服务器所有终端',
+              icon: <FaServer />,
+              action: () => {
+                onCloseServerSessions(targetSession.id);
+              },
+            }]
+          : []),
+        ...(sessions.length > 0
+          ? [{
+              label: '关闭所有终端',
+              icon: <FaWindowClose />,
+              action: () => {
+                onCloseAllSessions();
+              },
+            }]
+          : []),
       ]
     : [];
 

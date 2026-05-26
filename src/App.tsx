@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { confirm, message } from "@tauri-apps/plugin-dialog";
 import { ServerProvider, Server, Category, useServer } from "./context/ServerContext";
 import { AddServerModal } from "./components/AddServerModal";
 import { AddCategoryModal } from "./components/AddCategoryModal";
@@ -123,6 +125,159 @@ interface TerminalOutputState {
   resetToken: number;
 }
 
+interface FileTransferProgressEvent {
+  transferId: string;
+  direction: string;
+  localPath: string;
+  remotePath: string;
+  status: "preparing" | "progress" | "completed" | "failed";
+  progressPercent: number;
+  transferredBytes?: number | null;
+  totalBytes?: number | null;
+  bytesPerSecond?: number | null;
+  etaSeconds?: number | null;
+  message?: string | null;
+}
+
+interface UploadProgressOverlayState {
+  transferId: string;
+  sessionId: string;
+  serverName: string;
+  currentDirectory: string;
+  currentFileName: string;
+  currentFileIndex: number;
+  totalFiles: number;
+  status: "preparing" | "uploading" | "completed" | "failed";
+  progressPercent: number;
+  transferredBytes: number | null;
+  totalBytes: number | null;
+  bytesPerSecond: number | null;
+  etaSeconds: number | null;
+  message: string | null;
+}
+
+interface SessionRemovalOptions {
+  preferredNextSessionId?: string | null;
+  anchorSessionId?: string | null;
+}
+
+const reindexSessions = (sessionList: TerminalSession[]) => {
+  const serverSessionCounts = new Map<string, number>();
+
+  return sessionList.map(session => {
+    const nextIndex = (serverSessionCounts.get(session.serverId) ?? 0) + 1;
+    serverSessionCounts.set(session.serverId, nextIndex);
+
+    if (session.terminalIndex === nextIndex) {
+      return session;
+    }
+
+    return {
+      ...session,
+      terminalIndex: nextIndex,
+    };
+  });
+};
+
+const resolveNextSessionId = (
+  previousSessions: TerminalSession[],
+  remainingSessions: TerminalSession[],
+  currentSessionId: string | null,
+  { preferredNextSessionId = null, anchorSessionId = null }: SessionRemovalOptions = {},
+) => {
+  if (preferredNextSessionId && remainingSessions.some(session => session.id === preferredNextSessionId)) {
+    return preferredNextSessionId;
+  }
+
+  if (currentSessionId && remainingSessions.some(session => session.id === currentSessionId)) {
+    return currentSessionId;
+  }
+
+  const anchorId = anchorSessionId ?? currentSessionId;
+  const remainingIds = new Set(remainingSessions.map(session => session.id));
+
+  if (anchorId) {
+    const anchorIndex = previousSessions.findIndex(session => session.id === anchorId);
+
+    if (anchorIndex >= 0) {
+      for (let index = anchorIndex; index < previousSessions.length; index += 1) {
+        const candidateId = previousSessions[index]?.id;
+        if (candidateId && remainingIds.has(candidateId)) {
+          return candidateId;
+        }
+      }
+
+      for (let index = anchorIndex - 1; index >= 0; index -= 1) {
+        const candidateId = previousSessions[index]?.id;
+        if (candidateId && remainingIds.has(candidateId)) {
+          return candidateId;
+        }
+      }
+    }
+  }
+
+  return remainingSessions.length > 0 ? remainingSessions[remainingSessions.length - 1].id : null;
+};
+
+const getBaseName = (filePath: string) => {
+  const segments = filePath.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? filePath;
+};
+
+const joinRemotePath = (basePath: string, name: string) => {
+  if (basePath === "/") {
+    return `/${name}`;
+  }
+
+  return `${basePath.replace(/\/+$/, "")}/${name}`;
+};
+
+const createTransferId = () => `upload-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+const formatBytes = (value: number | null) => {
+  if (!value || value <= 0) {
+    return null;
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let amount = value;
+  let unitIndex = 0;
+
+  while (amount >= 1024 && unitIndex < units.length - 1) {
+    amount /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${amount >= 10 || unitIndex === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[unitIndex]}`;
+};
+
+const formatTransferRate = (bytesPerSecond: number | null) => {
+  const formatted = formatBytes(bytesPerSecond);
+  return formatted ? `${formatted}/s` : null;
+};
+
+const formatEta = (etaSeconds: number | null) => {
+  if (etaSeconds === null || etaSeconds < 0) {
+    return null;
+  }
+
+  const minutes = Math.floor(etaSeconds / 60);
+  const seconds = etaSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
+const getErrorMessage = (error: unknown) => {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "上传失败，请稍后重试。";
+};
+
 const AppContent: React.FC = () => {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -147,6 +302,8 @@ const AppContent: React.FC = () => {
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [terminalOutputs, setTerminalOutputs] = useState<Record<string, TerminalOutputState>>({});
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
+  const [, setSessionCurrentDirectories] = useState<Record<string, string>>({});
+  const [uploadProgressOverlay, setUploadProgressOverlay] = useState<UploadProgressOverlayState | null>(null);
   
   const { connectToServer, disconnectServer, closeTerminalSession, servers } = useServer();
 
@@ -209,10 +366,32 @@ const AppContent: React.FC = () => {
     }));
   };
 
-  const removeTerminalOutput = (sessionId: string) => {
+  const removeTerminalOutputs = (sessionIds: string[]) => {
+    if (sessionIds.length === 0) {
+      return;
+    }
+
+    const removedIds = new Set(sessionIds);
     setTerminalOutputs(prev => {
       const next = { ...prev };
-      delete next[sessionId];
+      removedIds.forEach(sessionId => {
+        delete next[sessionId];
+      });
+      return next;
+    });
+  };
+
+  const removeSessionCurrentDirectories = (sessionIds: string[]) => {
+    if (sessionIds.length === 0) {
+      return;
+    }
+
+    const removedIds = new Set(sessionIds);
+    setSessionCurrentDirectories(prev => {
+      const next = { ...prev };
+      removedIds.forEach(sessionId => {
+        delete next[sessionId];
+      });
       return next;
     });
   };
@@ -227,6 +406,28 @@ const AppContent: React.FC = () => {
         const [sessionId, message] = event.payload;
         appendTerminalChunk(sessionId, `[INFO] ${message}\r\n`);
       }),
+      listen<FileTransferProgressEvent>("file-transfer-progress", (event) => {
+        const payload = event.payload;
+        setUploadProgressOverlay(prev => {
+          if (!prev || prev.transferId !== payload.transferId) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            status:
+              payload.status === "progress"
+                ? "uploading"
+                : payload.status,
+            progressPercent: payload.progressPercent,
+            transferredBytes: payload.transferredBytes ?? prev.transferredBytes,
+            totalBytes: payload.totalBytes ?? prev.totalBytes,
+            bytesPerSecond: payload.bytesPerSecond ?? null,
+            etaSeconds: payload.etaSeconds ?? null,
+            message: payload.message ?? prev.message,
+          };
+        });
+      }),
     ];
 
     return () => {
@@ -235,6 +436,23 @@ const AppContent: React.FC = () => {
       });
     };
   }, []);
+
+  useEffect(() => {
+    if (!uploadProgressOverlay || (uploadProgressOverlay.status !== "completed" && uploadProgressOverlay.status !== "failed")) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setUploadProgressOverlay(current => {
+        if (!current || current.transferId !== uploadProgressOverlay.transferId) {
+          return current;
+        }
+        return null;
+      });
+    }, 3200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [uploadProgressOverlay]);
 
   useEffect(() => {
     setActiveServer(prev => {
@@ -274,14 +492,14 @@ const AppContent: React.FC = () => {
 
     try {
       const result = await connectToServer(server.id);
-      setSessions(prev => [
+      setSessions(prev => reindexSessions([
         ...prev,
         {
           id: result.sessionId,
           serverId: server.id,
-          terminalIndex: prev.filter(session => session.serverId === server.id).length + 1,
+          terminalIndex: 0,
         },
-      ]);
+      ]));
       setCurrentSessionId(result.sessionId);
       resetTerminalOutput(result.sessionId, [`[信息] 正在连接 ${server.username}@${server.host}:${server.port} ...\r\n`]);
     } catch (err) {
@@ -290,25 +508,41 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const applySessionRemoval = (sessionIds: string[], options: SessionRemovalOptions = {}) => {
+    if (sessionIds.length === 0) {
+      return;
+    }
+
+    const removedIds = new Set(sessionIds);
+    setSessions(prev => {
+      const remainingSessions = reindexSessions(prev.filter(session => !removedIds.has(session.id)));
+      const nextSessionId = resolveNextSessionId(prev, remainingSessions, currentSessionId, options);
+
+      setCurrentSessionId(nextSessionId);
+
+      if (nextSessionId) {
+        clearSelection();
+        const nextSession = remainingSessions.find(session => session.id === nextSessionId) ?? null;
+        const nextServer = nextSession
+          ? servers.find(server => server.id === nextSession.serverId) ?? null
+          : null;
+
+        if (nextServer) {
+          setActiveServer(nextServer);
+        }
+      } else {
+        clearSelection();
+      }
+
+      return remainingSessions;
+    });
+    removeTerminalOutputs(sessionIds);
+    removeSessionCurrentDirectories(sessionIds);
+  };
+
   const handleCloseSession = (sessionId: string) => {
     closeTerminalSession(sessionId).catch(err => console.error("关闭终端失败:", err));
-
-    setSessions(prev => {
-      const newSessions = prev.filter(s => s.id !== sessionId);
-      if (sessionId === currentSessionId) {
-        const nextSession = newSessions.length > 0 ? newSessions[newSessions.length - 1] : null;
-        setCurrentSessionId(nextSession?.id ?? null);
-        if (nextSession) {
-          clearSelection();
-          const nextServer = servers.find(server => server.id === nextSession.serverId) ?? null;
-          if (nextServer) {
-            setActiveServer(nextServer);
-          }
-        }
-      }
-      return newSessions;
-    });
-    removeTerminalOutput(sessionId);
+    applySessionRemoval([sessionId], { anchorSessionId: sessionId });
   };
 
   const handleSelectSession = (sessionId: string) => {
@@ -339,6 +573,153 @@ const AppContent: React.FC = () => {
     void handleConnectServer(server);
   };
 
+  const handleCloseSessionsToLeft = (sessionId: string) => {
+    const sessionIndex = sessions.findIndex(session => session.id === sessionId);
+    if (sessionIndex <= 0) {
+      return;
+    }
+
+    const targetSessionIds = sessions.slice(0, sessionIndex).map(session => session.id);
+    targetSessionIds.forEach(id => {
+      closeTerminalSession(id).catch(err => console.error("关闭左侧终端失败:", err));
+    });
+    applySessionRemoval(targetSessionIds, { preferredNextSessionId: sessionId, anchorSessionId: sessionId });
+  };
+
+  const handleCloseSessionsToRight = (sessionId: string) => {
+    const sessionIndex = sessions.findIndex(session => session.id === sessionId);
+    if (sessionIndex < 0 || sessionIndex >= sessions.length - 1) {
+      return;
+    }
+
+    const targetSessionIds = sessions.slice(sessionIndex + 1).map(session => session.id);
+    targetSessionIds.forEach(id => {
+      closeTerminalSession(id).catch(err => console.error("关闭右侧终端失败:", err));
+    });
+    applySessionRemoval(targetSessionIds, { preferredNextSessionId: sessionId, anchorSessionId: sessionId });
+  };
+
+  const handleCloseServerSessions = (sessionId: string) => {
+    const targetSession = sessions.find(session => session.id === sessionId);
+    if (!targetSession) {
+      return;
+    }
+
+    const targetSessionIds = sessions
+      .filter(session => session.serverId === targetSession.serverId)
+      .map(session => session.id);
+
+    if (targetSessionIds.length === 0) {
+      return;
+    }
+
+    disconnectServer(targetSession.serverId).catch(err => console.error("关闭当前服务器所有终端失败:", err));
+    applySessionRemoval(targetSessionIds, { anchorSessionId: sessionId });
+  };
+
+  const handleCloseAllSessions = () => {
+    if (sessions.length === 0) {
+      return;
+    }
+
+    const targetSessionIds = sessions.map(session => session.id);
+    const relatedServerIds = Array.from(new Set(sessions.map(session => session.serverId)));
+
+    relatedServerIds.forEach(serverId => {
+      disconnectServer(serverId).catch(err => console.error("关闭所有终端失败:", err));
+    });
+
+    applySessionRemoval(targetSessionIds, { anchorSessionId: currentSessionId });
+  };
+
+  const handleTerminalFilesDropped = async (sessionId: string, paths: string[]) => {
+    const targetSession = sessions.find(session => session.id === sessionId);
+    if (!targetSession) {
+      return;
+    }
+
+    const targetServer = servers.find(server => server.id === targetSession.serverId);
+    if (!targetServer) {
+      return;
+    }
+
+    let currentDirectory: string;
+    try {
+      currentDirectory = await invoke<string>("get_terminal_session_directory", { sessionId });
+      setSessionCurrentDirectories(prev => ({
+        ...prev,
+        [sessionId]: currentDirectory,
+      }));
+    } catch (error) {
+      await message(getErrorMessage(error), "无法读取当前终端目录");
+      return;
+    }
+
+    const uniquePaths = Array.from(new Set(paths));
+    if (uniquePaths.length === 0) {
+      return;
+    }
+
+    const previewNames = uniquePaths.slice(0, 3).map(path => getBaseName(path)).join("、");
+    const confirmed = await confirm(
+      `${uniquePaths.length > 1 ? `检测到 ${uniquePaths.length} 个文件` : `检测到文件 ${previewNames}`}，是否上传到当前目录 ${currentDirectory}？`,
+      "上传到当前终端目录",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    for (let index = 0; index < uniquePaths.length; index += 1) {
+      const localPath = uniquePaths[index];
+      const currentFileName = getBaseName(localPath);
+      const remotePath = joinRemotePath(currentDirectory, currentFileName);
+      const transferId = createTransferId();
+
+      setUploadProgressOverlay({
+        transferId,
+        sessionId,
+        serverName: targetServer.name,
+        currentDirectory,
+        currentFileName,
+        currentFileIndex: index + 1,
+        totalFiles: uniquePaths.length,
+        status: "preparing",
+        progressPercent: 0,
+        transferredBytes: 0,
+        totalBytes: null,
+        bytesPerSecond: null,
+        etaSeconds: null,
+        message: "准备上传文件",
+      });
+
+      try {
+        await invoke("upload_file_to_server", {
+          id: targetServer.id,
+          localPath,
+          remotePath,
+          transferId,
+        });
+      } catch (error) {
+        setUploadProgressOverlay(current => {
+          if (!current || current.transferId !== transferId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            status: "failed",
+            progressPercent: current.progressPercent,
+            bytesPerSecond: null,
+            etaSeconds: null,
+            message: getErrorMessage(error),
+          };
+        });
+        return;
+      }
+    }
+  };
+
   const handleSelectCategory = (category: Category | null) => {
     clearSelection();
     setActiveCategory(category);
@@ -350,26 +731,7 @@ const AppContent: React.FC = () => {
   const handleDisconnectServer = async (server: Server) => {
     const relatedSessions = sessions.filter(session => session.serverId === server.id);
     if (relatedSessions.length > 0) {
-      relatedSessions.forEach(session => removeTerminalOutput(session.id));
-      setSessions(prev => {
-        const remainingSessions = prev.filter(session => session.serverId !== server.id);
-        if (currentSessionId && relatedSessions.some(session => session.id === currentSessionId)) {
-          const nextSession = remainingSessions.length > 0 ? remainingSessions[remainingSessions.length - 1] : null;
-          setCurrentSessionId(nextSession?.id ?? null);
-          if (nextSession) {
-            const nextServer = servers.find(item => item.id === nextSession.serverId) ?? null;
-            clearSelection();
-            if (nextServer) {
-              setActiveServer(nextServer);
-            }
-          } else if (activeServer?.id === server.id) {
-            clearSelection();
-          }
-        } else if (activeServer?.id === server.id) {
-          clearSelection();
-        }
-        return remainingSessions;
-      });
+      applySessionRemoval(relatedSessions.map(session => session.id), { anchorSessionId: currentSessionId });
       disconnectServer(server.id).catch(err => console.error("断开连接失败:", err));
       return;
     }
@@ -492,6 +854,11 @@ const AppContent: React.FC = () => {
             onSelectSession={handleSelectSession}
             onCloseSession={handleCloseSession}
             onDuplicateSession={handleDuplicateSession}
+            onCloseSessionsToLeft={handleCloseSessionsToLeft}
+            onCloseSessionsToRight={handleCloseSessionsToRight}
+            onCloseServerSessions={handleCloseServerSessions}
+            onCloseAllSessions={handleCloseAllSessions}
+            onTerminalFilesDropped={handleTerminalFilesDropped}
             connectionError={connectionError}
             onDismissError={() => setConnectionError(null)}
           />
@@ -539,6 +906,40 @@ const AppContent: React.FC = () => {
         toggleRightSidebar={() => setIsRightSidebarOpen(prev => !prev)}
         toggleTransferTray={() => setIsTransferTrayOpen(prev => !prev)}
       />
+      {uploadProgressOverlay && (
+        <div className="upload-progress-toast" data-status={uploadProgressOverlay.status}>
+          <div className="upload-progress-toast__header">
+            <strong>
+              上传文件
+              {uploadProgressOverlay.totalFiles > 1
+                ? ` ${uploadProgressOverlay.currentFileIndex}/${uploadProgressOverlay.totalFiles}`
+                : ""}
+            </strong>
+            <span>{uploadProgressOverlay.serverName}</span>
+          </div>
+          <div className="upload-progress-toast__name">{uploadProgressOverlay.currentFileName}</div>
+          <div className="upload-progress-toast__path">{uploadProgressOverlay.currentDirectory}</div>
+          <div className="upload-progress-toast__bar">
+            <div
+              className="upload-progress-toast__bar-fill"
+              style={{ width: `${Math.max(0, Math.min(100, uploadProgressOverlay.progressPercent))}%` }}
+            />
+          </div>
+          <div className="upload-progress-toast__meta">
+            <span>{uploadProgressOverlay.progressPercent}%</span>
+            <span>{formatTransferRate(uploadProgressOverlay.bytesPerSecond) ?? "--"}</span>
+            <span>{formatEta(uploadProgressOverlay.etaSeconds) ?? "--:--"}</span>
+          </div>
+          <div className="upload-progress-toast__footer">
+            <span>
+              {formatBytes(uploadProgressOverlay.transferredBytes) ?? "0 B"}
+              {" / "}
+              {formatBytes(uploadProgressOverlay.totalBytes) ?? "--"}
+            </span>
+            <span>{uploadProgressOverlay.message ?? ""}</span>
+          </div>
+        </div>
+      )}
       {isServerModalOpen && (
         <AddServerModal
           onClose={() => {

@@ -16,6 +16,11 @@ interface MainContentProps {
   onSelectSession: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
+  onCloseSessionsToLeft: (sessionId: string) => void;
+  onCloseSessionsToRight: (sessionId: string) => void;
+  onCloseServerSessions: (sessionId: string) => void;
+  onCloseAllSessions: () => void;
+  onTerminalFilesDropped: (sessionId: string, paths: string[]) => void;
 
   connectionError: string | null;
   onDismissError: () => void;
@@ -31,6 +36,11 @@ export const MainContent: React.FC<MainContentProps> = ({
   onSelectSession,
   onCloseSession,
   onDuplicateSession,
+  onCloseSessionsToLeft,
+  onCloseSessionsToRight,
+  onCloseServerSessions,
+  onCloseAllSessions,
+  onTerminalFilesDropped,
 }) => {
   const { categories } = useServer();
 
@@ -63,6 +73,10 @@ export const MainContent: React.FC<MainContentProps> = ({
           onSelectSession={onSelectSession}
           onCloseSession={onCloseSession}
           onDuplicateSession={onDuplicateSession}
+          onCloseSessionsToLeft={onCloseSessionsToLeft}
+          onCloseSessionsToRight={onCloseSessionsToRight}
+          onCloseServerSessions={onCloseServerSessions}
+          onCloseAllSessions={onCloseAllSessions}
         />
       )}
       <div style={{ flex: 1, position: "relative" }}>
@@ -97,6 +111,8 @@ export const MainContent: React.FC<MainContentProps> = ({
               sessionId={session.id}
               outputChunks={terminalOutputs[session.id]?.chunks ?? []}
               resetToken={terminalOutputs[session.id]?.resetToken ?? 0}
+              isActive={session.id === currentSessionId}
+              onFilesDropped={(paths) => onTerminalFilesDropped(session.id, paths)}
             />
           </div>
         ))}

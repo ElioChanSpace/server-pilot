@@ -6,12 +6,16 @@ interface ConsoleViewProps {
   sessionId: string;
   outputChunks: string[];
   resetToken: number;
+  isActive: boolean;
+  onFilesDropped: (paths: string[]) => void;
 }
 
 export const ConsoleView: React.FC<ConsoleViewProps> = ({
   sessionId,
   outputChunks,
   resetToken,
+  isActive,
+  onFilesDropped,
 }) => {
   const handleInput = useCallback((data: string) => {
     void invoke('pty_write', { sessionId, data }).catch(error => {
@@ -40,6 +44,8 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
         resetToken={resetToken}
         onInput={handleInput}
         onResize={handleResize}
+        isActive={isActive}
+        onFilesDropped={onFilesDropped}
       />
     </div>
   );
