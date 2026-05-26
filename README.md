@@ -5,7 +5,7 @@
 **一款基于 Tauri 的桌面端服务器管理工具，集成 SSH 终端、多会话管理、文件传输、监控与日志面板。**
 
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
-![Tauri](https://img.shields.io/badge/Tauri-1.5-orange)
+![Tauri](https://img.shields.io/badge/Tauri-2.11-orange)
 ![React](https://img.shields.io/badge/React-18-61DAFB)
 ![Rust](https://img.shields.io/badge/Rust-2021-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -34,7 +34,7 @@
 
 | 层级 | 技术 |
 |------|------|
-| 桌面框架 | [Tauri](https://tauri.app/) 1.5 |
+| 桌面框架 | [Tauri](https://tauri.app/) 2 |
 | 前端框架 | [React](https://react.dev/) 18 + TypeScript |
 | 构建工具 | [Vite](https://vitejs.dev/) 5 |
 | 后端语言 | Rust 2021 Edition |
@@ -75,9 +75,18 @@ src/
 ### 前置依赖
 
 - [Node.js](https://nodejs.org/) >= 18
-- [Rust](https://rustup.rs/) >= 1.70
-- [Tauri CLI 依赖](https://tauri.app/v1/guides/getting-started/prerequisites/)：按当前操作系统安装原生依赖
+- [Rust](https://rustup.rs/) >= 1.77
+- [Tauri 2 前置依赖](https://v2.tauri.app/start/prerequisites/)：按当前操作系统安装原生依赖
 - 本机需安装可用的 OpenSSH 客户端
+
+项目当前使用的 Tauri 相关版本：
+
+- `tauri` / `tauri-build`: 2.x
+- `@tauri-apps/api`: 2.x
+- `@tauri-apps/cli`: 2.x
+- `@tauri-apps/plugin-dialog`: 2.x
+- `@tauri-apps/plugin-fs`: 2.x
+- `@tauri-apps/plugin-shell`: 2.x
 
 ### 安装与运行
 
@@ -95,6 +104,12 @@ npm run tauri build
 ```
 
 构建产物默认位于 `src-tauri/target/release/bundle/`。
+
+如果在某些 CI 环境变量被注入到本地 shell 的场景下遇到 `--ci` 参数报错，可使用：
+
+```bash
+CI=false npm run tauri build
+```
 
 ### GitHub 自动编译
 
