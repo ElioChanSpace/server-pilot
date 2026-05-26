@@ -8,9 +8,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, State, Window};
+use uuid::Uuid;
 
 // 代表一个活动的 PTY 会话
 pub struct Session {
+    pub session_id: String,
+    pub server_id: String,
     pub pty: Box<dyn MasterPty + Send>,
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub child_process: Box<dyn portable_pty::Child + Send>,
@@ -102,12 +105,13 @@ pub fn start_session(
     password: Option<String>,
     app_state: State<'_, AppState>,
     session_manager_state: State<'_, SessionManagerState>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     info!("Attempting to start session for server_id: {}", server_id);
     let pty_system = NativePtySystem::default();
     let pair = pty_system
         .openpty(PtySize::default())
         .map_err(|e| e.to_string())?;
+    let session_id = Uuid::new_v4().to_string();
 
     let mut cmd = CommandBuilder::new("ssh");
     cmd.arg(format!("{}@{}", username, host));
@@ -121,6 +125,8 @@ pub fn start_session(
     ));
 
     let session = Arc::new(Mutex::new(Session {
+        session_id: session_id.clone(),
+        server_id: server_id.clone(),
         pty: pair.master,
         writer: writer.clone(),
         child_process: child,
@@ -131,11 +137,12 @@ pub fn start_session(
         .0
         .lock()
         .unwrap()
-        .insert(server_id.clone(), session.clone());
+        .insert(session_id.clone(), session.clone());
 
     // --- Reader 任务 ---
     let reader_window = window.clone();
     let reader_server_id = server_id.clone();
+    let reader_session_id = session_id.clone();
     let reader_writer = writer.clone();
     let reader_app_data = app_state.data.clone();
     let auto_password = password.filter(|password| !password.is_empty());
@@ -150,15 +157,15 @@ pub fn start_session(
                 Ok(n) if n > 0 => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
                     if let Err(err) =
-                        reader_window.emit("pty-data", (reader_server_id.clone(), data.clone()))
+                        reader_window.emit("pty-data", (reader_session_id.clone(), data.clone()))
                     {
-                        warn!("Failed to emit PTY data for {}: {}", reader_server_id, err);
+                        warn!("Failed to emit PTY data for {}: {}", reader_session_id, err);
                     }
-                    let event_name = format!("pty-data-{}", reader_server_id);
+                    let event_name = format!("pty-data-{}", reader_session_id);
                     if let Err(err) = reader_window.emit(&event_name, data.clone()) {
                         warn!(
                             "Failed to emit PTY data event for {}: {}",
-                            reader_server_id, err
+                            reader_session_id, err
                         );
                     }
 
@@ -243,6 +250,7 @@ pub fn start_session(
     // --- Monitor 任务 ---
     let monitor_window = window.clone();
     let monitor_server_id = server_id.clone();
+    let monitor_session_id = session_id.clone();
     let monitor_app_data = app_state.data.clone();
     let monitor_session_manager_state = session_manager_state.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -283,7 +291,21 @@ pub fn start_session(
         }
 
         // 清理工作
-        {
+        let should_mark_disconnected = {
+            let mut sessions = monitor_session_manager_state.lock().unwrap();
+            sessions.remove(&monitor_session_id);
+            !sessions.values().any(|session| {
+                session
+                    .lock()
+                    .map(|guard| {
+                        guard.server_id == monitor_server_id
+                            && guard.alive.load(Ordering::SeqCst)
+                    })
+                    .unwrap_or(false)
+            })
+        };
+
+        if should_mark_disconnected {
             let mut app_data = monitor_app_data.lock().unwrap();
             if let Some(s) = app_data
                 .servers
@@ -299,43 +321,40 @@ pub fn start_session(
                 }
             }
         }
-        monitor_session_manager_state
-            .lock()
-            .unwrap()
-            .remove(&monitor_server_id);
-        let log_event = format!("connection-log-{}", monitor_server_id);
+
+        let log_event = format!("connection-log-{}", monitor_session_id);
         if let Err(err) = monitor_window.emit(
             "connection-log",
-            (monitor_server_id.clone(), "Connection closed.".to_string()),
+            (monitor_session_id.clone(), "Connection closed.".to_string()),
         ) {
             warn!(
                 "Failed to emit connection log for {}: {}",
-                monitor_server_id, err
+                monitor_session_id, err
             );
         }
         if let Err(err) = monitor_window.emit(&log_event, "Connection closed.") {
             warn!(
                 "Failed to emit connection log event for {}: {}",
-                monitor_server_id, err
+                monitor_session_id, err
             );
         }
     });
 
-    Ok(())
+    Ok(session_id)
 }
 
 pub fn write_to_session(
     session_manager_state: State<'_, SessionManagerState>,
-    server_id: String,
+    session_id: String,
     data: String,
 ) -> Result<(), String> {
     let session = session_manager_state
         .0
         .lock()
         .map_err(|e| e.to_string())?
-        .get(&server_id)
+        .get(&session_id)
         .cloned()
-        .ok_or_else(|| format!("No active PTY session for server {}", server_id))?;
+        .ok_or_else(|| format!("No active PTY session for session {}", session_id))?;
 
     let writer = {
         let session_guard = session.lock().map_err(|e| e.to_string())?;
@@ -351,7 +370,7 @@ pub fn write_to_session(
 
 pub fn resize_session(
     session_manager_state: State<'_, SessionManagerState>,
-    server_id: String,
+    session_id: String,
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
@@ -359,9 +378,9 @@ pub fn resize_session(
         .0
         .lock()
         .map_err(|e| e.to_string())?
-        .get(&server_id)
+        .get(&session_id)
         .cloned()
-        .ok_or_else(|| format!("No active PTY session for server {}", server_id))?;
+        .ok_or_else(|| format!("No active PTY session for session {}", session_id))?;
 
     let session_guard = session.lock().map_err(|e| e.to_string())?;
     session_guard
@@ -376,15 +395,57 @@ pub fn resize_session(
 
 pub fn close_session(
     session_manager_state: State<'_, SessionManagerState>,
-    server_id: String,
+    session_id: String,
 ) -> Result<(), String> {
-    if let Some(session) = session_manager_state.0.lock().unwrap().remove(&server_id) {
+    if let Some(session) = session_manager_state.0.lock().unwrap().get(&session_id).cloned() {
         let mut session_guard = session.lock().unwrap();
         session_guard.alive.store(false, Ordering::SeqCst);
         if let Err(err) = session_guard.child_process.kill() {
-            warn!("Failed to kill session {}: {}", server_id, err);
+            warn!("Failed to kill session {}: {}", session_id, err);
         }
-        info!("Session {} closed by user.", server_id);
+        info!("Session {} closed by user.", session_id);
     }
     Ok(())
+}
+
+pub fn close_server_sessions(
+    session_manager_state: State<'_, SessionManagerState>,
+    server_id: String,
+) -> Result<(), String> {
+    let sessions = session_manager_state
+        .0
+        .lock()
+        .map_err(|err| err.to_string())?
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+
+    for session in sessions {
+        let mut session_guard = session.lock().map_err(|err| err.to_string())?;
+        if session_guard.server_id != server_id {
+            continue;
+        }
+        session_guard.alive.store(false, Ordering::SeqCst);
+        if let Err(err) = session_guard.child_process.kill() {
+            warn!(
+                "Failed to kill session {} for server {}: {}",
+                session_guard.session_id, server_id, err
+            );
+        }
+    }
+
+    Ok(())
+}
+
+pub fn has_active_session_for_server(
+    session_manager_state: &State<'_, SessionManagerState>,
+    server_id: &str,
+) -> Result<bool, String> {
+    let sessions = session_manager_state.0.lock().map_err(|err| err.to_string())?;
+    Ok(sessions.values().any(|session| {
+        session
+            .lock()
+            .map(|guard| guard.server_id == server_id && guard.alive.load(Ordering::SeqCst))
+            .unwrap_or(false)
+    }))
 }

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import type { ConnectServerResult } from '../types/terminal';
 
 export enum OsType {
   Linux = 'linux',
@@ -33,8 +34,9 @@ interface ServerContextType {
   addServer: (server: Omit<Server, 'id' | 'status'>) => Promise<void>;
   updateServer: (server: Omit<Server, 'status'>) => Promise<Server>;
   addCategory: (name: string, parentId?: string) => Promise<void>;
-  connectToServer: (id: string) => Promise<void>;
-  disconnectServer: (id: string) => Promise<void>; // <-- 新增
+  connectToServer: (id: string) => Promise<ConnectServerResult>;
+  disconnectServer: (id: string) => Promise<void>;
+  closeTerminalSession: (sessionId: string) => Promise<void>;
 }
 
 const ServerContext = createContext<ServerContextType | undefined>(undefined);
@@ -94,7 +96,7 @@ export const ServerProvider = ({ children }: { children: ReactNode }) => {
 
   const connectToServer = async (id: string) => {
     try {
-      await invoke('connect_server', { id });
+      return await invoke<ConnectServerResult>('connect_server', { id });
     } catch (error) {
       console.error('Failed to invoke connect_server:', error);
       throw error;
@@ -104,10 +106,18 @@ export const ServerProvider = ({ children }: { children: ReactNode }) => {
   // --- 新增：断开连接 ---
   const disconnectServer = async (id: string) => {
     try {
-      // 注意：后端参数名是 serverId (驼峰转下划线后是 server_id)
       await invoke('disconnect_server', { serverId: id });
     } catch (error) {
       console.error('Failed to invoke disconnect_server:', error);
+      throw error;
+    }
+  };
+
+  const closeTerminalSession = async (sessionId: string) => {
+    try {
+      await invoke('close_terminal_session', { sessionId });
+    } catch (error) {
+      console.error('Failed to invoke close_terminal_session:', error);
       throw error;
     }
   };
@@ -126,7 +136,7 @@ export const ServerProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <ServerContext.Provider value={{ servers, categories, refreshServers, refreshCategories, addServer, updateServer, addCategory, connectToServer, disconnectServer }}>
+    <ServerContext.Provider value={{ servers, categories, refreshServers, refreshCategories, addServer, updateServer, addCategory, connectToServer, disconnectServer, closeTerminalSession }}>
       {children}
     </ServerContext.Provider>
   );

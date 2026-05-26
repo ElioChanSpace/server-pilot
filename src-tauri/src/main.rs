@@ -7,9 +7,9 @@ use crate::servers::application::AppState;
 use crate::servers::infrastructure::session_manager::SessionManagerState;
 use crate::servers::infrastructure::FileRepository;
 use crate::servers::interface::commands::{
-    clear_app_logs, connect_server, create_category, create_server, disconnect_server,
-    download_file_from_server, fetch_server_metrics, get_categories, get_servers,
-    list_remote_directory, pty_resize, pty_write, read_app_logs, update_server,
+    clear_app_logs, close_terminal_session, connect_server, create_category, create_server,
+    disconnect_server, download_file_from_server, fetch_server_metrics, get_categories,
+    get_servers, list_remote_directory, pty_resize, pty_write, read_app_logs, update_server,
     upload_file_to_server,
 };
 use log::LevelFilter;
@@ -127,6 +127,7 @@ fn main() {
             pty_write,
             pty_resize,
             disconnect_server,
+            close_terminal_session,
             fetch_server_metrics,
             list_remote_directory,
             read_app_logs,

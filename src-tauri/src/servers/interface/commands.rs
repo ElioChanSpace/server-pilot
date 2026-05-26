@@ -84,6 +84,12 @@ pub struct AppLogSnapshot {
     pub lines: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionConnectResult {
+    pub session_id: String,
+}
+
 fn resolve_app_log_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
     let log_dir = app_handle
         .path()
@@ -861,8 +867,10 @@ pub async fn connect_server(
     state: State<'_, AppState>,
     session_manager: State<'_, SessionManagerState>,
     id: String,
-) -> Result<(), String> {
+) -> Result<SessionConnectResult, String> {
     info!("Received connect_server command for id: {}", id);
+    let has_existing_session =
+        session_manager::has_active_session_for_server(&session_manager, &id)?;
     let server = {
         let mut data = state.data.lock().map_err(|e| e.to_string())?;
         let s = data
@@ -870,8 +878,10 @@ pub async fn connect_server(
             .iter_mut()
             .find(|s| s.id == id)
             .ok_or("Server not found")?;
-        s.status = "connecting".into();
-        let _ = window.emit("server-status-changed", s.clone());
+        if !has_existing_session {
+            s.status = "connecting".into();
+            let _ = window.emit("server-status-changed", s.clone());
+        }
         s.clone()
     };
 
@@ -887,7 +897,7 @@ pub async fn connect_server(
         server.username
     };
 
-    session_manager::start_session(
+    let session_id = session_manager::start_session(
         window,
         server.id,
         username,
@@ -896,26 +906,28 @@ pub async fn connect_server(
         server.password,
         state,
         session_manager,
-    )
+    )?;
+
+    Ok(SessionConnectResult { session_id })
 }
 
 #[tauri::command]
 pub fn pty_write(
     session_manager: State<'_, SessionManagerState>,
-    server_id: String,
+    session_id: String,
     data: String,
 ) -> Result<(), String> {
-    session_manager::write_to_session(session_manager, server_id, data)
+    session_manager::write_to_session(session_manager, session_id, data)
 }
 
 #[tauri::command]
 pub fn pty_resize(
     session_manager: State<'_, SessionManagerState>,
-    server_id: String,
+    session_id: String,
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
-    session_manager::resize_session(session_manager, server_id, rows, cols)
+    session_manager::resize_session(session_manager, session_id, rows, cols)
 }
 
 #[tauri::command]
@@ -923,7 +935,15 @@ pub fn disconnect_server(
     session_manager: State<'_, SessionManagerState>,
     server_id: String,
 ) -> Result<(), String> {
-    session_manager::close_session(session_manager, server_id)
+    session_manager::close_server_sessions(session_manager, server_id)
+}
+
+#[tauri::command]
+pub fn close_terminal_session(
+    session_manager: State<'_, SessionManagerState>,
+    session_id: String,
+) -> Result<(), String> {
+    session_manager::close_session(session_manager, session_id)
 }
 
 #[tauri::command]

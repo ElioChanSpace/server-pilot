@@ -11,6 +11,7 @@ import { MainContent } from "./components/MainContent";
 import LogViewer from "./components/LogViewer";
 import { ContextMenu, ContextMenuAction } from "./components/ContextMenu";
 import { FaEdit, FaPlus, FaFolderPlus, FaMoon, FaPlug, FaSun, FaUnlink } from 'react-icons/fa';
+import type { TerminalSession } from "./types/terminal";
 import "./App.css";
 
 type ThemeMode = "light" | "dark";
@@ -123,7 +124,7 @@ interface TerminalOutputState {
 }
 
 const AppContent: React.FC = () => {
-  const [sessions, setSessions] = useState<Server[]>([]);
+  const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
@@ -147,7 +148,7 @@ const AppContent: React.FC = () => {
   const [terminalOutputs, setTerminalOutputs] = useState<Record<string, TerminalOutputState>>({});
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
   
-  const { connectToServer, disconnectServer, servers } = useServer();
+  const { connectToServer, disconnectServer, closeTerminalSession, servers } = useServer();
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -188,47 +189,43 @@ const AppContent: React.FC = () => {
     };
   }, [isResizingRightSidebar]);
 
-  const appendTerminalChunk = (serverId: string, chunk: string) => {
+  const appendTerminalChunk = (sessionId: string, chunk: string) => {
     setTerminalOutputs(prev => ({
       ...prev,
-      [serverId]: {
-        chunks: [...(prev[serverId]?.chunks ?? []), chunk],
-        resetToken: prev[serverId]?.resetToken ?? 0,
+      [sessionId]: {
+        chunks: [...(prev[sessionId]?.chunks ?? []), chunk],
+        resetToken: prev[sessionId]?.resetToken ?? 0,
       },
     }));
   };
 
-  const resetTerminalOutput = (serverId: string, initialChunks: string[] = []) => {
+  const resetTerminalOutput = (sessionId: string, initialChunks: string[] = []) => {
     setTerminalOutputs(prev => ({
       ...prev,
-      [serverId]: {
+      [sessionId]: {
         chunks: initialChunks,
-        resetToken: (prev[serverId]?.resetToken ?? 0) + 1,
+        resetToken: (prev[sessionId]?.resetToken ?? 0) + 1,
       },
     }));
   };
 
-  const removeTerminalOutput = (serverId: string) => {
+  const removeTerminalOutput = (sessionId: string) => {
     setTerminalOutputs(prev => {
       const next = { ...prev };
-      delete next[serverId];
+      delete next[sessionId];
       return next;
     });
-  };
-
-  const writeTerminalNotice = (serverId: string, level: "INFO" | "ERROR", message: string) => {
-    appendTerminalChunk(serverId, `[${level}] ${message}\r\n`);
   };
 
   useEffect(() => {
     const unlistenPromises: Array<Promise<UnlistenFn>> = [
       listen<[string, string]>("pty-data", (event) => {
-        const [serverId, chunk] = event.payload;
-        appendTerminalChunk(serverId, chunk);
+        const [sessionId, chunk] = event.payload;
+        appendTerminalChunk(sessionId, chunk);
       }),
       listen<[string, string]>("connection-log", (event) => {
-        const [serverId, message] = event.payload;
-        appendTerminalChunk(serverId, `[INFO] ${message}\r\n`);
+        const [sessionId, message] = event.payload;
+        appendTerminalChunk(sessionId, `[INFO] ${message}\r\n`);
       }),
     ];
 
@@ -247,13 +244,14 @@ const AppContent: React.FC = () => {
 
       return servers.find(server => server.id === prev.id) ?? prev;
     });
-    setSessions(prev =>
-      prev.map(session => servers.find(server => server.id === session.id) ?? session)
-    );
   }, [servers]);
 
-  const transferTargetServer = activeServer ?? (currentSessionId
-    ? servers.find(server => server.id === currentSessionId) ?? null
+  const currentSession = currentSessionId
+    ? sessions.find(session => session.id === currentSessionId) ?? null
+    : null;
+
+  const transferTargetServer = activeServer ?? (currentSession
+    ? servers.find(server => server.id === currentSession.serverId) ?? null
     : null);
 
   const clearSelection = () => {
@@ -271,32 +269,29 @@ const AppContent: React.FC = () => {
   const handleConnectServer = async (server: Server) => {
     clearSelection();
     setActiveServer(server);
-    
-    const existingSession = sessions.find(s => s.id === server.id);
-    if (existingSession && (server.status === 'connected' || server.status === 'connecting')) {
-      setCurrentSessionId(server.id);
-      setActiveView("dashboard");
-    } else {
-      if (!existingSession) {
-        setSessions(prev => [...prev, server]);
-      }
-      setCurrentSessionId(server.id);
-      setActiveView("dashboard");
-      resetTerminalOutput(server.id, [`[信息] 正在连接 ${server.username}@${server.host}:${server.port} ...\r\n`]);
-      
-      try {
-        await connectToServer(server.id);
-      } catch (err) {
-        const message = err as string;
-        writeTerminalNotice(server.id, "ERROR", message);
-        setConnectionError(message);
-      }
+
+    setActiveView("dashboard");
+
+    try {
+      const result = await connectToServer(server.id);
+      setSessions(prev => [
+        ...prev,
+        {
+          id: result.sessionId,
+          serverId: server.id,
+          terminalIndex: prev.filter(session => session.serverId === server.id).length + 1,
+        },
+      ]);
+      setCurrentSessionId(result.sessionId);
+      resetTerminalOutput(result.sessionId, [`[信息] 正在连接 ${server.username}@${server.host}:${server.port} ...\r\n`]);
+    } catch (err) {
+      const message = err as string;
+      setConnectionError(message);
     }
   };
 
   const handleCloseSession = (sessionId: string) => {
-    // --- 新增：调用后端断开连接 ---
-    disconnectServer(sessionId).catch(err => console.error("断开连接失败:", err));
+    closeTerminalSession(sessionId).catch(err => console.error("关闭终端失败:", err));
 
     setSessions(prev => {
       const newSessions = prev.filter(s => s.id !== sessionId);
@@ -305,7 +300,10 @@ const AppContent: React.FC = () => {
         setCurrentSessionId(nextSession?.id ?? null);
         if (nextSession) {
           clearSelection();
-          setActiveServer(nextSession);
+          const nextServer = servers.find(server => server.id === nextSession.serverId) ?? null;
+          if (nextServer) {
+            setActiveServer(nextServer);
+          }
         }
       }
       return newSessions;
@@ -314,16 +312,31 @@ const AppContent: React.FC = () => {
   };
 
   const handleSelectSession = (sessionId: string) => {
-    const selectedSession = sessions.find(session => session.id === sessionId)
-      ?? servers.find(server => server.id === sessionId)
-      ?? null;
+    const selectedSession = sessions.find(session => session.id === sessionId) ?? null;
+    const selectedServer = selectedSession
+      ? servers.find(server => server.id === selectedSession.serverId) ?? null
+      : null;
 
     clearSelection();
-    if (selectedSession) {
-      setActiveServer(selectedSession);
+    if (selectedServer) {
+      setActiveServer(selectedServer);
     }
     setCurrentSessionId(sessionId);
     setActiveView("dashboard");
+  };
+
+  const handleDuplicateSession = (sessionId: string) => {
+    const session = sessions.find(item => item.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    const server = servers.find(item => item.id === session.serverId);
+    if (!server) {
+      return;
+    }
+
+    void handleConnectServer(server);
   };
 
   const handleSelectCategory = (category: Category | null) => {
@@ -335,8 +348,29 @@ const AppContent: React.FC = () => {
   };
 
   const handleDisconnectServer = async (server: Server) => {
-    if (sessions.some(session => session.id === server.id)) {
-      handleCloseSession(server.id);
+    const relatedSessions = sessions.filter(session => session.serverId === server.id);
+    if (relatedSessions.length > 0) {
+      relatedSessions.forEach(session => removeTerminalOutput(session.id));
+      setSessions(prev => {
+        const remainingSessions = prev.filter(session => session.serverId !== server.id);
+        if (currentSessionId && relatedSessions.some(session => session.id === currentSessionId)) {
+          const nextSession = remainingSessions.length > 0 ? remainingSessions[remainingSessions.length - 1] : null;
+          setCurrentSessionId(nextSession?.id ?? null);
+          if (nextSession) {
+            const nextServer = servers.find(item => item.id === nextSession.serverId) ?? null;
+            clearSelection();
+            if (nextServer) {
+              setActiveServer(nextServer);
+            }
+          } else if (activeServer?.id === server.id) {
+            clearSelection();
+          }
+        } else if (activeServer?.id === server.id) {
+          clearSelection();
+        }
+        return remainingSessions;
+      });
+      disconnectServer(server.id).catch(err => console.error("断开连接失败:", err));
       return;
     }
 
@@ -349,7 +383,6 @@ const AppContent: React.FC = () => {
 
   const handleEditServerSaved = (updatedServer: Server) => {
     setActiveServer(prev => (prev?.id === updatedServer.id ? updatedServer : prev));
-    setSessions(prev => prev.map(session => (session.id === updatedServer.id ? { ...session, ...updatedServer } : session)));
     setEditingServer(undefined);
   };
 
@@ -388,7 +421,7 @@ const AppContent: React.FC = () => {
         icon: <FaUnlink />,
         action: () => {
           // 断开连接并关闭会话（如果存在）
-          handleCloseSession(server.id);
+          handleDisconnectServer(server);
         }
       });
     }
@@ -453,10 +486,12 @@ const AppContent: React.FC = () => {
             activeView={activeView} 
             activeCategory={activeCategory} 
             sessions={sessions}
+            servers={servers}
             currentSessionId={currentSessionId}
             terminalOutputs={terminalOutputs}
             onSelectSession={handleSelectSession}
             onCloseSession={handleCloseSession}
+            onDuplicateSession={handleDuplicateSession}
             connectionError={connectionError}
             onDismissError={() => setConnectionError(null)}
           />

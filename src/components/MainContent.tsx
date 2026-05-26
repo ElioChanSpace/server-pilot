@@ -3,16 +3,19 @@ import { CategoryDashboard } from "./CategoryDashboard";
 import { Settings } from "./Settings";
 import { ConsoleView } from "./ConsoleView";
 import { TabBar } from "./TabBar";
+import type { TerminalSession } from "../types/terminal";
 
 interface MainContentProps {
   activeView: "dashboard" | "settings" | "logs";
   activeCategory: Category | null;
 
-  sessions: Server[];
+  sessions: TerminalSession[];
+  servers: Server[];
   currentSessionId: string | null;
   terminalOutputs: Record<string, { chunks: string[]; resetToken: number }>;
   onSelectSession: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
+  onDuplicateSession: (sessionId: string) => void;
 
   connectionError: string | null;
   onDismissError: () => void;
@@ -22,18 +25,26 @@ export const MainContent: React.FC<MainContentProps> = ({
   activeView,
   activeCategory,
   sessions,
+  servers,
   currentSessionId,
   terminalOutputs,
   onSelectSession,
   onCloseSession,
+  onDuplicateSession,
 }) => {
-  const { servers, categories } = useServer();
+  const { categories } = useServer();
 
   // 这个组件不再需要处理事件或 refs，大大简化了
 
   if (activeView === "settings") return <Settings />;
 
   const hasActiveSessions = sessions.length > 0 && currentSessionId;
+  const currentSessions = sessions
+    .map(session => ({
+      session,
+      server: servers.find(server => server.id === session.serverId) ?? null,
+    }))
+    .filter((entry): entry is { session: TerminalSession; server: Server } => entry.server !== null);
 
   return (
     <main
@@ -47,9 +58,11 @@ export const MainContent: React.FC<MainContentProps> = ({
       {sessions.length > 0 && (
         <TabBar
           sessions={sessions}
+          servers={servers}
           currentSessionId={currentSessionId}
           onSelectSession={onSelectSession}
           onCloseSession={onCloseSession}
+          onDuplicateSession={onDuplicateSession}
         />
       )}
       <div style={{ flex: 1, position: "relative" }}>
@@ -68,7 +81,7 @@ export const MainContent: React.FC<MainContentProps> = ({
         </div>
 
         {/* 渲染所有会话的终端，但只显示当前的 */}
-        {sessions.map((session) => (
+        {currentSessions.map(({ session }) => (
           <div
             key={session.id}
             style={{
@@ -81,7 +94,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             }}
           >
             <ConsoleView
-              server={session}
+              sessionId={session.id}
               outputChunks={terminalOutputs[session.id]?.chunks ?? []}
               resetToken={terminalOutputs[session.id]?.resetToken ?? 0}
             />

@@ -1,6 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
+import { FaCopy, FaPaste } from 'react-icons/fa';
+import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import 'xterm/css/xterm.css';
 
 interface XtermTerminalProps {
@@ -10,11 +12,18 @@ interface XtermTerminalProps {
   onResize: (cols: number, rows: number) => void;
 }
 
-export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, resetToken, onInput, onResize }) => {
+export const XtermTerminal: React.FC<XtermTerminalProps> = ({
+  outputChunks,
+  resetToken,
+  onInput,
+  onResize,
+}) => {
   const termRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   const renderedChunkCountRef = useRef(0);
   const fitFrameRef = useRef<number | null>(null);
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
   const focusTerminal = () => {
     const terminal = termInstance.current;
@@ -30,6 +39,8 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, rese
       }
     });
   };
+
+  const closeContextMenu = () => setContextMenuPosition(null);
 
   const applyTerminalTheme = (terminal: Terminal) => {
     const styles = getComputedStyle(document.documentElement);
@@ -77,15 +88,11 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, rese
         await navigator.clipboard.writeText(selection);
       };
 
-      const pasteClipboard = async () => {
-        const text = await navigator.clipboard.readText();
-        if (!text) {
-          return;
-        }
-        onInput(text);
-      };
-
       terminal.attachCustomKeyEventHandler((event) => {
+        if (event.type !== 'keydown') {
+          return true;
+        }
+
         const key = event.key.toLowerCase();
         const isCopyShortcut = terminal.hasSelection() && (
           (isMac && event.metaKey && !event.ctrlKey && !event.altKey && key === 'c') ||
@@ -94,19 +101,23 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, rese
         const isPasteShortcut =
           (isMac && event.metaKey && !event.ctrlKey && !event.altKey && key === 'v') ||
           (!isMac && event.ctrlKey && event.shiftKey && key === 'v');
-
         if (isCopyShortcut) {
           void copySelection();
           return false;
         }
 
+
         if (isPasteShortcut) {
-          void pasteClipboard();
+          void navigator.clipboard.readText().then(text => {
+            if (text) {
+              terminal.paste(text);
+            }
+          });
           return false;
         }
-
         return true;
       });
+
 
       terminal.onData(data => {
         onInput(data);
@@ -139,6 +150,35 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, rese
       };
     }
   }, [onInput, onResize]);
+
+  useEffect(() => {
+    if (!contextMenuPosition) {
+      return;
+    }
+
+    const handlePointerOutside = (event: PointerEvent | MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && contextMenuRef.current?.contains(target)) {
+        return;
+      }
+      closeContextMenu();
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeContextMenu();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerOutside, true);
+    document.addEventListener('contextmenu', handlePointerOutside, true);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerOutside, true);
+      document.removeEventListener('contextmenu', handlePointerOutside, true);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [contextMenuPosition]);
 
   useEffect(() => {
     const terminal = termInstance.current;
@@ -193,17 +233,55 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({ outputChunks, rese
     renderedChunkCountRef.current = outputChunks.length;
   }, [outputChunks]);
 
-  return (
-    <div
-      ref={termRef}
-      className="xterm-host"
-      style={{ width: 'max-content', minWidth: '100%', height: '100%', overflow: 'hidden' }}
-      onMouseDown={() => {
+  const contextMenuActions = useMemo<ContextMenuAction[]>(() => [
+    {
+      label: '复制',
+      icon: <FaCopy />,
+      action: async () => {
+        const selection = termInstance.current?.getSelection();
+        if (selection) {
+          await navigator.clipboard.writeText(selection);
+        }
         focusTerminal();
-      }}
-      onContextMenu={(event) => {
-        event.stopPropagation();
-      }}
-    />
+      },
+    },
+    {
+      label: '粘贴',
+      icon: <FaPaste />,
+      action: async () => {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          onInput(text);
+        }
+        focusTerminal();
+      },
+    },
+  ], [onInput]);
+
+  return (
+    <>
+      <div
+        ref={termRef}
+        className="xterm-host"
+        style={{ width: 'max-content', minWidth: '100%', height: '100%', overflow: 'hidden' }}
+        onMouseDown={() => {
+          focusTerminal();
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setContextMenuPosition({ x: event.clientX, y: event.clientY });
+        }}
+      />
+      {contextMenuPosition && (
+        <ContextMenu
+          x={contextMenuPosition.x}
+          y={contextMenuPosition.y}
+          actions={contextMenuActions}
+          menuRef={contextMenuRef}
+          onClose={closeContextMenu}
+        />
+      )}
+    </>
   );
 };
