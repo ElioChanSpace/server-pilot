@@ -85,8 +85,27 @@ const MenuBar: React.FC<{
     setOpenMenu(null);
   };
 
+  const handleMenuBarPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!openMenu) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    // Keep existing button/dropdown interactions intact; only close when clicking
+    // the menu bar background or spacer area around the top-level menus.
+    if (target.closest('.menuItem') || target.closest('.themeToggle')) {
+      return;
+    }
+
+    setOpenMenu(null);
+  };
+
   return (
-    <div className="menuBar" ref={menuRef}>
+    <div className="menuBar" ref={menuRef} onPointerDown={handleMenuBarPointerDown}>
       <div className="menuItem">
         <button className="menuButton" onClick={() => setOpenMenu(openMenu === 'file' ? null : 'file')} data-active={openMenu === 'file'}>文件</button>
         {openMenu === 'file' && (
