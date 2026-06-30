@@ -1,5 +1,4 @@
-import { Category, Server, useServer } from "../context/ServerContext";
-import { CategoryDashboard } from "./CategoryDashboard";
+import { Server } from "../context/ServerContext";
 import { Settings } from "./Settings";
 import { ConsoleView } from "./ConsoleView";
 import { TabBar } from "./TabBar";
@@ -7,8 +6,6 @@ import type { TerminalSession } from "../types/terminal";
 
 interface MainContentProps {
   activeView: "dashboard" | "settings" | "logs";
-  activeCategory: Category | null;
-
   sessions: TerminalSession[];
   servers: Server[];
   currentSessionId: string | null;
@@ -21,14 +18,10 @@ interface MainContentProps {
   onCloseServerSessions: (sessionId: string) => void;
   onCloseAllSessions: () => void;
   onTerminalFilesDropped: (sessionId: string, paths: string[]) => void;
-
-  connectionError: string | null;
-  onDismissError: () => void;
 }
 
 export const MainContent: React.FC<MainContentProps> = ({
   activeView,
-  activeCategory,
   sessions,
   servers,
   currentSessionId,
@@ -42,10 +35,6 @@ export const MainContent: React.FC<MainContentProps> = ({
   onCloseAllSessions,
   onTerminalFilesDropped,
 }) => {
-  const { categories } = useServer();
-
-  // 这个组件不再需要处理事件或 refs，大大简化了
-
   if (activeView === "settings") return <Settings />;
 
   const hasActiveSessions = sessions.length > 0 && currentSessionId;
@@ -80,21 +69,40 @@ export const MainContent: React.FC<MainContentProps> = ({
         />
       )}
       <div style={{ flex: 1, position: "relative" }}>
-        {/* 仪表盘的显示逻辑 */}
         <div
           style={{
             display: hasActiveSessions ? "none" : "block",
             height: "100%",
           }}
         >
-          <CategoryDashboard
-            category={activeCategory}
-            servers={servers}
-            allCategories={categories}
-          />
+          <div
+            style={{
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "32px",
+            }}
+          >
+            <div
+              style={{
+                maxWidth: "420px",
+                textAlign: "center",
+                padding: "24px 28px",
+                borderRadius: "20px",
+                background: "var(--glass-bg)",
+                border: "1px solid var(--glass-border)",
+                boxShadow: "0 16px 36px -28px var(--shadow-color)",
+              }}
+            >
+              <h2 style={{ fontSize: "20px", marginBottom: "10px" }}>终端工作区</h2>
+              <p style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                选择一台服务器后打开终端，这里会显示当前会话内容。
+              </p>
+            </div>
+          </div>
         </div>
 
-        {/* 渲染所有会话的终端，但只显示当前的 */}
         {currentSessions.map(({ session }) => (
           <div
             key={session.id}

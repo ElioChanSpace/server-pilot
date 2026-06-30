@@ -1,9 +1,9 @@
 use crate::servers::application::AppState;
-use crate::servers::domain::{Category, OsType, Server};
+use crate::servers::domain::{AppSettings, Category, OsType, Server};
 use crate::servers::infrastructure::session_manager::{self, SessionManagerState};
 use log::info;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -104,6 +104,13 @@ pub struct AppLogSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct SessionConnectResult {
     pub session_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAppSettingsRequest {
+    pub terminal_idle_disconnect_enabled: bool,
+    pub terminal_idle_disconnect_minutes: u32,
 }
 
 fn resolve_app_log_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
@@ -999,6 +1006,32 @@ pub fn get_servers(state: State<'_, AppState>) -> Result<Vec<Server>, String> {
 pub fn get_categories(state: State<'_, AppState>) -> Result<Vec<Category>, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     Ok(data.categories.clone())
+}
+
+#[tauri::command]
+pub fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
+    let data = state.data.lock().map_err(|e| e.to_string())?;
+    Ok(data.settings.clone())
+}
+
+#[tauri::command]
+pub fn update_app_settings(
+    state: State<'_, AppState>,
+    payload: UpdateAppSettingsRequest,
+) -> Result<AppSettings, String> {
+    if payload.terminal_idle_disconnect_enabled && payload.terminal_idle_disconnect_minutes == 0 {
+        return Err("空闲断连时间必须大于 0 分钟".to_string());
+    }
+
+    let mut data = state.data.lock().map_err(|e| e.to_string())?;
+    data.settings = AppSettings {
+        terminal_idle_disconnect_enabled: payload.terminal_idle_disconnect_enabled,
+        terminal_idle_disconnect_minutes: payload.terminal_idle_disconnect_minutes.max(1),
+    };
+    let settings = data.settings.clone();
+    drop(data);
+    state.save()?;
+    Ok(settings)
 }
 
 // --- PTY Commands (Delegated to SessionManager) ---

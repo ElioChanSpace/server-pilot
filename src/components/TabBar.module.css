@@ -39,11 +39,35 @@
 }
 
 .tabTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
+  margin-right: 8px;
+  min-width: 0;
+}
+
+.tabTitleText {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-right: 8px;
+}
+
+.statusIcon {
+  flex-shrink: 0;
+}
+
+.statusSpinning {
+  animation: tab-status-spin 1s linear infinite;
+}
+
+@keyframes tab-status-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .closeButton {

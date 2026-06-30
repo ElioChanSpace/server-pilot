@@ -13,7 +13,12 @@ import { MainContent } from "./components/MainContent";
 import LogViewer from "./components/LogViewer";
 import { ContextMenu, ContextMenuAction } from "./components/ContextMenu";
 import { FaEdit, FaPlus, FaFolderPlus, FaMoon, FaPlug, FaSun, FaUnlink } from 'react-icons/fa';
-import type { TerminalSession } from "./types/terminal";
+import type {
+  TerminalSession,
+  TerminalSessionClosedEvent,
+  TerminalSessionStatus,
+  TerminalSessionStatusEvent,
+} from "./types/terminal";
 import "./App.css";
 
 type ThemeMode = "light" | "dark";
@@ -52,9 +57,10 @@ const MenuBar: React.FC<{
   onNewCategory: () => void;
   onNewServer: () => void;
   onViewLogs: () => void;
+  onOpenSettings: () => void;
   theme: ThemeMode;
   onToggleTheme: () => void;
-}> = ({ onNewCategory, onNewServer, onViewLogs, theme, onToggleTheme }) => {
+}> = ({ onNewCategory, onNewServer, onViewLogs, onOpenSettings, theme, onToggleTheme }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -96,6 +102,7 @@ const MenuBar: React.FC<{
         <button className="menuButton" onClick={() => setOpenMenu(openMenu === 'system' ? null : 'system')} data-active={openMenu === 'system'}>系统</button>
         {openMenu === 'system' && (
           <div className="dropdown">
+            <button className="dropdownItem" onClick={() => handleItemClick(onOpenSettings)}>设置</button>
             <button className="dropdownItem" onClick={() => handleItemClick(onViewLogs)}>查看日志</button>
           </div>
         )}
@@ -278,6 +285,63 @@ const getErrorMessage = (error: unknown) => {
   return "上传失败，请稍后重试。";
 };
 
+const isTextInputElement = (
+  element: Element | null,
+): element is HTMLInputElement | HTMLTextAreaElement =>
+  element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
+
+const isEditableElement = (element: Element | null) =>
+  isTextInputElement(element) || (element instanceof HTMLElement && element.isContentEditable);
+
+const isInsideTerminal = (element: Element | null) =>
+  element instanceof Element && Boolean(element.closest(".xterm, .xterm-host"));
+
+const getCopyTextFromTarget = (target: Element | null) => {
+  if (isTextInputElement(target)) {
+    const { selectionStart, selectionEnd, value } = target;
+    if (selectionStart !== null && selectionEnd !== null && selectionStart !== selectionEnd) {
+      return value.slice(selectionStart, selectionEnd);
+    }
+  }
+
+  return window.getSelection()?.toString() ?? "";
+};
+
+const insertTextIntoEditable = (target: Element | null, text: string) => {
+  if (!text) {
+    return false;
+  }
+
+  if (isTextInputElement(target)) {
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? start;
+    target.setRangeText(text, start, end, "end");
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+
+  if (target instanceof HTMLElement && target.isContentEditable) {
+    target.focus();
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return false;
+    }
+
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    const textNode = document.createTextNode(text);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.setEndAfter(textNode);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+
+  return false;
+};
+
 const AppContent: React.FC = () => {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -299,6 +363,9 @@ const AppContent: React.FC = () => {
   const [editingServer, setEditingServer] = useState<Server | undefined>(undefined);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const sessionsRef = useRef<TerminalSession[]>([]);
+  const serversRef = useRef<Server[]>([]);
+  const currentSessionIdRef = useRef<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [terminalOutputs, setTerminalOutputs] = useState<Record<string, TerminalOutputState>>({});
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
@@ -316,6 +383,18 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     window.localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(rightSidebarWidth));
   }, [rightSidebarWidth]);
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    serversRef.current = servers;
+  }, [servers]);
+
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
 
   useEffect(() => {
     if (!isResizingRightSidebar) {
@@ -346,14 +425,72 @@ const AppContent: React.FC = () => {
     };
   }, [isResizingRightSidebar]);
 
+  useEffect(() => {
+    const isMac = navigator.platform.toUpperCase().includes("MAC");
+
+    const handleGlobalClipboardShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+
+      const target = event.target instanceof Element ? event.target : document.activeElement;
+      if (isInsideTerminal(target)) {
+        return;
+      }
+
+      const hasPrimaryModifier = isMac
+        ? event.metaKey && !event.ctrlKey
+        : event.ctrlKey && !event.metaKey;
+      if (!hasPrimaryModifier || event.altKey) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        const text = getCopyTextFromTarget(target);
+        if (!text) {
+          return;
+        }
+
+        event.preventDefault();
+        void navigator.clipboard.writeText(text).catch(error => {
+          console.error("快捷键复制失败:", error);
+        });
+        return;
+      }
+
+      if (key === "v" && isEditableElement(target)) {
+        event.preventDefault();
+        void navigator.clipboard.readText()
+          .then(text => {
+            insertTextIntoEditable(target, text);
+          })
+          .catch(error => {
+            console.error("快捷键粘贴失败:", error);
+          });
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalClipboardShortcut, true);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalClipboardShortcut, true);
+    };
+  }, []);
+
   const appendTerminalChunk = (sessionId: string, chunk: string) => {
-    setTerminalOutputs(prev => ({
-      ...prev,
-      [sessionId]: {
-        chunks: [...(prev[sessionId]?.chunks ?? []), chunk],
-        resetToken: prev[sessionId]?.resetToken ?? 0,
-      },
-    }));
+    setTerminalOutputs(prev => {
+      if (!prev[sessionId] && !sessionsRef.current.some(session => session.id === sessionId)) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [sessionId]: {
+          chunks: [...(prev[sessionId]?.chunks ?? []), chunk],
+          resetToken: prev[sessionId]?.resetToken ?? 0,
+        },
+      };
+    });
   };
 
   const resetTerminalOutput = (sessionId: string, initialChunks: string[] = []) => {
@@ -396,6 +533,14 @@ const AppContent: React.FC = () => {
     });
   };
 
+  const updateSessionStatus = (sessionId: string, status: TerminalSessionStatus) => {
+    setSessions(prev => prev.map(session => (
+      session.id === sessionId
+        ? { ...session, status }
+        : session
+    )));
+  };
+
   useEffect(() => {
     const unlistenPromises: Array<Promise<UnlistenFn>> = [
       listen<[string, string]>("pty-data", (event) => {
@@ -405,6 +550,17 @@ const AppContent: React.FC = () => {
       listen<[string, string]>("connection-log", (event) => {
         const [sessionId, message] = event.payload;
         appendTerminalChunk(sessionId, `[INFO] ${message}\r\n`);
+      }),
+      listen<TerminalSessionStatusEvent>("terminal-session-status-changed", (event) => {
+        updateSessionStatus(event.payload.sessionId, event.payload.status);
+      }),
+      listen<TerminalSessionClosedEvent>("terminal-session-closed", (event) => {
+        if (event.payload.shouldRemove) {
+          applySessionRemoval([event.payload.sessionId], { anchorSessionId: event.payload.sessionId });
+          return;
+        }
+
+        updateSessionStatus(event.payload.sessionId, "disconnected");
       }),
       listen<FileTransferProgressEvent>("file-transfer-progress", (event) => {
         const payload = event.payload;
@@ -498,6 +654,7 @@ const AppContent: React.FC = () => {
           id: result.sessionId,
           serverId: server.id,
           terminalIndex: 0,
+          status: "connecting",
         },
       ]));
       setCurrentSessionId(result.sessionId);
@@ -516,7 +673,7 @@ const AppContent: React.FC = () => {
     const removedIds = new Set(sessionIds);
     setSessions(prev => {
       const remainingSessions = reindexSessions(prev.filter(session => !removedIds.has(session.id)));
-      const nextSessionId = resolveNextSessionId(prev, remainingSessions, currentSessionId, options);
+      const nextSessionId = resolveNextSessionId(prev, remainingSessions, currentSessionIdRef.current, options);
 
       setCurrentSessionId(nextSessionId);
 
@@ -524,7 +681,7 @@ const AppContent: React.FC = () => {
         clearSelection();
         const nextSession = remainingSessions.find(session => session.id === nextSessionId) ?? null;
         const nextServer = nextSession
-          ? servers.find(server => server.id === nextSession.serverId) ?? null
+          ? serversRef.current.find(server => server.id === nextSession.serverId) ?? null
           : null;
 
         if (nextServer) {
@@ -725,7 +882,6 @@ const AppContent: React.FC = () => {
     setActiveCategory(category);
     setIsUncategorizedSelected(category === null);
     setActiveView("dashboard");
-    setCurrentSessionId(null); 
   };
 
   const handleDisconnectServer = async (server: Server) => {
@@ -824,6 +980,12 @@ const AppContent: React.FC = () => {
       <MenuBar 
         onNewCategory={() => { setInitialParentId(undefined); setIsCategoryModalOpen(true); }}
         onNewServer={() => { setEditingServer(undefined); setInitialCategoryId(undefined); setIsServerModalOpen(true); }}
+        onOpenSettings={() => {
+          setIsLogViewerOpen(false);
+          clearSelection();
+          setCurrentSessionId(null);
+          setActiveView("settings");
+        }}
         onViewLogs={() => setIsLogViewerOpen(true)}
         theme={theme}
         onToggleTheme={() => setTheme(prev => (prev === "dark" ? "light" : "dark"))}
@@ -846,7 +1008,6 @@ const AppContent: React.FC = () => {
         <div className="workspace-shell">
           <MainContent 
             activeView={activeView} 
-            activeCategory={activeCategory} 
             sessions={sessions}
             servers={servers}
             currentSessionId={currentSessionId}
@@ -859,8 +1020,6 @@ const AppContent: React.FC = () => {
             onCloseServerSessions={handleCloseServerSessions}
             onCloseAllSessions={handleCloseAllSessions}
             onTerminalFilesDropped={handleTerminalFilesDropped}
-            connectionError={connectionError}
-            onDismissError={() => setConnectionError(null)}
           />
           {!isLogViewerOpen && isRightSidebarOpen && (
             <div className="right-sidebar-overlay">

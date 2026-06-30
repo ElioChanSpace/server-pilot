@@ -1,6 +1,7 @@
 import React from 'react';
 import { Server, Category, useServer } from '../context/ServerContext';
-import { FaCircle, FaTerminal } from 'react-icons/fa';
+import { FaTerminal } from 'react-icons/fa';
+import { formatServerStatus, getServerStatusMeta } from '../utils/serverStatus';
 import styles from './ServerList.module.css';
 
 interface ServerListProps {
@@ -8,29 +9,8 @@ interface ServerListProps {
   categories: Category[];
 }
 
-const formatServerStatus = (status: string) => {
-  switch (status) {
-    case 'connected':
-      return '已连接';
-    case 'connecting':
-      return '连接中';
-    case 'disconnected':
-      return '未连接';
-    default:
-      return status;
-  }
-};
-
 export const ServerList: React.FC<ServerListProps> = ({ servers, categories }) => {
   const { connectToServer } = useServer();
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'connected': return '#4caf50';
-      case 'connecting': return '#ff9800';
-      default: return '#f44336';
-    }
-  };
 
   const uncategorizedServers = servers.filter(s => !s.categoryId);
 
@@ -49,7 +29,6 @@ export const ServerList: React.FC<ServerListProps> = ({ servers, categories }) =
                   key={server.id} 
                   server={server} 
                   onConnect={() => connectToServer(server.id)}
-                  statusColor={getStatusColor(server.status)}
                 />
               ))}
             </div>
@@ -66,7 +45,6 @@ export const ServerList: React.FC<ServerListProps> = ({ servers, categories }) =
                 key={server.id} 
                 server={server} 
                 onConnect={() => connectToServer(server.id)}
-                statusColor={getStatusColor(server.status)}
               />
             ))}
           </div>
@@ -82,20 +60,25 @@ export const ServerList: React.FC<ServerListProps> = ({ servers, categories }) =
   );
 };
 
-const ServerCard = ({ server, onConnect, statusColor }: { server: Server, onConnect: () => void, statusColor: string }) => (
-  <div className={styles.card}>
-    <div className={styles.cardHeader}>
-      <div className={styles.statusIndicator} style={{ color: statusColor }}>
-        <FaCircle size={10} />
-        <span>{formatServerStatus(server.status)}</span>
+const ServerCard = ({ server, onConnect }: { server: Server, onConnect: () => void }) => {
+  const statusMeta = getServerStatusMeta(server.status);
+  const StatusIcon = statusMeta.icon;
+
+  return (
+    <div className={styles.card}>
+      <div className={styles.cardHeader}>
+        <div className={styles.statusIndicator} style={{ color: statusMeta.color }}>
+          <StatusIcon size={12} className={statusMeta.spinning ? styles.statusSpinning : undefined} />
+          <span>{formatServerStatus(server.status)}</span>
+        </div>
+        <button className={styles.connectBtn} onClick={onConnect} disabled={server.status === 'connected'}>
+          <FaTerminal />
+        </button>
       </div>
-      <button className={styles.connectBtn} onClick={onConnect} disabled={server.status === 'connected'}>
-        <FaTerminal />
-      </button>
+      <div className={styles.cardBody}>
+        <h4>{server.name}</h4>
+        <p>{server.username}@{server.host}:{server.port}</p>
+      </div>
     </div>
-    <div className={styles.cardBody}>
-      <h4>{server.name}</h4>
-      <p>{server.username}@{server.host}:{server.port}</p>
-    </div>
-  </div>
-);
+  );
+};

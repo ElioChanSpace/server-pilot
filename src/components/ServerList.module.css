@@ -55,6 +55,19 @@
   text-transform: capitalize;
 }
 
+.statusSpinning {
+  animation: status-spin 1s linear infinite;
+}
+
+@keyframes status-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .connectBtn {
   background: transparent;
   color: var(--text-secondary);

@@ -1,13 +1,14 @@
 use crate::servers::application::AppState;
 use log::{info, warn};
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{Emitter, State, Window};
 use uuid::Uuid;
 
@@ -27,6 +28,9 @@ pub struct Session {
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub child_process: Box<dyn portable_pty::Child + Send>,
     pub alive: Arc<AtomicBool>,
+    pub was_connected: bool,
+    pub last_activity_at: Instant,
+    pub close_reason: Option<String>,
     pending_cwd_request: Option<PendingCwdRequest>,
 }
 
@@ -35,6 +39,92 @@ pub struct Session {
 pub struct SessionManagerState(pub Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>);
 
 const PASSWORD_PROMPT_BUFFER_LIMIT: usize = 2048;
+const SESSION_MONITOR_INTERVAL: Duration = Duration::from_millis(250);
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalSessionStatusEvent {
+    session_id: String,
+    server_id: String,
+    status: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalSessionClosedEvent {
+    session_id: String,
+    server_id: String,
+    reason: String,
+    should_remove: bool,
+}
+
+fn emit_terminal_session_status(
+    window: &Window,
+    session_id: &str,
+    server_id: &str,
+    status: &str,
+) {
+    if let Err(err) = window.emit(
+        "terminal-session-status-changed",
+        TerminalSessionStatusEvent {
+            session_id: session_id.to_string(),
+            server_id: server_id.to_string(),
+            status: status.to_string(),
+        },
+    ) {
+        warn!(
+            "Failed to emit session status {} for session {}: {}",
+            status, session_id, err
+        );
+    }
+}
+
+fn emit_terminal_session_closed(
+    window: &Window,
+    session_id: &str,
+    server_id: &str,
+    reason: &str,
+    should_remove: bool,
+) {
+    if let Err(err) = window.emit(
+        "terminal-session-closed",
+        TerminalSessionClosedEvent {
+            session_id: session_id.to_string(),
+            server_id: server_id.to_string(),
+            reason: reason.to_string(),
+            should_remove,
+        },
+    ) {
+        warn!(
+            "Failed to emit session closed event for {}: {}",
+            session_id, err
+        );
+    }
+}
+
+fn connection_log_message_for_reason(reason: &str) -> String {
+    match reason {
+        "idle-timeout" => "Connection closed due to inactivity.".to_string(),
+        "server-disconnect" => "Connection closed by server disconnect.".to_string(),
+        "manual" => "Connection closed by user.".to_string(),
+        "connect-failed" => "Connection failed.".to_string(),
+        _ => "Connection closed.".to_string(),
+    }
+}
+
+fn resolve_idle_timeout(app_data: &Arc<Mutex<crate::servers::domain::AppData>>) -> Duration {
+    let settings = app_data
+        .lock()
+        .ok()
+        .map(|data| data.settings.clone())
+        .unwrap_or_default();
+
+    if !settings.terminal_idle_disconnect_enabled {
+        return Duration::MAX;
+    }
+
+    Duration::from_secs(u64::from(settings.terminal_idle_disconnect_minutes.max(1)) * 60)
+}
 
 fn trim_prompt_buffer(buffer: &mut String) {
     if buffer.len() <= PASSWORD_PROMPT_BUFFER_LIMIT {
@@ -218,6 +308,9 @@ pub fn start_session(
         writer: writer.clone(),
         child_process: child,
         alive: Arc::new(AtomicBool::new(true)),
+        was_connected: false,
+        last_activity_at: Instant::now(),
+        close_reason: None,
         pending_cwd_request: None,
     }));
 
@@ -226,6 +319,8 @@ pub fn start_session(
         .lock()
         .unwrap()
         .insert(session_id.clone(), session.clone());
+
+    emit_terminal_session_status(&window, &session_id, &server_id, "connecting");
 
     // --- Reader 任务 ---
     let reader_window = window.clone();
@@ -295,6 +390,15 @@ pub fn start_session(
                                         .iter_mut()
                                         .find(|server| server.id == reader_server_id)
                                     {
+                                        emit_terminal_session_status(
+                                            &reader_window,
+                                            &reader_session_id,
+                                            &reader_server_id,
+                                            "connected",
+                                        );
+                                        if let Ok(mut session_guard) = reader_session.lock() {
+                                            session_guard.was_connected = true;
+                                        }
                                         server.status = "connected".into();
                                         if let Err(err) = reader_window
                                             .emit("server-status-changed", server.clone())
@@ -385,6 +489,8 @@ pub fn start_session(
     let monitor_app_data = app_state.data.clone();
     let monitor_session_manager_state = session_manager_state.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let mut close_reason: Option<String> = None;
+        let mut should_remove = true;
         loop {
             let child_status = {
                 let mut session_guard = match session.lock() {
@@ -396,6 +502,23 @@ pub fn start_session(
                 };
 
                 if !session_guard.alive.load(Ordering::SeqCst) {
+                    close_reason = session_guard.close_reason.clone();
+                    break;
+                }
+
+                let idle_timeout = resolve_idle_timeout(&monitor_app_data);
+                if idle_timeout != Duration::MAX
+                    && session_guard.last_activity_at.elapsed() >= idle_timeout
+                {
+                    session_guard.alive.store(false, Ordering::SeqCst);
+                    session_guard.close_reason = Some("idle-timeout".to_string());
+                    close_reason = session_guard.close_reason.clone();
+                    if let Err(err) = session_guard.child_process.kill() {
+                        warn!(
+                            "Failed to kill idle session {}: {}",
+                            monitor_session_id, err
+                        );
+                    }
                     break;
                 }
 
@@ -408,14 +531,26 @@ pub fn start_session(
                         "Session {} exited with status: {}",
                         monitor_server_id, status
                     );
+                    if close_reason.is_none() {
+                        close_reason = Some(match session.lock() {
+                            Ok(session_guard) if !session_guard.was_connected => {
+                                should_remove = false;
+                                "connect-failed".to_string()
+                            }
+                            _ => "process-exit".to_string(),
+                        });
+                    }
                     break;
                 }
-                Ok(None) => thread::sleep(Duration::from_millis(250)),
+                Ok(None) => thread::sleep(SESSION_MONITOR_INTERVAL),
                 Err(err) => {
                     warn!(
                         "Failed to check session {} status: {}",
                         monitor_server_id, err
                     );
+                    if close_reason.is_none() {
+                        close_reason = Some("process-exit".to_string());
+                    }
                     break;
                 }
             }
@@ -453,22 +588,37 @@ pub fn start_session(
             }
         }
 
+        emit_terminal_session_status(
+            &monitor_window,
+            &monitor_session_id,
+            &monitor_server_id,
+            "disconnected",
+        );
+        let close_reason = close_reason.unwrap_or_else(|| "process-exit".to_string());
         let log_event = format!("connection-log-{}", monitor_session_id);
+        let close_message = connection_log_message_for_reason(&close_reason);
         if let Err(err) = monitor_window.emit(
             "connection-log",
-            (monitor_session_id.clone(), "Connection closed.".to_string()),
+            (monitor_session_id.clone(), close_message.clone()),
         ) {
             warn!(
                 "Failed to emit connection log for {}: {}",
                 monitor_session_id, err
             );
         }
-        if let Err(err) = monitor_window.emit(&log_event, "Connection closed.") {
+        if let Err(err) = monitor_window.emit(&log_event, close_message) {
             warn!(
                 "Failed to emit connection log event for {}: {}",
                 monitor_session_id, err
             );
         }
+        emit_terminal_session_closed(
+            &monitor_window,
+            &monitor_session_id,
+            &monitor_server_id,
+            &close_reason,
+            should_remove,
+        );
     });
 
     Ok(session_id)
@@ -496,7 +646,11 @@ pub fn write_to_session(
     writer_guard
         .write_all(data.as_bytes())
         .map_err(|e| e.to_string())?;
-    writer_guard.flush().map_err(|e| e.to_string())
+    writer_guard.flush().map_err(|e| e.to_string())?;
+    if let Ok(mut session_guard) = session.lock() {
+        session_guard.last_activity_at = Instant::now();
+    }
+    Ok(())
 }
 
 pub fn read_session_current_directory(
@@ -594,6 +748,7 @@ pub fn close_session(
     if let Some(session) = session_manager_state.0.lock().unwrap().get(&session_id).cloned() {
         let mut session_guard = session.lock().unwrap();
         session_guard.alive.store(false, Ordering::SeqCst);
+        session_guard.close_reason = Some("manual".to_string());
         if let Err(err) = session_guard.child_process.kill() {
             warn!("Failed to kill session {}: {}", session_id, err);
         }
@@ -620,6 +775,7 @@ pub fn close_server_sessions(
             continue;
         }
         session_guard.alive.store(false, Ordering::SeqCst);
+        session_guard.close_reason = Some("server-disconnect".to_string());
         if let Err(err) = session_guard.child_process.kill() {
             warn!(
                 "Failed to kill session {} for server {}: {}",

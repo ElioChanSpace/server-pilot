@@ -64,9 +64,37 @@ impl Category {
     }
 }
 
+fn default_terminal_idle_disconnect_enabled() -> bool {
+    true
+}
+
+fn default_terminal_idle_disconnect_minutes() -> u32 {
+    30
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    #[serde(default = "default_terminal_idle_disconnect_enabled")]
+    pub terminal_idle_disconnect_enabled: bool,
+    #[serde(default = "default_terminal_idle_disconnect_minutes")]
+    pub terminal_idle_disconnect_minutes: u32,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            terminal_idle_disconnect_enabled: default_terminal_idle_disconnect_enabled(),
+            terminal_idle_disconnect_minutes: default_terminal_idle_disconnect_minutes(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppData {
     pub servers: Vec<Server>,
     pub categories: Vec<Category>,
+    #[serde(default)]
+    pub settings: AppSettings,
 }

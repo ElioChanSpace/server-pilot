@@ -119,12 +119,15 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({
         }
 
         const key = event.key.toLowerCase();
+        const hasPrimaryModifier = isMac
+          ? event.metaKey && !event.ctrlKey
+          : event.ctrlKey && !event.metaKey;
         const isCopyShortcut = terminal.hasSelection() && (
-          (isMac && event.metaKey && !event.ctrlKey && !event.altKey && key === 'c') ||
+          (hasPrimaryModifier && !event.altKey && key === 'c') ||
           (!isMac && event.ctrlKey && event.shiftKey && key === 'c')
         );
         const isPasteShortcut =
-          (isMac && event.metaKey && !event.ctrlKey && !event.altKey && key === 'v') ||
+          (hasPrimaryModifier && !event.altKey && key === 'v') ||
           (!isMac && event.ctrlKey && event.shiftKey && key === 'v');
         if (isCopyShortcut) {
           void copySelection();

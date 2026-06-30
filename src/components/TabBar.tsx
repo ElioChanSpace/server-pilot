@@ -4,6 +4,7 @@ import { FaCopy, FaServer, FaTimes, FaWindowClose } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
+import { getServerStatusMeta } from '../utils/serverStatus';
 
 interface TabBarProps {
   sessions: TerminalSession[];
@@ -139,6 +140,8 @@ export const TabBar: React.FC<TabBarProps> = ({
           const server = servers.find(item => item.id === session.serverId);
           const titleBase = server?.name ?? '终端';
           const title = session.terminalIndex > 1 ? `${titleBase} (${session.terminalIndex})` : titleBase;
+          const statusMeta = getServerStatusMeta(session.status);
+          const StatusIcon = statusMeta.icon;
 
           return (
             <div
@@ -152,7 +155,14 @@ export const TabBar: React.FC<TabBarProps> = ({
                 setContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.id });
               }}
             >
-              <span className={styles.tabTitle}>{title}</span>
+              <span className={styles.tabTitle}>
+                <StatusIcon
+                  size={12}
+                  className={`${styles.statusIcon} ${statusMeta.spinning ? styles.statusSpinning : ''}`.trim()}
+                  style={{ color: statusMeta.color }}
+                />
+                <span className={styles.tabTitleText}>{title}</span>
+              </span>
               <button
                 className={styles.closeButton}
                 onClick={(e) => {
