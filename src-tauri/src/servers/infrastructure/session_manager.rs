@@ -32,6 +32,7 @@ pub struct Session {
     pub last_activity_at: Instant,
     pub close_reason: Option<String>,
     pending_cwd_request: Option<PendingCwdRequest>,
+    pending_host_key: Option<mpsc::Sender<bool>>,
 }
 
 // SessionManager 的状态
@@ -56,6 +57,14 @@ struct TerminalSessionClosedEvent {
     server_id: String,
     reason: String,
     should_remove: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostKeyPromptEvent {
+    session_id: String,
+    server_id: String,
+    fingerprint: String,
 }
 
 fn emit_terminal_session_status(
@@ -169,13 +178,50 @@ fn should_auto_fill_ssh_password(output_tail: &str) -> bool {
         .unwrap_or("")
         .trim();
 
-    if !prompt_line.ends_with("password:") || prompt_line.contains("sudo") {
+    if prompt_line.contains("sudo") {
         return false;
     }
 
-    prompt_line == "password:"
-        || prompt_line.contains("'s password:")
-        || prompt_line.ends_with(" password:")
+    let is_password_prompt = prompt_line.ends_with("password:")
+        && (prompt_line == "password:"
+            || prompt_line.contains("'s password:")
+            || prompt_line.ends_with(" password:"));
+    let is_passphrase_prompt = prompt_line.starts_with("enter passphrase for key");
+    is_password_prompt || is_passphrase_prompt
+}
+
+fn should_accept_host_key_prompt(output_tail: &str) -> bool {
+    let sanitized = strip_ansi_sequences(output_tail).to_ascii_lowercase();
+    let prompt_line = sanitized
+        .rsplit(['\n', '\r'])
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+
+    prompt_line.contains("are you sure you want to continue connecting")
+        && (prompt_line.ends_with("(yes/no/[fingerprint])?")
+            || prompt_line.ends_with("(yes/no)?")
+            || prompt_line.ends_with('?'))
+}
+
+fn extract_host_key_fingerprint(buffer: &str) -> String {
+    let sanitized = strip_ansi_sequences(buffer);
+    let fingerprint_line = sanitized
+        .lines()
+        .map(str::trim)
+        .find(|line| line.contains("fingerprint is"))
+        .map(|line| line.to_string());
+
+    fingerprint_line.unwrap_or_else(|| {
+        sanitized
+            .lines()
+            .rev()
+            .take(4)
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim()
+            .to_string()
+    })
 }
 
 fn should_mark_session_connected(output_tail: &str) -> bool {
@@ -318,6 +364,7 @@ pub fn start_session(
         last_activity_at: Instant::now(),
         close_reason: None,
         pending_cwd_request: None,
+        pending_host_key: None,
     }));
 
     session_manager_state
@@ -344,15 +391,58 @@ pub fn start_session(
         let mut password_prompt_buffer = String::new();
         let mut password_sent = false;
         let mut connected_emitted = false;
+        let mut host_key_pending = false;
+        let mut host_key_receiver: Option<mpsc::Receiver<bool>> = None;
         loop {
             match reader.read(&mut buf) {
                 Ok(n) if n > 0 => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    if !host_key_pending {
+                        password_prompt_buffer.push_str(&data);
+                        trim_prompt_buffer(&mut password_prompt_buffer);
+
+                        if should_accept_host_key_prompt(&password_prompt_buffer) {
+                            let fingerprint = extract_host_key_fingerprint(&password_prompt_buffer);
+                            let (responder, receiver) = mpsc::channel();
+                            if let Ok(mut session_guard) = reader_session.lock() {
+                                session_guard.pending_host_key = Some(responder);
+                            }
+                            let _ = reader_window.emit(
+                                "host-key-prompt",
+                                HostKeyPromptEvent {
+                                    session_id: reader_session_id.clone(),
+                                    server_id: reader_server_id.clone(),
+                                    fingerprint,
+                                },
+                            );
+                            host_key_pending = true;
+                            host_key_receiver = Some(receiver);
+                            continue;
+                        }
+                    }
+
+                    if host_key_pending {
+                        if let Some(receiver) = host_key_receiver.as_ref() {
+                            match receiver.try_recv() {
+                                Ok(accept) => {
+                                    if let Ok(mut writer) = reader_writer.lock() {
+                                        let _ = writer.write_all(if accept { b"yes\r" } else { b"no\r" });
+                                        let _ = writer.flush();
+                                    }
+                                    if let Ok(mut session_guard) = reader_session.lock() {
+                                        session_guard.pending_host_key = None;
+                                    }
+                                    host_key_pending = false;
+                                    host_key_receiver = None;
+                                    password_prompt_buffer.clear();
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                    }
+
                     if !password_sent {
                         if let Some(password) = auto_password.as_deref() {
-                            password_prompt_buffer.push_str(&data);
-                            trim_prompt_buffer(&mut password_prompt_buffer);
-
                             if should_auto_fill_ssh_password(&password_prompt_buffer) {
                                 match reader_writer.lock() {
                                     Ok(mut writer) => {
@@ -387,9 +477,6 @@ pub fn start_session(
                     }
 
                     if !connected_emitted {
-                        password_prompt_buffer.push_str(&data);
-                        trim_prompt_buffer(&mut password_prompt_buffer);
-
                         if should_mark_session_connected(&password_prompt_buffer) {
                             match reader_app_data.lock() {
                                 Ok(mut app_data) => {
@@ -645,6 +732,33 @@ pub fn write_to_session(
         session_guard.last_activity_at = Instant::now();
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn respond_to_host_key_prompt(
+    session_manager_state: State<'_, SessionManagerState>,
+    session_id: String,
+    accept: bool,
+) -> Result<(), String> {
+    let session = session_manager_state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&session_id)
+        .cloned()
+        .ok_or_else(|| format!("No active PTY session for session {}", session_id))?;
+
+    let responder = {
+        let mut session_guard = session.lock().map_err(|e| e.to_string())?;
+        session_guard
+            .pending_host_key
+            .take()
+            .ok_or("当前会话没有待确认的主机指纹请求")?
+    };
+
+    responder
+        .send(accept)
+        .map_err(|_| "主机指纹请求已失效，请重试".to_string())
 }
 
 pub fn read_session_current_directory(

@@ -14,6 +14,7 @@ use crate::servers::interface::commands::{
     pty_resize, pty_write, read_app_logs, update_app_settings, update_server,
     upload_file_to_server,
 };
+use crate::servers::infrastructure::session_manager;
 use log::LevelFilter;
 use log4rs::{
     append::{console::ConsoleAppender, file::FileAppender},
@@ -153,6 +154,7 @@ fn main() {
             pty_write,
             pty_resize,
             get_terminal_session_directory,
+            session_manager::respond_to_host_key_prompt,
             disconnect_server,
             close_terminal_session,
             fetch_server_metrics,

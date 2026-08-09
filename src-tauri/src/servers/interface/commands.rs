@@ -263,20 +263,6 @@ fn should_auto_fill_ssh_password(output_tail: &str) -> bool {
     is_password_prompt || is_passphrase_prompt
 }
 
-fn should_accept_host_key_prompt(output_tail: &str) -> bool {
-    let sanitized = strip_ansi_sequences(output_tail).to_ascii_lowercase();
-    let prompt_line = sanitized
-        .rsplit(['\n', '\r'])
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or("")
-        .trim();
-
-    prompt_line.contains("are you sure you want to continue connecting")
-        && (prompt_line.ends_with("(yes/no/[fingerprint])?")
-            || prompt_line.ends_with("(yes/no)?")
-            || prompt_line.ends_with('?'))
-}
-
 fn needs_remote_path_escaping(path: &str) -> bool {
     path.chars().any(|ch| {
         ch.is_whitespace()
@@ -596,6 +582,8 @@ fn run_ssh_command(
     let mut cmd = CommandBuilder::new("ssh");
     cmd.arg("-p");
     cmd.arg(port.to_string());
+    cmd.arg("-o");
+    cmd.arg("StrictHostKeyChecking=accept-new");
     if let Some(key_path) = key_path {
         cmd.arg("-i");
         cmd.arg(key_path);
@@ -641,7 +629,6 @@ fn run_ssh_command(
     let mut output = String::new();
     let mut prompt_buffer = String::new();
     let mut password_sent = false;
-    let mut host_key_confirmed = false;
     let deadline = Instant::now() + timeout;
 
     loop {
@@ -660,13 +647,6 @@ fn run_ssh_command(
                 output.push_str(&text);
                 prompt_buffer.push_str(&text);
                 trim_prompt_buffer(&mut prompt_buffer);
-
-                if !host_key_confirmed && should_accept_host_key_prompt(&prompt_buffer) {
-                    writer.write_all(b"yes\r").map_err(|err| err.to_string())?;
-                    writer.flush().map_err(|err| err.to_string())?;
-                    host_key_confirmed = true;
-                    continue;
-                }
 
                 if !password_sent {
                     if let Some(password) = password.filter(|value| !value.is_empty()) {
@@ -821,6 +801,8 @@ fn run_scp_transfer(
     let mut cmd = CommandBuilder::new("scp");
     cmd.arg("-P");
     cmd.arg(port.to_string());
+    cmd.arg("-o");
+    cmd.arg("StrictHostKeyChecking=accept-new");
     if let Some(key_path) = key_path {
         cmd.arg("-i");
         cmd.arg(key_path);
@@ -866,7 +848,6 @@ fn run_scp_transfer(
     let mut output = String::new();
     let mut prompt_buffer = String::new();
     let mut password_sent = false;
-    let mut host_key_confirmed = false;
     let mut last_progress_percent = None;
     let deadline = Instant::now() + FILE_TRANSFER_TIMEOUT;
     let file_name = Path::new(local_path)
@@ -915,13 +896,6 @@ fn run_scp_transfer(
                             },
                         );
                     }
-                }
-
-                if !host_key_confirmed && should_accept_host_key_prompt(&prompt_buffer) {
-                    writer.write_all(b"yes\r").map_err(|err| err.to_string())?;
-                    writer.flush().map_err(|err| err.to_string())?;
-                    host_key_confirmed = true;
-                    continue;
                 }
 
                 if !password_sent {

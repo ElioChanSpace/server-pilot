@@ -11,6 +11,7 @@ import { BottomBar } from "./components/BottomBar";
 import { FileTransferTray } from "./components/FileTransferTray";
 import { MainContent } from "./components/MainContent";
 import { ContextMenu, ContextMenuAction } from "./components/ContextMenu";
+import modalStyles from "./components/Modal.module.css";
 import { FaEdit, FaPlus, FaFolderPlus, FaMoon, FaPlug, FaSun, FaUnlink } from 'react-icons/fa';
 import type {
   TerminalSession,
@@ -174,6 +175,12 @@ interface UploadProgressOverlayState {
   bytesPerSecond: number | null;
   etaSeconds: number | null;
   message: string | null;
+}
+
+interface HostKeyPromptEvent {
+  sessionId: string;
+  serverId: string;
+  fingerprint: string;
 }
 
 interface SessionRemovalOptions {
@@ -385,6 +392,7 @@ const AppContent: React.FC = () => {
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
   const [, setSessionCurrentDirectories] = useState<Record<string, string>>({});
   const [uploadProgressOverlay, setUploadProgressOverlay] = useState<UploadProgressOverlayState | null>(null);
+  const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPromptEvent | null>(null);
   
   const { connectToServer, disconnectServer, closeTerminalSession, servers } = useServer();
 
@@ -607,6 +615,7 @@ const AppContent: React.FC = () => {
         updateSessionStatus(event.payload.sessionId, event.payload.status);
       }),
       listen<TerminalSessionClosedEvent>("terminal-session-closed", (event) => {
+        setHostKeyPrompt(prev => (prev && prev.sessionId === event.payload.sessionId ? null : prev));
         if (event.payload.shouldRemove) {
           applySessionRemoval([event.payload.sessionId], { anchorSessionId: event.payload.sessionId });
           return;
@@ -635,6 +644,9 @@ const AppContent: React.FC = () => {
             message: payload.message ?? prev.message,
           };
         });
+      }),
+      listen<HostKeyPromptEvent>("host-key-prompt", (event) => {
+        setHostKeyPrompt(event.payload);
       }),
     ];
 
@@ -1034,6 +1046,17 @@ const AppContent: React.FC = () => {
   }, []);
   const handleDismissError = useCallback(() => setConnectionError(null), []);
   const handleCloseLogViewer = useCallback(() => setIsLogViewerOpen(false), []);
+  const respondHostKey = useCallback((accept: boolean) => {
+    if (!hostKeyPrompt) {
+      return;
+    }
+
+    const sessionId = hostKeyPrompt.sessionId;
+    setHostKeyPrompt(null);
+    void invoke("respond_to_host_key_prompt", { sessionId, accept }).catch(error => {
+      console.error("回应主机指纹失败:", error);
+    });
+  }, [hostKeyPrompt]);
   const toggleLeftSidebar = useCallback(() => {
     setIsLeftSidebarOpen(prev => !prev);
   }, []);
@@ -1198,6 +1221,32 @@ const AppContent: React.FC = () => {
         />
       )}
       {isCategoryModalOpen && <AddCategoryModal onClose={() => setIsCategoryModalOpen(false)} parentId={initialParentId} />}
+      {hostKeyPrompt && (
+        <div className={modalStyles.overlay}>
+          <div className={modalStyles.content}>
+            <h2 className={modalStyles.title}>主机指纹确认</h2>
+            <p className={modalStyles.helpText}>
+              首次连接{" "}
+              <strong>
+                {serversRef.current.find(server => server.id === hostKeyPrompt.serverId)?.name ?? "服务器"}
+              </strong>
+              ，请核对远程主机指纹：
+            </p>
+            <pre className={modalStyles.fingerprint}>{hostKeyPrompt.fingerprint}</pre>
+            <p className={modalStyles.helpText}>
+              确认后将写入 known_hosts。若指纹与预期不符，请选择"取消"。
+            </p>
+            <div className={modalStyles.actions}>
+              <button type="button" className={modalStyles.secondaryButton} onClick={() => respondHostKey(false)}>
+                取消
+              </button>
+              <button type="button" onClick={() => respondHostKey(true)}>
+                信任并连接
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {contextMenu && <ContextMenu {...contextMenu} menuRef={contextMenuRef} onClose={closeContextMenu} />}
     </div>
   );
