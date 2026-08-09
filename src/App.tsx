@@ -6,6 +6,7 @@ import { ServerProvider, Server, Category, useServer } from "./context/ServerCon
 import { AddServerModal } from "./components/AddServerModal";
 import { AddCategoryModal } from "./components/AddCategoryModal";
 import { ImportSshConfigModal } from "./components/ImportSshConfigModal";
+import { BatchCommandModal } from "./components/BatchCommandModal";
 import { LeftSidebar } from "./components/LeftSidebar";
 import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
@@ -52,11 +53,12 @@ const MenuBar: React.FC<{
   onNewCategory: () => void;
   onNewServer: () => void;
   onImportSshConfig: () => void;
+  onBatchCommand: () => void;
   onViewLogs: () => void;
   onOpenSettings: () => void;
   theme: ThemeMode;
   onToggleTheme: () => void;
-}> = ({ onNewCategory, onNewServer, onImportSshConfig, onViewLogs, onOpenSettings, theme, onToggleTheme }) => {
+}> = ({ onNewCategory, onNewServer, onImportSshConfig, onBatchCommand, onViewLogs, onOpenSettings, theme, onToggleTheme }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -119,6 +121,7 @@ const MenuBar: React.FC<{
         {openMenu === 'system' && (
           <div className="dropdown">
             <button className="dropdownItem" onClick={() => handleItemClick(onOpenSettings)}>设置</button>
+            <button className="dropdownItem" onClick={() => handleItemClick(onBatchCommand)}>批量执行命令...</button>
             <button className="dropdownItem" onClick={() => handleItemClick(onViewLogs)}>查看日志</button>
           </div>
         )}
@@ -381,6 +384,7 @@ const AppContent: React.FC = () => {
   const [activeView, setActiveView] = useState<"dashboard" | "settings" | "logs">("dashboard");
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [isSshImportOpen, setIsSshImportOpen] = useState(false);
+  const [isBatchCommandOpen, setIsBatchCommandOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [initialCategoryId, setInitialCategoryId] = useState<string | undefined>(undefined);
   const [initialParentId, setInitialParentId] = useState<string | undefined>(undefined);
@@ -1040,6 +1044,7 @@ const AppContent: React.FC = () => {
     setIsServerModalOpen(true);
   }, []);
   const handleOpenSshImport = useCallback(() => setIsSshImportOpen(true), []);
+  const handleOpenBatchCommand = useCallback(() => setIsBatchCommandOpen(true), []);
   const handleOpenSettings = useCallback(() => {
     setIsLogViewerOpen(false);
     clearSelection();
@@ -1144,6 +1149,7 @@ const AppContent: React.FC = () => {
         onNewCategory={handleNewCategory}
         onNewServer={handleNewServer}
         onImportSshConfig={handleOpenSshImport}
+        onBatchCommand={handleOpenBatchCommand}
         onOpenSettings={handleOpenSettings}
         onViewLogs={handleOpenLogViewer}
         theme={theme}
@@ -1275,6 +1281,13 @@ const AppContent: React.FC = () => {
         />
       )}
       {isSshImportOpen && <ImportSshConfigModal onClose={() => setIsSshImportOpen(false)} />}
+      {isBatchCommandOpen && (
+        <BatchCommandModal
+          sessions={sessions}
+          servers={servers}
+          onClose={() => setIsBatchCommandOpen(false)}
+        />
+      )}
       {isCategoryModalOpen && <AddCategoryModal onClose={() => setIsCategoryModalOpen(false)} parentId={initialParentId} />}
       {hostKeyPrompt && (
         <div className={modalStyles.overlay}>

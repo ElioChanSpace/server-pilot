@@ -172,3 +172,34 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.commandInput {
+  width: 100%;
+  min-height: 96px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.commandInput:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--surface-active);
+}
+
+.formSuccess {
+  margin-top: var(--space-2);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(61, 166, 107, 0.28);
+  background: rgba(61, 166, 107, 0.12);
+  color: var(--success-color);
+  font-size: 13px;
+  line-height: 1.5;
+}
