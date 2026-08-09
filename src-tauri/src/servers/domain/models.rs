@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+fn default_auth_method() -> String {
+    "password".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub enum OsType {
@@ -19,11 +23,18 @@ pub struct Server {
     pub category_id: Option<String>,
     pub status: String,
     pub os_type: OsType,
+    #[serde(default = "default_auth_method")]
+    pub auth_method: String,
+    pub key_path: Option<String>,
     #[serde(default)]
     pub has_password: bool,
+    #[serde(default)]
+    pub has_key_passphrase: bool,
     /// 仅用于从旧版 data.json 迁移；序列化时永不写入磁盘，也永不返回给前端。
     #[serde(skip_serializing)]
     pub password: Option<String>,
+    #[serde(skip_serializing)]
+    pub key_passphrase: Option<String>,
 }
 
 impl Server {
@@ -34,7 +45,10 @@ impl Server {
         username: String,
         category_id: Option<String>,
         os_type: OsType,
+        auth_method: String,
         password: Option<String>,
+        key_path: Option<String>,
+        key_passphrase: Option<String>,
     ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
@@ -45,8 +59,14 @@ impl Server {
             category_id,
             status: "disconnected".to_string(),
             os_type,
+            auth_method,
+            key_path,
             has_password: password.as_ref().is_some_and(|value| !value.is_empty()),
             password,
+            has_key_passphrase: key_passphrase
+                .as_ref()
+                .is_some_and(|value| !value.is_empty()),
+            key_passphrase,
         }
     }
 }

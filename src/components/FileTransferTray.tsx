@@ -126,13 +126,14 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
 
   const isLinux = server?.osType === "linux";
   const hasSavedPassword = Boolean(server?.hasPassword);
-  const canTransferFiles = Boolean(server) && isLinux && hasSavedPassword;
+  const usesKeyAuth = server?.authMethod === "key";
+  const canTransferFiles = Boolean(server) && isLinux && (hasSavedPassword || usesKeyAuth);
   const transferHint = !server
     ? "先在左侧或会话区域选中一台服务器，再使用底部文件传输模块。"
-    : !isLinux
-      ? "当前仅支持 Linux 服务器传输文件。"
-      : !hasSavedPassword
-        ? "请先为当前服务器保存 SSH 密码，再执行上传或下载。"
+      : !isLinux
+        ? "当前仅支持 Linux 服务器传输文件。"
+      : !hasSavedPassword && !usesKeyAuth
+        ? "请先为当前服务器保存 SSH 密码或密钥，再执行上传或下载。"
         : "支持本地与服务器之间的单文件上传、下载，并可按目录层级浏览远程文件。";
 
   const loadRemoteDirectory = React.useCallback(async (

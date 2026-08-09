@@ -251,13 +251,16 @@ fn should_auto_fill_ssh_password(output_tail: &str) -> bool {
         .unwrap_or("")
         .trim();
 
-    if !prompt_line.ends_with("password:") || prompt_line.contains("sudo") {
+    if prompt_line.contains("sudo") {
         return false;
     }
 
-    prompt_line == "password:"
-        || prompt_line.contains("'s password:")
-        || prompt_line.ends_with(" password:")
+    let is_password_prompt = prompt_line.ends_with("password:")
+        && (prompt_line == "password:"
+            || prompt_line.contains("'s password:")
+            || prompt_line.ends_with(" password:"));
+    let is_passphrase_prompt = prompt_line.starts_with("enter passphrase for key");
+    is_password_prompt || is_passphrase_prompt
 }
 
 fn should_accept_host_key_prompt(output_tail: &str) -> bool {
@@ -338,10 +341,20 @@ fn join_remote_path(base: &str, name: &str) -> String {
     }
 }
 
+#[derive(Debug, Clone)]
+struct TransferConnection {
+    username: String,
+    host: String,
+    port: u16,
+    password: Option<String>,
+    key_path: Option<String>,
+    key_passphrase: Option<String>,
+}
+
 fn resolve_transfer_server(
     state: &State<'_, AppState>,
     id: &str,
-) -> Result<(String, String, u16, String), String> {
+) -> Result<TransferConnection, String> {
     let server = {
         let data = state.data.lock().map_err(|err| err.to_string())?;
         data.servers
@@ -355,9 +368,13 @@ fn resolve_transfer_server(
         return Err("Only Linux file transfer is supported currently".to_string());
     }
 
-    let password = credential_store::get_password(id)?
-        .filter(|value| !value.is_empty())
-        .ok_or("文件传输需要已保存的 SSH 密码，请编辑服务器并保存密码".to_string())?;
+    let password = credential_store::get_password(id)?.filter(|value| !value.is_empty());
+    let key_passphrase =
+        credential_store::get_key_passphrase(id)?.filter(|value| !value.is_empty());
+
+    if server.auth_method != "key" && password.is_none() {
+        return Err("文件传输需要已保存的 SSH 密码，请编辑服务器并保存密码".to_string());
+    }
 
     let username = if server.username.eq_ignore_ascii_case("root") {
         "root".to_string()
@@ -365,7 +382,14 @@ fn resolve_transfer_server(
         server.username
     };
 
-    Ok((username, server.host, server.port, password))
+    Ok(TransferConnection {
+        username,
+        host: server.host,
+        port: server.port,
+        password,
+        key_path: server.key_path,
+        key_passphrase,
+    })
 }
 
 fn read_between_markers<'a>(
@@ -559,6 +583,7 @@ fn run_ssh_command(
     host: &str,
     port: u16,
     password: Option<&str>,
+    key_path: Option<&str>,
     remote_command: &str,
     timeout: Duration,
     action_label: &str,
@@ -571,6 +596,10 @@ fn run_ssh_command(
     let mut cmd = CommandBuilder::new("ssh");
     cmd.arg("-p");
     cmd.arg(port.to_string());
+    if let Some(key_path) = key_path {
+        cmd.arg("-i");
+        cmd.arg(key_path);
+    }
     cmd.arg(format!("{}@{}", username, host));
     cmd.arg(format!("sh -lc {}", shell_quote(remote_command)));
 
@@ -774,7 +803,8 @@ fn run_scp_transfer(
     window: Option<Window>,
     transfer_id: Option<String>,
     port: u16,
-    password: &str,
+    credential: Option<&str>,
+    key_path: Option<&str>,
     source: &str,
     target: &str,
     action_label: &str,
@@ -791,6 +821,10 @@ fn run_scp_transfer(
     let mut cmd = CommandBuilder::new("scp");
     cmd.arg("-P");
     cmd.arg(port.to_string());
+    if let Some(key_path) = key_path {
+        cmd.arg("-i");
+        cmd.arg(key_path);
+    }
     cmd.arg(source);
     cmd.arg(target);
 
@@ -890,13 +924,17 @@ fn run_scp_transfer(
                     continue;
                 }
 
-                if !password_sent && should_auto_fill_ssh_password(&prompt_buffer) {
-                    writer
-                        .write_all(password.as_bytes())
-                        .map_err(|err| err.to_string())?;
-                    writer.write_all(b"\r").map_err(|err| err.to_string())?;
-                    writer.flush().map_err(|err| err.to_string())?;
-                    password_sent = true;
+                if !password_sent {
+                    if let Some(credential) = credential.filter(|value| !value.is_empty()) {
+                        if should_auto_fill_ssh_password(&prompt_buffer) {
+                            writer
+                                .write_all(credential.as_bytes())
+                                .map_err(|err| err.to_string())?;
+                            writer.write_all(b"\r").map_err(|err| err.to_string())?;
+                            writer.flush().map_err(|err| err.to_string())?;
+                            password_sent = true;
+                        }
+                    }
                 }
             }
             Ok(Err(err)) => return Err(err),
@@ -938,17 +976,37 @@ pub fn create_server(
     username: String,
     category_id: Option<String>,
     os_type: OsType,
+    auth_method: String,
     password: Option<String>,
+    key_path: Option<String>,
+    key_passphrase: Option<String>,
 ) -> Result<Server, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
-    let mut server = Server::new(name, host, port, username, category_id, os_type, password);
+    let mut server = Server::new(
+        name,
+        host,
+        port,
+        username,
+        category_id,
+        os_type,
+        auth_method,
+        password,
+        key_path,
+        key_passphrase,
+    );
     if server.has_password {
         if let Some(password) = server.password.clone() {
             credential_store::save_password(&server.id, &password)?;
         }
     }
+    if server.has_key_passphrase {
+        if let Some(passphrase) = server.key_passphrase.clone() {
+            credential_store::save_key_passphrase(&server.id, &passphrase)?;
+        }
+    }
     // 密码已存入系统钥匙串，内存与返回值均不保留明文。
     server.password = None;
+    server.key_passphrase = None;
     data.servers.push(server.clone());
     drop(data); // Release lock before saving
     state.save()?;
@@ -965,7 +1023,10 @@ pub fn update_server(
     username: String,
     category_id: Option<String>,
     os_type: OsType,
+    auth_method: String,
     password: Option<String>,
+    key_path: Option<String>,
+    key_passphrase: Option<String>,
 ) -> Result<Server, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
     let server = data
@@ -980,6 +1041,8 @@ pub fn update_server(
     server.username = username;
     server.category_id = category_id;
     server.os_type = os_type;
+    server.auth_method = auth_method;
+    server.key_path = key_path;
     match password.as_deref() {
         Some(value) if !value.is_empty() => {
             credential_store::save_password(&server.id, value)?;
@@ -989,7 +1052,15 @@ pub fn update_server(
             // 空密码或未提供时保留钥匙串中的既有凭据。
         }
     }
+    match key_passphrase.as_deref() {
+        Some(value) if !value.is_empty() => {
+            credential_store::save_key_passphrase(&server.id, value)?;
+            server.has_key_passphrase = true;
+        }
+        _ => {}
+    }
     server.password = None;
+    server.key_passphrase = None;
 
     let updated_server = server.clone();
     drop(data);
@@ -1077,6 +1148,8 @@ pub async fn connect_server(
     };
 
     let password = credential_store::get_password(&server.id)?;
+    let key_passphrase = credential_store::get_key_passphrase(&server.id)?;
+    let use_key_auth = server.auth_method == "key";
 
     if !matches!(server.os_type, OsType::Linux) {
         return Err("Only Linux SSH is supported currently".into());
@@ -1097,6 +1170,8 @@ pub async fn connect_server(
         server.host,
         server.port,
         password,
+        if use_key_auth { server.key_path } else { None },
+        if use_key_auth { key_passphrase } else { None },
         state,
         session_manager,
     )?;
@@ -1165,21 +1240,15 @@ pub async fn fetch_server_metrics(
         return Err("Only Linux server monitoring is supported currently".to_string());
     }
 
-    let username = if server.username.eq_ignore_ascii_case("root") {
-        "root".to_string()
-    } else {
-        server.username.clone()
-    };
-    let host = server.host.clone();
-    let port = server.port;
-    let password = server.password.clone();
+    let connection = resolve_transfer_server(&state, &id)?;
 
     tauri::async_runtime::spawn_blocking(move || {
         let output = run_ssh_command(
-            &username,
-            &host,
-            port,
-            password.as_deref(),
+            &connection.username,
+            &connection.host,
+            connection.port,
+            connection.password.as_deref(),
+            connection.key_path.as_deref(),
             build_metrics_command(),
             SSH_COMMAND_TIMEOUT,
             "collect server metrics",
@@ -1198,15 +1267,16 @@ pub async fn list_remote_directory(
 ) -> Result<RemoteDirectoryListing, String> {
     let requested_path = path.unwrap_or_default().trim().to_string();
 
-    let (username, host, port, password) = resolve_transfer_server(&state, &id)?;
+    let connection = resolve_transfer_server(&state, &id)?;
     let remote_command = build_list_directory_command(&requested_path);
 
     tauri::async_runtime::spawn_blocking(move || {
         let output = run_ssh_command(
-            &username,
-            &host,
-            port,
-            Some(&password),
+            &connection.username,
+            &connection.host,
+            connection.port,
+            connection.password.as_deref(),
+            connection.key_path.as_deref(),
             &remote_command,
             SSH_COMMAND_TIMEOUT,
             "list remote directory",
@@ -1241,8 +1311,8 @@ pub async fn upload_file_to_server(
         return Err("Remote path is required".to_string());
     }
 
-    let (username, host, port, password) = resolve_transfer_server(&state, &id)?;
-    let target = build_remote_scp_argument(&username, &host, &remote_path);
+    let connection = resolve_transfer_server(&state, &id)?;
+    let target = build_remote_scp_argument(&connection.username, &connection.host, &remote_path);
     let local_path_for_result = local_path.clone();
     let remote_path_for_result = remote_path.clone();
     let transfer_id_for_result = transfer_id.clone();
@@ -1272,8 +1342,12 @@ pub async fn upload_file_to_server(
         let transfer_result = run_scp_transfer(
             Some(window.clone()),
             transfer_id.clone(),
-            port,
-            &password,
+            connection.port,
+            connection
+                .password
+                .as_deref()
+                .or(connection.key_passphrase.as_deref()),
+            connection.key_path.as_deref(),
             &local_path,
             &target,
             "upload file",
@@ -1354,8 +1428,8 @@ pub async fn download_file_from_server(
         return Err("Local path is required".to_string());
     }
 
-    let (username, host, port, password) = resolve_transfer_server(&state, &id)?;
-    let source = build_remote_scp_argument(&username, &host, &remote_path);
+    let connection = resolve_transfer_server(&state, &id)?;
+    let source = build_remote_scp_argument(&connection.username, &connection.host, &remote_path);
     let local_path_for_result = local_path.clone();
     let remote_path_for_result = remote_path.clone();
 
@@ -1363,8 +1437,12 @@ pub async fn download_file_from_server(
         run_scp_transfer(
             None,
             None,
-            port,
-            &password,
+            connection.port,
+            connection
+                .password
+                .as_deref()
+                .or(connection.key_passphrase.as_deref()),
+            connection.key_path.as_deref(),
             &source,
             &local_path,
             "download file",

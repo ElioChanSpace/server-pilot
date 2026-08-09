@@ -89,3 +89,19 @@
   box-shadow: none;
   transform: none;
 }
+
+.keyRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.keyRow input {
+  flex: 1;
+  min-width: 0;
+}
+
+.keyRow button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

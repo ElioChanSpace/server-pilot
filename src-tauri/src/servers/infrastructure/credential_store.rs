@@ -21,6 +21,20 @@ pub fn get_password(server_id: &str) -> Result<Option<String>, String> {
     }
 }
 
+pub fn save_key_passphrase(server_id: &str, passphrase: &str) -> Result<(), String> {
+    entry_for(&format!("key-passphrase:{server_id}"))?
+        .set_password(passphrase)
+        .map_err(|err| format!("保存密钥口令到系统钥匙串失败: {err}"))
+}
+
+pub fn get_key_passphrase(server_id: &str) -> Result<Option<String>, String> {
+    match entry_for(&format!("key-passphrase:{server_id}"))?.get_password() {
+        Ok(passphrase) => Ok(Some(passphrase)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(format!("读取系统钥匙串密钥口令失败: {err}")),
+    }
+}
+
 #[allow(dead_code)]
 pub fn delete_password(server_id: &str) -> Result<(), String> {
     match entry_for(&format!("password:{server_id}"))?.delete_credential() {

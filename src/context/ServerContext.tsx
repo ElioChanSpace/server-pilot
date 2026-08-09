@@ -17,7 +17,10 @@ export interface Server {
   categoryId?: string;
   status: string;
   osType: OsType;
+  authMethod?: 'password' | 'key';
+  keyPath?: string;
   hasPassword?: boolean;
+  hasKeyPassphrase?: boolean;
 }
 
 export interface Category {

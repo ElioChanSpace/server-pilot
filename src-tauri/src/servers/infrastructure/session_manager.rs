@@ -280,6 +280,8 @@ pub fn start_session(
     host: String,
     port: u16,
     password: Option<String>,
+    key_path: Option<String>,
+    key_passphrase: Option<String>,
     app_state: State<'_, AppState>,
     session_manager_state: State<'_, SessionManagerState>,
 ) -> Result<String, String> {
@@ -294,6 +296,10 @@ pub fn start_session(
     cmd.arg(format!("{}@{}", username, host));
     cmd.arg("-p");
     cmd.arg(port.to_string());
+    if let Some(key_path) = key_path.as_deref() {
+        cmd.arg("-i");
+        cmd.arg(key_path);
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
@@ -329,7 +335,9 @@ pub fn start_session(
     let reader_writer = writer.clone();
     let reader_app_data = app_state.data.clone();
     let reader_session = session.clone();
-    let auto_password = password.filter(|password| !password.is_empty());
+    let auto_password = password
+        .or(key_passphrase)
+        .filter(|password| !password.is_empty());
     tauri::async_runtime::spawn_blocking(move || {
         let mut reader = reader;
         let mut buf = [0u8; 8192];

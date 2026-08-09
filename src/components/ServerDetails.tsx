@@ -46,6 +46,7 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
   const statusText = isConnected ? '已连接，可直接进入终端操作。' : isConnecting ? '连接正在建立，请稍候。' : '当前未连接，适合先检查主机和账号信息。';
   const protocolLabel = isLinux ? 'SSH' : '远程桌面';
   const credentialStatus = server.hasPassword ? '已保存密码' : '未保存密码';
+  const isKeyAuth = server.authMethod === 'key';
 
   React.useEffect(() => {
     setActiveTab('overview');
@@ -138,6 +139,10 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
                       <td>{isLinux ? 'Linux' : 'Windows'}</td>
                     </tr>
                     <tr>
+                      <th>认证方式</th>
+                      <td>{isKeyAuth ? 'SSH 密钥' : '密码'}</td>
+                    </tr>
+                    <tr>
                       <th>状态说明</th>
                       <td>{statusText}</td>
                     </tr>
@@ -203,6 +208,12 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
                       <th>密码展示</th>
                       <td>{server.hasPassword ? '••••••••' : '未保存'}</td>
                     </tr>
+                    {isKeyAuth && (
+                      <tr>
+                        <th>密钥文件</th>
+                        <td>{server.keyPath ?? '未指定（使用 ssh-agent）'}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

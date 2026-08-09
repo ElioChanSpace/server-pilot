@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useServer, OsType, Server } from '../context/ServerContext';
+import { open } from '@tauri-apps/plugin-dialog';
 import styles from './Modal.module.css';
 
 interface AddServerModalProps {
@@ -37,7 +38,10 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
     port: existingServer?.port ?? 22,
     username: initialUsername,
     password: '',
-    categoryId: existingServer?.categoryId ?? initialCategoryId ?? ''
+    categoryId: existingServer?.categoryId ?? initialCategoryId ?? '',
+    authMethod: existingServer?.authMethod ?? 'password',
+    keyPath: existingServer?.keyPath ?? '',
+    keyPassphrase: '',
   });
   const [loading, setLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -56,6 +60,9 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
       username: nextUsername,
       password: '',
       categoryId: existingServer?.categoryId ?? initialCategoryId ?? '',
+      authMethod: existingServer?.authMethod ?? 'password',
+      keyPath: existingServer?.keyPath ?? '',
+      keyPassphrase: '',
     });
     setSubmitError(null);
   }, [existingServer, initialCategoryId]);
@@ -95,6 +102,9 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
         osType,
         categoryId: formData.categoryId || undefined,
         password: formData.password || undefined,
+        authMethod: formData.authMethod,
+        keyPath: formData.keyPath || undefined,
+        keyPassphrase: formData.keyPassphrase || undefined,
       };
 
       if (existingServer) {
@@ -115,6 +125,17 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
       setSubmitError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePickKeyFile = async () => {
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      title: '选择 SSH 私钥文件',
+    });
+    if (typeof selected === 'string') {
+      handleFieldChange('keyPath', selected);
     }
   };
 
@@ -196,6 +217,53 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
               }
             />
           </div>
+
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>认证方式</label>
+            <select
+              value={formData.authMethod}
+              onChange={e => handleFieldChange('authMethod', e.target.value as 'password' | 'key')}
+              className="select-css"
+            >
+              <option value="password">密码</option>
+              <option value="key">SSH 密钥</option>
+            </select>
+          </div>
+
+          {formData.authMethod === 'key' && (
+            <>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>私钥文件</label>
+                <div className={styles.keyRow}>
+                  <input
+                    type="text"
+                    value={formData.keyPath}
+                    onChange={e => handleFieldChange('keyPath', e.target.value)}
+                    placeholder="~/.ssh/id_ed25519"
+                    autoComplete="off"
+                  />
+                  <button type="button" className={styles.secondaryButton} onClick={() => void handlePickKeyFile()}>
+                    浏览...
+                  </button>
+                </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>密钥口令（选填）</label>
+                <input
+                  type="password"
+                  value={formData.keyPassphrase}
+                  onChange={e => handleFieldChange('keyPassphrase', e.target.value)}
+                  placeholder={
+                    isEditMode && existingServer?.hasKeyPassphrase
+                      ? '已保存口令，留空保持不变'
+                      : '加密私钥的口令'
+                  }
+                  autoComplete="off"
+                />
+              </div>
+            </>
+          )}
 
           <div className={styles.formGroup}>
             <label className={styles.formLabel}>分组</label>
