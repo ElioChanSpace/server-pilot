@@ -1,6 +1,8 @@
 import React, { useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { XtermTerminal } from './XtermTerminal';
+import type { TerminalSessionStatus } from '../types/terminal';
+import { FaPlug } from 'react-icons/fa';
 
 interface ConsoleViewProps {
   sessionId: string;
@@ -8,6 +10,11 @@ interface ConsoleViewProps {
   resetToken: number;
   isActive: boolean;
   onFilesDropped: (paths: string[]) => void;
+  fontSize: number;
+  scrollback: number;
+  status: TerminalSessionStatus;
+  onReconnect: () => void;
+  onFontSizeChange: (delta: number) => void;
 }
 
 const arePropsEqual = (prev: ConsoleViewProps, next: ConsoleViewProps) =>
@@ -15,6 +22,11 @@ const arePropsEqual = (prev: ConsoleViewProps, next: ConsoleViewProps) =>
   prev.resetToken === next.resetToken &&
   prev.isActive === next.isActive &&
   prev.onFilesDropped === next.onFilesDropped &&
+  prev.fontSize === next.fontSize &&
+  prev.scrollback === next.scrollback &&
+  prev.status === next.status &&
+  prev.onReconnect === next.onReconnect &&
+  prev.onFontSizeChange === next.onFontSizeChange &&
   (!prev.isActive || prev.outputChunks === next.outputChunks);
 
 const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
@@ -23,6 +35,11 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
   resetToken,
   isActive,
   onFilesDropped,
+  fontSize,
+  scrollback,
+  status,
+  onReconnect,
+  onFontSizeChange,
 }) => {
   const handleInput = useCallback((data: string) => {
     void invoke('pty_write', { sessionId, data }).catch(error => {
@@ -53,7 +70,25 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
         onResize={handleResize}
         isActive={isActive}
         onFilesDropped={onFilesDropped}
+        fontSize={fontSize}
+        scrollback={scrollback}
+        onFontSizeChange={onFontSizeChange}
       />
+      {status === 'disconnected' && (
+        <div className="console-reconnect-overlay">
+          <div className="console-reconnect-card">
+            <p className="console-reconnect-title">会话已断开</p>
+            <button
+              type="button"
+              className="console-reconnect-button"
+              onClick={onReconnect}
+            >
+              <FaPlug size={12} />
+              <span>重新连接</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -23,6 +23,10 @@ interface MainContentProps {
   onCloseServerSessions: (sessionId: string) => void;
   onCloseAllSessions: () => void;
   onTerminalFilesDropped: (sessionId: string, paths: string[]) => void;
+  terminalFontSize: number;
+  terminalScrollback: number;
+  onTerminalFontSizeChange: (delta: number) => void;
+  onReconnectSession: (sessionId: string) => void;
 }
 
 export const MainContent: React.FC<MainContentProps> = ({
@@ -39,6 +43,10 @@ export const MainContent: React.FC<MainContentProps> = ({
   onCloseServerSessions,
   onCloseAllSessions,
   onTerminalFilesDropped,
+  terminalFontSize,
+  terminalScrollback,
+  onTerminalFontSizeChange,
+  onReconnectSession,
 }) => {
   const serverById = useMemo(() => {
     const map = new Map<string, Server>();
@@ -72,6 +80,14 @@ export const MainContent: React.FC<MainContentProps> = ({
     return map;
   }, [handleFilesDropped, sessions]);
 
+  const reconnectBySession = useMemo(() => {
+    const map = new Map<string, () => void>();
+    sessions.forEach(session => {
+      map.set(session.id, () => onReconnectSession(session.id));
+    });
+    return map;
+  }, [onReconnectSession, sessions]);
+
   if (activeView === "settings") {
     return (
       <Suspense fallback={<div className={styles.lazyFallback}>正在加载设置...</div>}>
@@ -96,6 +112,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           onCloseSessionsToRight={onCloseSessionsToRight}
           onCloseServerSessions={onCloseServerSessions}
           onCloseAllSessions={onCloseAllSessions}
+          onReconnectSession={onReconnectSession}
         />
       )}
       <div className={styles.stage}>
@@ -125,6 +142,11 @@ export const MainContent: React.FC<MainContentProps> = ({
               resetToken={terminalOutputs[session.id]?.resetToken ?? 0}
               isActive={session.id === currentSessionId}
               onFilesDropped={filesDroppedBySession.get(session.id)!}
+              fontSize={terminalFontSize}
+              scrollback={terminalScrollback}
+              status={session.status}
+              onReconnect={reconnectBySession.get(session.id)!}
+              onFontSizeChange={onTerminalFontSizeChange}
             />
           </div>
         ))}

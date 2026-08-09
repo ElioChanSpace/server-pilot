@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
-import { FaCopy, FaPaste } from 'react-icons/fa';
+import { SearchAddon } from 'xterm-addon-search';
+import { FaChevronDown, FaChevronUp, FaCopy, FaPaste, FaSearch, FaTimes } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import 'xterm/css/xterm.css';
 
@@ -13,6 +14,9 @@ interface XtermTerminalProps {
   onResize: (cols: number, rows: number) => void;
   isActive: boolean;
   onFilesDropped: (paths: string[]) => void;
+  fontSize: number;
+  scrollback: number;
+  onFontSizeChange: (delta: number) => void;
 }
 
 const arePropsEqual = (prev: XtermTerminalProps, next: XtermTerminalProps) =>
@@ -21,6 +25,9 @@ const arePropsEqual = (prev: XtermTerminalProps, next: XtermTerminalProps) =>
   prev.onInput === next.onInput &&
   prev.onResize === next.onResize &&
   prev.onFilesDropped === next.onFilesDropped &&
+  prev.fontSize === next.fontSize &&
+  prev.scrollback === next.scrollback &&
+  prev.onFontSizeChange === next.onFontSizeChange &&
   // 非活动会话的累积输出只在激活时一次性补写，因此跳过重渲染。
   (!prev.isActive || prev.outputChunks === next.outputChunks);
 
@@ -31,14 +38,22 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   onResize,
   isActive,
   onFilesDropped,
+  fontSize,
+  scrollback,
+  onFontSizeChange,
 }) => {
   const termRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const renderedChunkCountRef = useRef(0);
   const fitFrameRef = useRef<number | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [isDropTargetActive, setIsDropTargetActive] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const isPositionInsideTerminal = (x: number, y: number) => {
     const terminalElement = termRef.current;
@@ -104,14 +119,18 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
         cursorBlink: true,
         convertEol: true,
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-        fontSize: 14,
-        scrollback: 5000,
+        fontSize,
+        scrollback,
       });
       applyTerminalTheme(terminal);
       const addon = new FitAddon();
       terminal.loadAddon(addon);
+      const searchAddon = new SearchAddon();
+      terminal.loadAddon(searchAddon);
       terminal.open(termRef.current);
       termInstance.current = terminal;
+      fitAddonRef.current = addon;
+      searchAddonRef.current = searchAddon;
       focusTerminal();
 
       const copySelection = async () => {
@@ -152,6 +171,30 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
           });
           return false;
         }
+
+        if (hasPrimaryModifier && !event.altKey && event.shiftKey && key === 'f') {
+          event.preventDefault();
+          setIsSearchOpen(prev => !prev);
+          return false;
+        }
+
+        if (!isMac && event.ctrlKey && !event.metaKey && !event.shiftKey) {
+          if (key === '=' || key === '+') {
+            event.preventDefault();
+            onFontSizeChange(1);
+            return false;
+          }
+          if (key === '-') {
+            event.preventDefault();
+            onFontSizeChange(-1);
+            return false;
+          }
+          if (key === '0') {
+            event.preventDefault();
+            onFontSizeChange(0);
+            return false;
+          }
+        }
         return true;
       });
 
@@ -186,7 +229,46 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
         }
       };
     }
-  }, [onInput, onResize]);
+  }, [onFontSizeChange, onInput, onResize]);
+
+  useEffect(() => {
+    const terminal = termInstance.current;
+    if (!terminal) {
+      return;
+    }
+
+    if (terminal.options.fontSize !== fontSize) {
+      terminal.options.fontSize = fontSize;
+      const addon = fitAddonRef.current;
+      if (addon) {
+        scheduleFit(addon);
+      }
+    }
+
+    if (terminal.options.scrollback !== scrollback) {
+      terminal.options.scrollback = scrollback;
+    }
+  }, [fontSize, scrollback]);
+
+  useEffect(() => {
+    if (isSearchOpen) {
+      searchInputRef.current?.focus();
+    }
+  }, [isSearchOpen]);
+
+  const runSearch = (direction: 'next' | 'previous') => {
+    const searchAddon = searchAddonRef.current;
+    if (!searchAddon || !searchQuery) {
+      return;
+    }
+
+    if (direction === 'next') {
+      searchAddon.findNext(searchQuery);
+    } else {
+      searchAddon.findPrevious(searchQuery);
+    }
+    focusTerminal();
+  };
 
   useEffect(() => {
     if (!contextMenuPosition) {
@@ -368,6 +450,54 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
           </div>
         )}
       </div>
+      {isSearchOpen && (
+        <div className="terminal-search-bar" onMouseDown={event => event.preventDefault()}>
+          <FaSearch size={12} className="terminal-search-bar__icon" />
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            placeholder="搜索终端输出 (Enter 下一个, Shift+Enter 上一个)"
+            onChange={event => {
+              setSearchQuery(event.target.value);
+              if (event.target.value) {
+                searchAddonRef.current?.findNext(event.target.value);
+              }
+            }}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                runSearch(event.shiftKey ? 'previous' : 'next');
+              } else if (event.key === 'Escape') {
+                setIsSearchOpen(false);
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="terminal-search-bar__btn"
+            title="上一个匹配 (Shift+Enter)"
+            onClick={() => runSearch('previous')}
+          >
+            <FaChevronUp size={12} />
+          </button>
+          <button
+            type="button"
+            className="terminal-search-bar__btn"
+            title="下一个匹配 (Enter)"
+            onClick={() => runSearch('next')}
+          >
+            <FaChevronDown size={12} />
+          </button>
+          <button
+            type="button"
+            className="terminal-search-bar__btn"
+            title="关闭搜索 (Esc)"
+            onClick={() => setIsSearchOpen(false)}
+          >
+            <FaTimes size={12} />
+          </button>
+        </div>
+      )}
       {contextMenuPosition && (
         <ContextMenu
           x={contextMenuPosition.x}

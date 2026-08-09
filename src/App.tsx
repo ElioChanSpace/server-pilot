@@ -20,6 +20,7 @@ import type {
   TerminalSessionStatus,
   TerminalSessionStatusEvent,
 } from "./types/terminal";
+import type { AppSettings } from "./types/settings";
 import "./App.css";
 
 const LogViewer = lazy(() => import("./components/LogViewer"));
@@ -397,6 +398,7 @@ const AppContent: React.FC = () => {
   const [, setSessionCurrentDirectories] = useState<Record<string, string>>({});
   const [uploadProgressOverlay, setUploadProgressOverlay] = useState<UploadProgressOverlayState | null>(null);
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPromptEvent | null>(null);
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   
   const { connectToServer, disconnectServer, closeTerminalSession, servers } = useServer();
 
@@ -405,6 +407,14 @@ const AppContent: React.FC = () => {
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    void invoke<AppSettings>("get_app_settings")
+      .then(setAppSettings)
+      .catch(error => {
+        console.error("加载应用设置失败:", error);
+      });
+  }, []);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -1051,6 +1061,40 @@ const AppContent: React.FC = () => {
   }, []);
   const handleDismissError = useCallback(() => setConnectionError(null), []);
   const handleCloseLogViewer = useCallback(() => setIsLogViewerOpen(false), []);
+  const handleTerminalFontSizeChange = useCallback((delta: number) => {
+    setAppSettings(prev => {
+      if (!prev) {
+        return prev;
+      }
+
+      const nextFontSize = delta === 0
+        ? 14
+        : Math.min(24, Math.max(12, prev.terminalFontSize + delta));
+      if (nextFontSize === prev.terminalFontSize) {
+        return prev;
+      }
+
+      const next = { ...prev, terminalFontSize: nextFontSize };
+      void invoke("update_app_settings", { payload: next }).catch(error => {
+        console.error("保存终端字体设置失败:", error);
+      });
+      return next;
+    });
+  }, []);
+
+  const handleReconnectSession = useCallback((sessionId: string) => {
+    const session = sessions.find(item => item.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    const server = servers.find(item => item.id === session.serverId);
+    if (!server) {
+      return;
+    }
+
+    void handleConnectServer(server);
+  }, [handleConnectServer, servers, sessions]);
   const respondHostKey = useCallback((accept: boolean) => {
     if (!hostKeyPrompt) {
       return;
@@ -1135,6 +1179,10 @@ const AppContent: React.FC = () => {
             onCloseServerSessions={handleCloseServerSessions}
             onCloseAllSessions={handleCloseAllSessions}
             onTerminalFilesDropped={handleTerminalFilesDropped}
+            terminalFontSize={appSettings?.terminalFontSize ?? 14}
+            terminalScrollback={appSettings?.terminalScrollback ?? 5000}
+            onTerminalFontSizeChange={handleTerminalFontSizeChange}
+            onReconnectSession={handleReconnectSession}
           />
           {!isLogViewerOpen && isRightSidebarOpen && (
             <div className="right-sidebar-overlay">

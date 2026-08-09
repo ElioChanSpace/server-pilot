@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaCopy, FaServer, FaTimes, FaWindowClose } from 'react-icons/fa';
+import { FaCopy, FaRedo, FaServer, FaTimes, FaWindowClose } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
@@ -17,6 +17,7 @@ interface TabBarProps {
   onCloseSessionsToRight: (sessionId: string) => void;
   onCloseServerSessions: (sessionId: string) => void;
   onCloseAllSessions: () => void;
+  onReconnectSession: (sessionId: string) => void;
 }
 
 interface TabContextMenuState {
@@ -36,6 +37,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({
   onCloseSessionsToRight,
   onCloseServerSessions,
   onCloseAllSessions,
+  onReconnectSession,
 }) => {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
@@ -87,6 +89,15 @@ const TabBarComponent: React.FC<TabBarProps> = ({
 
   const contextMenuActions: ContextMenuAction[] = contextMenu && targetSession
     ? [
+        ...(targetSession.status === 'disconnected'
+          ? [{
+              label: '重新连接',
+              icon: <FaRedo />,
+              action: () => {
+                onReconnectSession(targetSession.id);
+              },
+            }]
+          : []),
         {
           label: '复制终端',
           icon: <FaCopy />,

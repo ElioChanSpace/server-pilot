@@ -251,6 +251,8 @@ pub struct SessionConnectResult {
 pub struct UpdateAppSettingsRequest {
     pub terminal_idle_disconnect_enabled: bool,
     pub terminal_idle_disconnect_minutes: u32,
+    pub terminal_font_size: Option<u8>,
+    pub terminal_scrollback: Option<u32>,
 }
 
 fn resolve_app_log_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
@@ -1240,9 +1242,18 @@ pub fn update_app_settings(
     }
 
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
+    let current = data.settings.clone();
     data.settings = AppSettings {
         terminal_idle_disconnect_enabled: payload.terminal_idle_disconnect_enabled,
         terminal_idle_disconnect_minutes: payload.terminal_idle_disconnect_minutes.max(1),
+        terminal_font_size: payload
+            .terminal_font_size
+            .unwrap_or(current.terminal_font_size)
+            .clamp(12, 24),
+        terminal_scrollback: payload
+            .terminal_scrollback
+            .unwrap_or(current.terminal_scrollback)
+            .max(500),
     };
     let settings = data.settings.clone();
     drop(data);

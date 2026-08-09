@@ -100,6 +100,14 @@ fn default_terminal_idle_disconnect_minutes() -> u32 {
     30
 }
 
+fn default_terminal_font_size() -> u8 {
+    14
+}
+
+fn default_terminal_scrollback() -> u32 {
+    5000
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -107,6 +115,10 @@ pub struct AppSettings {
     pub terminal_idle_disconnect_enabled: bool,
     #[serde(default = "default_terminal_idle_disconnect_minutes")]
     pub terminal_idle_disconnect_minutes: u32,
+    #[serde(default = "default_terminal_font_size")]
+    pub terminal_font_size: u8,
+    #[serde(default = "default_terminal_scrollback")]
+    pub terminal_scrollback: u32,
 }
 
 impl Default for AppSettings {
@@ -114,6 +126,8 @@ impl Default for AppSettings {
         Self {
             terminal_idle_disconnect_enabled: default_terminal_idle_disconnect_enabled(),
             terminal_idle_disconnect_minutes: default_terminal_idle_disconnect_minutes(),
+            terminal_font_size: default_terminal_font_size(),
+            terminal_scrollback: default_terminal_scrollback(),
         }
     }
 }

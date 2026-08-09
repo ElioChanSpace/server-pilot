@@ -6,6 +6,8 @@ import styles from "./Settings.module.css";
 const defaultSettings: AppSettings = {
   terminalIdleDisconnectEnabled: true,
   terminalIdleDisconnectMinutes: 30,
+  terminalFontSize: 14,
+  terminalScrollback: 5000,
 };
 
 export const Settings: React.FC = () => {
@@ -99,6 +101,45 @@ export const Settings: React.FC = () => {
               <span className={styles.helper}>
                 保存后立即生效，已打开的终端会话也会按新配置参与空闲检测。
               </span>
+            </label>
+
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>终端字体大小</span>
+              <input
+                type="number"
+                min={12}
+                max={24}
+                step={1}
+                value={settings.terminalFontSize}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  setSettings(prev => ({
+                    ...prev,
+                    terminalFontSize: Number.isFinite(nextValue) ? nextValue : 14,
+                  }));
+                }}
+                className={styles.numberInput}
+              />
+              <span className={styles.helper}>保存后对所有已打开的终端生效，也可在终端内用 Ctrl+= / Ctrl+- 调整。</span>
+            </label>
+
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>终端滚动行数</span>
+              <select
+                value={settings.terminalScrollback}
+                onChange={(event) => {
+                  setSettings(prev => ({
+                    ...prev,
+                    terminalScrollback: Number(event.target.value),
+                  }));
+                }}
+                className="select-css"
+              >
+                <option value={1000}>1000 行</option>
+                <option value={5000}>5000 行</option>
+                <option value={10000}>10000 行</option>
+                <option value={50000}>50000 行</option>
+              </select>
             </label>
 
             {error && (
