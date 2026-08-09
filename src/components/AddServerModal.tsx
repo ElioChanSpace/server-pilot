@@ -36,7 +36,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
     host: existingServer?.host ?? '',
     port: existingServer?.port ?? 22,
     username: initialUsername,
-    password: existingServer?.password ?? '',
+    password: '',
     categoryId: existingServer?.categoryId ?? initialCategoryId ?? ''
   });
   const [loading, setLoading] = useState(false);
@@ -54,7 +54,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
       host: existingServer?.host ?? '',
       port: existingServer?.port ?? 22,
       username: nextUsername,
-      password: existingServer?.password ?? '',
+      password: '',
       categoryId: existingServer?.categoryId ?? initialCategoryId ?? '',
     });
     setSubmitError(null);
@@ -187,7 +187,13 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
               type="password"
               value={formData.password}
               onChange={e => handleFieldChange('password', e.target.value)}
-              placeholder={osType === OsType.Windows ? '选填' : 'SSH 密码（选填）'}
+              placeholder={
+                isEditMode && existingServer?.hasPassword
+                  ? '已保存密码，留空保持不变'
+                  : osType === OsType.Windows
+                    ? '选填'
+                    : 'SSH 密码（选填）'
+              }
             />
           </div>
 

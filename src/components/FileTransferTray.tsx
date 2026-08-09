@@ -125,7 +125,7 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
   const activeDirectoryRequestRef = React.useRef(0);
 
   const isLinux = server?.osType === "linux";
-  const hasSavedPassword = Boolean(server?.password);
+  const hasSavedPassword = Boolean(server?.hasPassword);
   const canTransferFiles = Boolean(server) && isLinux && hasSavedPassword;
   const transferHint = !server
     ? "先在左侧或会话区域选中一台服务器，再使用底部文件传输模块。"

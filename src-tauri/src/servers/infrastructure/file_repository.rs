@@ -40,7 +40,12 @@ impl Repository for FileRepository {
             fs::create_dir_all(&path).map_err(|e| e.to_string())?;
         }
         let file_path = path.join(DATA_FILE);
-        let json = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
+        // 双保险：无论内存中状态如何，写盘前一律清除明文密码。
+        let mut sanitized = data.clone();
+        for server in &mut sanitized.servers {
+            server.password = None;
+        }
+        let json = serde_json::to_string_pretty(&sanitized).map_err(|e| e.to_string())?;
         fs::write(file_path, json).map_err(|e| e.to_string())?;
         Ok(())
     }

@@ -17,7 +17,7 @@ export interface Server {
   categoryId?: string;
   status: string;
   osType: OsType;
-  password?: string;
+  hasPassword?: boolean;
 }
 
 export interface Category {

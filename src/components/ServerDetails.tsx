@@ -45,7 +45,7 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
   const primaryActionLabel = isConnected ? '打开终端' : isConnecting ? '查看连接中' : '连接服务器';
   const statusText = isConnected ? '已连接，可直接进入终端操作。' : isConnecting ? '连接正在建立，请稍候。' : '当前未连接，适合先检查主机和账号信息。';
   const protocolLabel = isLinux ? 'SSH' : '远程桌面';
-  const credentialStatus = server.password ? '已保存密码' : '未保存密码';
+  const credentialStatus = server.hasPassword ? '已保存密码' : '未保存密码';
 
   React.useEffect(() => {
     setActiveTab('overview');
@@ -201,7 +201,7 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
                     </tr>
                     <tr>
                       <th>密码展示</th>
-                      <td>{server.password ? '••••••••' : '未保存'}</td>
+                      <td>{server.hasPassword ? '••••••••' : '未保存'}</td>
                     </tr>
                   </tbody>
                 </table>

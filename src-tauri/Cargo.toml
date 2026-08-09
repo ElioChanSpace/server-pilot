@@ -21,6 +21,7 @@ log = "0.4.29"
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
+keyring = { version = "4.1.6", features = ["apple-native-keyring-store"] }
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem

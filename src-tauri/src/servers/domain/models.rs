@@ -19,6 +19,10 @@ pub struct Server {
     pub category_id: Option<String>,
     pub status: String,
     pub os_type: OsType,
+    #[serde(default)]
+    pub has_password: bool,
+    /// 仅用于从旧版 data.json 迁移；序列化时永不写入磁盘，也永不返回给前端。
+    #[serde(skip_serializing)]
     pub password: Option<String>,
 }
 
@@ -41,6 +45,7 @@ impl Server {
             category_id,
             status: "disconnected".to_string(),
             os_type,
+            has_password: password.as_ref().is_some_and(|value| !value.is_empty()),
             password,
         }
     }

@@ -4,6 +4,7 @@
 mod servers;
 
 use crate::servers::application::AppState;
+use crate::servers::infrastructure::credential_store;
 use crate::servers::infrastructure::session_manager::SessionManagerState;
 use crate::servers::infrastructure::FileRepository;
 use crate::servers::interface::commands::{
@@ -76,6 +77,27 @@ fn initialize_logging<R: tauri::Runtime>(
     Ok(())
 }
 
+fn migrate_legacy_passwords(app_state: &AppState) -> Result<(), String> {
+    let mut changed = false;
+    {
+        let mut data = app_state.data.lock().map_err(|err| err.to_string())?;
+        for server in data.servers.iter_mut() {
+            if let Some(password) = server.password.take() {
+                if !password.is_empty() {
+                    credential_store::save_password(&server.id, &password)?;
+                    server.has_password = true;
+                }
+                changed = true;
+            }
+        }
+    }
+
+    if changed {
+        app_state.save()?;
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -114,6 +136,7 @@ fn main() {
             // --- Dependency Injection ---
             let repository = Arc::new(FileRepository::new(app.handle().clone()));
             let app_state = AppState::new(repository);
+            migrate_legacy_passwords(&app_state)?;
 
             app.manage(app_state);
             Ok(())

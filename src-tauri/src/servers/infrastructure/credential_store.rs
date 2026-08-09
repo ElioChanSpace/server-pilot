@@ -1,0 +1,31 @@
+use keyring::Entry;
+
+const KEYCHAIN_SERVICE: &str = "com.server-pilot.dev";
+
+fn entry_for(account: &str) -> Result<Entry, String> {
+    Entry::new(KEYCHAIN_SERVICE, account)
+        .map_err(|err| format!("无法访问系统钥匙串: {err}"))
+}
+
+pub fn save_password(server_id: &str, password: &str) -> Result<(), String> {
+    entry_for(&format!("password:{server_id}"))?
+        .set_password(password)
+        .map_err(|err| format!("保存密码到系统钥匙串失败: {err}"))
+}
+
+pub fn get_password(server_id: &str) -> Result<Option<String>, String> {
+    match entry_for(&format!("password:{server_id}"))?.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(format!("读取系统钥匙串失败: {err}")),
+    }
+}
+
+#[allow(dead_code)]
+pub fn delete_password(server_id: &str) -> Result<(), String> {
+    match entry_for(&format!("password:{server_id}"))?.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(format!("删除系统钥匙串凭据失败: {err}")),
+    }
+}

@@ -1,5 +1,6 @@
 use crate::servers::application::AppState;
 use crate::servers::domain::{AppSettings, Category, OsType, Server};
+use crate::servers::infrastructure::credential_store;
 use crate::servers::infrastructure::session_manager::{self, SessionManagerState};
 use log::info;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
@@ -354,10 +355,9 @@ fn resolve_transfer_server(
         return Err("Only Linux file transfer is supported currently".to_string());
     }
 
-    let password = server
-        .password
+    let password = credential_store::get_password(id)?
         .filter(|value| !value.is_empty())
-        .ok_or("File transfer requires a saved SSH password".to_string())?;
+        .ok_or("文件传输需要已保存的 SSH 密码，请编辑服务器并保存密码".to_string())?;
 
     let username = if server.username.eq_ignore_ascii_case("root") {
         "root".to_string()
@@ -941,7 +941,14 @@ pub fn create_server(
     password: Option<String>,
 ) -> Result<Server, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
-    let server = Server::new(name, host, port, username, category_id, os_type, password);
+    let mut server = Server::new(name, host, port, username, category_id, os_type, password);
+    if server.has_password {
+        if let Some(password) = server.password.clone() {
+            credential_store::save_password(&server.id, &password)?;
+        }
+    }
+    // 密码已存入系统钥匙串，内存与返回值均不保留明文。
+    server.password = None;
     data.servers.push(server.clone());
     drop(data); // Release lock before saving
     state.save()?;
@@ -973,7 +980,16 @@ pub fn update_server(
     server.username = username;
     server.category_id = category_id;
     server.os_type = os_type;
-    server.password = password;
+    match password.as_deref() {
+        Some(value) if !value.is_empty() => {
+            credential_store::save_password(&server.id, value)?;
+            server.has_password = true;
+        }
+        _ => {
+            // 空密码或未提供时保留钥匙串中的既有凭据。
+        }
+    }
+    server.password = None;
 
     let updated_server = server.clone();
     drop(data);
@@ -1060,6 +1076,8 @@ pub async fn connect_server(
         s.clone()
     };
 
+    let password = credential_store::get_password(&server.id)?;
+
     if !matches!(server.os_type, OsType::Linux) {
         return Err("Only Linux SSH is supported currently".into());
     }
@@ -1078,7 +1096,7 @@ pub async fn connect_server(
         username,
         server.host,
         server.port,
-        server.password,
+        password,
         state,
         session_manager,
     )?;
