@@ -203,3 +203,30 @@
   font-size: 13px;
   line-height: 1.5;
 }
+
+.welcomeIcon {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color);
+  background: var(--surface-active);
+  border: 1px solid var(--glass-border);
+  margin-bottom: var(--space-4);
+}
+
+.welcomeActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.primaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}

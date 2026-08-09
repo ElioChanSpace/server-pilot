@@ -10,6 +10,8 @@ import { AddCategoryModal } from "./components/AddCategoryModal";
 import { ImportSshConfigModal } from "./components/ImportSshConfigModal";
 import { BatchCommandModal } from "./components/BatchCommandModal";
 import { RemoteLogModal } from "./components/RemoteLogModal";
+import { WelcomeModal } from "./components/WelcomeModal";
+import { CommandPalette } from "./components/CommandPalette";
 import { LeftSidebar } from "./components/LeftSidebar";
 import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
@@ -389,6 +391,13 @@ const AppContent: React.FC = () => {
   const [isSshImportOpen, setIsSshImportOpen] = useState(false);
   const [isBatchCommandOpen, setIsBatchCommandOpen] = useState(false);
   const [remoteLogServer, setRemoteLogServer] = useState<Server | null>(null);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isWelcomeOpen, setIsWelcomeOpen] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem("server-pilot-welcomed") !== "1";
+  });
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [initialCategoryId, setInitialCategoryId] = useState<string | undefined>(undefined);
   const [initialParentId, setInitialParentId] = useState<string | undefined>(undefined);
@@ -409,13 +418,38 @@ const AppContent: React.FC = () => {
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPromptEvent | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   
-  const { connectToServer, disconnectServer, closeTerminalSession, servers } = useServer();
+  const { connectToServer, disconnectServer, closeTerminalSession, servers, categories } = useServer();
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (servers.length > 0) {
+      setIsWelcomeOpen(false);
+    }
+  }, [servers.length]);
+
+  useEffect(() => {
+    const isMac = navigator.platform.toUpperCase().includes("MAC");
+    const handleCommandPaletteShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+      const hasPrimaryModifier = isMac
+        ? event.metaKey && !event.ctrlKey
+        : event.ctrlKey && !event.metaKey;
+      if (hasPrimaryModifier && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleCommandPaletteShortcut);
+    return () => window.removeEventListener("keydown", handleCommandPaletteShortcut);
+  }, []);
 
   useEffect(() => {
     void invoke<AppSettings>("get_app_settings")
@@ -1146,6 +1180,10 @@ const AppContent: React.FC = () => {
   const handleOpenSshImport = useCallback(() => setIsSshImportOpen(true), []);
   const handleOpenBatchCommand = useCallback(() => setIsBatchCommandOpen(true), []);
   const handleOpenRemoteLog = useCallback((server: Server) => setRemoteLogServer(server), []);
+  const dismissWelcome = useCallback(() => {
+    window.localStorage.setItem("server-pilot-welcomed", "1");
+    setIsWelcomeOpen(false);
+  }, []);
   const handleOpenSettings = useCallback(() => {
     setIsLogViewerOpen(false);
     clearSelection();
@@ -1419,6 +1457,31 @@ const AppContent: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      {isWelcomeOpen && servers.length === 0 && (
+        <WelcomeModal
+          onAddServer={() => {
+            handleNewServer();
+            dismissWelcome();
+          }}
+          onImportSshConfig={() => {
+            handleOpenSshImport();
+            dismissWelcome();
+          }}
+          onDismiss={dismissWelcome}
+        />
+      )}
+      {isCommandPaletteOpen && (
+        <CommandPalette
+          servers={servers}
+          categories={categories}
+          onConnectServer={handleConnectServer}
+          onSelectCategory={handleSelectCategory}
+          onNewServer={handleNewServer}
+          onNewCategory={handleNewCategory}
+          onOpenSettings={handleOpenSettings}
+          onClose={() => setIsCommandPaletteOpen(false)}
+        />
       )}
       {contextMenu && <ContextMenu {...contextMenu} menuRef={contextMenuRef} onClose={closeContextMenu} />}
     </div>
