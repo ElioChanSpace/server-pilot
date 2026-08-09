@@ -47,6 +47,14 @@ pub struct ServerMetricsSnapshot {
     pub memory_usage: f64,
     pub memory_used_mb: u64,
     pub memory_total_mb: u64,
+    #[serde(default)]
+    pub disk_usage: f64,
+    #[serde(default)]
+    pub load_1: f64,
+    #[serde(default)]
+    pub load_5: f64,
+    #[serde(default)]
+    pub load_15: f64,
     pub gpu: Option<GpuMetric>,
     pub gpu_status: String,
     pub top_processes: Vec<ProcessMetric>,
@@ -281,6 +289,15 @@ echo "cpu_usage=${cpu_usage:-0.0}"
 echo "memory_used_mb=${mem_used:-0}"
 echo "memory_total_mb=${mem_total:-0}"
 echo "memory_usage=${mem_usage:-0.0}"
+disk_usage=$(df -P / 2>/dev/null | awk 'NR==2 {gsub("%","",$5); print $5}')
+load_line=$(cat /proc/loadavg 2>/dev/null)
+load_1=$(printf "%s\n" "$load_line" | awk '{print $1}')
+load_5=$(printf "%s\n" "$load_line" | awk '{print $2}')
+load_15=$(printf "%s\n" "$load_line" | awk '{print $3}')
+echo "disk_usage=${disk_usage:-0.0}"
+echo "load_1=${load_1:-0.0}"
+echo "load_5=${load_5:-0.0}"
+echo "load_15=${load_15:-0.0}"
 if command -v nvidia-smi >/dev/null 2>&1; then
   gpu_line=$(nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null | head -n 1)
   if [ -n "$gpu_line" ]; then
@@ -547,6 +564,10 @@ fn parse_metrics_output(output: &str) -> Result<ServerMetricsSnapshot, String> {
     let mut memory_usage = 0.0;
     let mut memory_used_mb = 0_u64;
     let mut memory_total_mb = 0_u64;
+    let mut disk_usage = 0.0;
+    let mut load_1 = 0.0;
+    let mut load_5 = 0.0;
+    let mut load_15 = 0.0;
     let mut gpu_status = "unsupported".to_string();
     let mut gpu_name: Option<String> = None;
     let mut gpu_usage: Option<f64> = None;
@@ -575,6 +596,22 @@ fn parse_metrics_output(output: &str) -> Result<ServerMetricsSnapshot, String> {
         }
         if let Some(value) = line.strip_prefix("memory_total_mb=") {
             memory_total_mb = value.parse::<u64>().unwrap_or(0);
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("disk_usage=") {
+            disk_usage = value.parse::<f64>().unwrap_or(0.0);
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("load_1=") {
+            load_1 = value.parse::<f64>().unwrap_or(0.0);
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("load_5=") {
+            load_5 = value.parse::<f64>().unwrap_or(0.0);
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("load_15=") {
+            load_15 = value.parse::<f64>().unwrap_or(0.0);
             continue;
         }
         if let Some(value) = line.strip_prefix("gpu_status=") {
@@ -639,6 +676,10 @@ fn parse_metrics_output(output: &str) -> Result<ServerMetricsSnapshot, String> {
         memory_usage,
         memory_used_mb,
         memory_total_mb,
+        disk_usage,
+        load_1,
+        load_5,
+        load_15,
         gpu,
         gpu_status,
         top_processes,

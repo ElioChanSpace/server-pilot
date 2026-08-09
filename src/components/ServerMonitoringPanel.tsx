@@ -32,6 +32,10 @@ interface ServerMetricsSnapshot {
   memoryUsage: number;
   memoryUsedMb: number;
   memoryTotalMb: number;
+  diskUsage: number;
+  load1: number;
+  load5: number;
+  load15: number;
   gpu: GpuMetric | null;
   gpuStatus: string;
   topProcesses: ProcessMetric[];
@@ -41,6 +45,7 @@ interface ChartPoint {
   time: string;
   cpu: number;
   gpu: number | null;
+  disk: number | null;
 }
 
 interface ServerMonitoringPanelProps {
@@ -169,6 +174,7 @@ const ServerMonitoringPanelComponent: React.FC<ServerMonitoringPanelProps> = ({ 
         time: formatTime(sample.collectedAt),
         cpu: sample.cpuUsage,
         gpu: sample.gpu?.usage ?? null,
+        disk: sample.diskUsage ?? null,
       })),
     [samples]
   );
@@ -220,6 +226,18 @@ const ServerMonitoringPanelComponent: React.FC<ServerMonitoringPanelProps> = ({ 
               <td>{latestSample ? formatMemory(latestSample.memoryUsedMb, latestSample.memoryTotalMb) : "等待首个样本"}</td>
             </tr>
             <tr>
+              <th>磁盘占用</th>
+              <td>{latestSample ? formatPercent(latestSample.diskUsage) : "--"}</td>
+            </tr>
+            <tr>
+              <th>负载（1/5/15 分钟）</th>
+              <td>
+                {latestSample
+                  ? `${latestSample.load1.toFixed(2)} / ${latestSample.load5.toFixed(2)} / ${latestSample.load15.toFixed(2)}`
+                  : "--"}
+              </td>
+            </tr>
+            <tr>
               <th>GPU 占用</th>
               <td>{latestSample?.gpu ? formatPercent(latestSample.gpu.usage) : latestSample ? "不适用" : "--"}</td>
             </tr>
@@ -260,6 +278,10 @@ const ServerMonitoringPanelComponent: React.FC<ServerMonitoringPanelProps> = ({ 
                     <stop offset="5%" stopColor="#7bda7b" stopOpacity={0.28} />
                     <stop offset="95%" stopColor="#7bda7b" stopOpacity={0.04} />
                   </linearGradient>
+                  <linearGradient id="diskGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f3ba63" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#f3ba63" stopOpacity={0.05} />
+                  </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(127, 127, 127, 0.14)" />
                 <XAxis dataKey="time" tickLine={false} axisLine={false} minTickGap={20} />
@@ -279,6 +301,16 @@ const ServerMonitoringPanelComponent: React.FC<ServerMonitoringPanelProps> = ({ 
                   name="GPU"
                   stroke="#7bda7b"
                   fill="url(#gpuGradient)"
+                  strokeWidth={2}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="disk"
+                  name="磁盘"
+                  stroke="#f3ba63"
+                  fill="url(#diskGradient)"
                   strokeWidth={2}
                   connectNulls
                   isAnimationActive={false}
