@@ -42,6 +42,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
     authMethod: existingServer?.authMethod ?? 'password',
     keyPath: existingServer?.keyPath ?? '',
     keyPassphrase: '',
+    proxyJump: existingServer?.proxyJump ?? '',
   });
   const [loading, setLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
       authMethod: existingServer?.authMethod ?? 'password',
       keyPath: existingServer?.keyPath ?? '',
       keyPassphrase: '',
+      proxyJump: existingServer?.proxyJump ?? '',
     });
     setSubmitError(null);
   }, [existingServer, initialCategoryId]);
@@ -105,6 +107,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
         authMethod: formData.authMethod,
         keyPath: formData.keyPath || undefined,
         keyPassphrase: formData.keyPassphrase || undefined,
+        proxyJump: formData.proxyJump || undefined,
       };
 
       if (existingServer) {
@@ -271,6 +274,17 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
               <option value="">未分类</option>
               {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+          </div>
+
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>跳板机（选填）</label>
+            <input
+              type="text"
+              value={formData.proxyJump}
+              onChange={e => handleFieldChange('proxyJump', e.target.value)}
+              placeholder="user@jump-host:22"
+              autoComplete="off"
+            />
           </div>
 
           {submitError && (

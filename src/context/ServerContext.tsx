@@ -19,6 +19,7 @@ export interface Server {
   osType: OsType;
   authMethod?: 'password' | 'key';
   keyPath?: string;
+  proxyJump?: string;
   hasPassword?: boolean;
   hasKeyPassphrase?: boolean;
 }

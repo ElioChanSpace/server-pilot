@@ -328,6 +328,7 @@ pub fn start_session(
     password: Option<String>,
     key_path: Option<String>,
     key_passphrase: Option<String>,
+    proxy_jump: Option<String>,
     app_state: State<'_, AppState>,
     session_manager_state: State<'_, SessionManagerState>,
 ) -> Result<String, String> {
@@ -345,6 +346,10 @@ pub fn start_session(
     if let Some(key_path) = key_path.as_deref() {
         cmd.arg("-i");
         cmd.arg(key_path);
+    }
+    if let Some(proxy_jump) = proxy_jump.as_deref() {
+        cmd.arg("-J");
+        cmd.arg(proxy_jump);
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;

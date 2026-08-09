@@ -94,6 +94,145 @@ pub struct RemoteDirectoryListing {
     pub entries: Vec<RemoteDirectoryEntry>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConfigHost {
+    pub host: String,
+    pub host_name: String,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub identity_file: Option<String>,
+    pub proxy_jump: Option<String>,
+}
+
+fn ssh_config_path_from_env() -> PathBuf {
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_default()
+            .join(".ssh\\config")
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default()
+            .join(".ssh/config")
+    }
+}
+
+fn ssh_config_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let (keyword, value) = line.split_once(char::is_whitespace)?;
+    if keyword.eq_ignore_ascii_case(key) {
+        Some(value.trim())
+    } else {
+        None
+    }
+}
+
+#[tauri::command]
+pub fn parse_ssh_config(path: Option<String>) -> Result<Vec<SshConfigHost>, String> {
+    let config_path = path
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            let default = ssh_config_path_from_env();
+            if default.exists() {
+                Some(default)
+            } else {
+                None
+            }
+        })
+        .ok_or("未找到 SSH config 文件，请指定路径")?;
+
+    let content = fs::read_to_string(&config_path)
+        .map_err(|err| format!("读取 SSH config 失败: {err}"))?;
+
+    let mut results: Vec<SshConfigHost> = Vec::new();
+    let mut current_hosts: Vec<String> = Vec::new();
+    let mut current_host_name: Option<String> = None;
+    let mut current_user: Option<String> = None;
+    let mut current_port: Option<String> = None;
+    let mut current_identity: Option<String> = None;
+    let mut current_proxy: Option<String> = None;
+
+    let flush_block = |results: &mut Vec<SshConfigHost>,
+                       hosts: &[String],
+                       host_name: &Option<String>,
+                       user: &Option<String>,
+                       port: &Option<String>,
+                       identity: &Option<String>,
+                       proxy: &Option<String>| {
+        let Some(host_name) = host_name else {
+            return;
+        };
+        let parsed_port = port.as_deref().and_then(|value| value.parse::<u16>().ok());
+        for host in hosts {
+            if host.contains('*') || host.contains('?') {
+                continue;
+            }
+            results.push(SshConfigHost {
+                host: host.clone(),
+                host_name: host_name.clone(),
+                user: user.clone(),
+                port: parsed_port,
+                identity_file: identity.clone(),
+                proxy_jump: proxy.clone(),
+            });
+        }
+    };
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        if let Some(value) = ssh_config_value(line, "host") {
+            flush_block(
+                &mut results,
+                &current_hosts,
+                &current_host_name,
+                &current_user,
+                &current_port,
+                &current_identity,
+                &current_proxy,
+            );
+            current_hosts = value.split_whitespace().map(str::to_string).collect();
+            current_host_name = None;
+            current_user = None;
+            current_port = None;
+            current_identity = None;
+            current_proxy = None;
+        } else if let Some(value) = ssh_config_value(line, "hostname") {
+            current_host_name = Some(value.to_string());
+        } else if let Some(value) = ssh_config_value(line, "user") {
+            current_user = Some(value.to_string());
+        } else if let Some(value) = ssh_config_value(line, "port") {
+            current_port = Some(value.to_string());
+        } else if let Some(value) = ssh_config_value(line, "identityfile") {
+            if current_identity.is_none() {
+                current_identity = Some(value.to_string());
+            }
+        } else if let Some(value) = ssh_config_value(line, "proxyjump") {
+            current_proxy = Some(value.to_string());
+        }
+    }
+
+    flush_block(
+        &mut results,
+        &current_hosts,
+        &current_host_name,
+        &current_user,
+        &current_port,
+        &current_identity,
+        &current_proxy,
+    );
+
+    Ok(results)
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppLogSnapshot {
@@ -335,6 +474,7 @@ struct TransferConnection {
     password: Option<String>,
     key_path: Option<String>,
     key_passphrase: Option<String>,
+    proxy_jump: Option<String>,
 }
 
 fn resolve_transfer_server(
@@ -375,6 +515,7 @@ fn resolve_transfer_server(
         password,
         key_path: server.key_path,
         key_passphrase,
+        proxy_jump: server.proxy_jump,
     })
 }
 
@@ -570,6 +711,7 @@ fn run_ssh_command(
     port: u16,
     password: Option<&str>,
     key_path: Option<&str>,
+    proxy_jump: Option<&str>,
     remote_command: &str,
     timeout: Duration,
     action_label: &str,
@@ -584,6 +726,10 @@ fn run_ssh_command(
     cmd.arg(port.to_string());
     cmd.arg("-o");
     cmd.arg("StrictHostKeyChecking=accept-new");
+    if let Some(proxy_jump) = proxy_jump {
+        cmd.arg("-J");
+        cmd.arg(proxy_jump);
+    }
     if let Some(key_path) = key_path {
         cmd.arg("-i");
         cmd.arg(key_path);
@@ -785,6 +931,7 @@ fn run_scp_transfer(
     port: u16,
     credential: Option<&str>,
     key_path: Option<&str>,
+    proxy_jump: Option<&str>,
     source: &str,
     target: &str,
     action_label: &str,
@@ -803,6 +950,10 @@ fn run_scp_transfer(
     cmd.arg(port.to_string());
     cmd.arg("-o");
     cmd.arg("StrictHostKeyChecking=accept-new");
+    if let Some(proxy_jump) = proxy_jump {
+        cmd.arg("-J");
+        cmd.arg(proxy_jump);
+    }
     if let Some(key_path) = key_path {
         cmd.arg("-i");
         cmd.arg(key_path);
@@ -954,6 +1105,7 @@ pub fn create_server(
     password: Option<String>,
     key_path: Option<String>,
     key_passphrase: Option<String>,
+    proxy_jump: Option<String>,
 ) -> Result<Server, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
     let mut server = Server::new(
@@ -967,6 +1119,7 @@ pub fn create_server(
         password,
         key_path,
         key_passphrase,
+        proxy_jump,
     );
     if server.has_password {
         if let Some(password) = server.password.clone() {
@@ -1001,6 +1154,7 @@ pub fn update_server(
     password: Option<String>,
     key_path: Option<String>,
     key_passphrase: Option<String>,
+    proxy_jump: Option<String>,
 ) -> Result<Server, String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
     let server = data
@@ -1017,6 +1171,7 @@ pub fn update_server(
     server.os_type = os_type;
     server.auth_method = auth_method;
     server.key_path = key_path;
+    server.proxy_jump = proxy_jump;
     match password.as_deref() {
         Some(value) if !value.is_empty() => {
             credential_store::save_password(&server.id, value)?;
@@ -1146,6 +1301,7 @@ pub async fn connect_server(
         password,
         if use_key_auth { server.key_path } else { None },
         if use_key_auth { key_passphrase } else { None },
+        server.proxy_jump,
         state,
         session_manager,
     )?;
@@ -1223,6 +1379,7 @@ pub async fn fetch_server_metrics(
             connection.port,
             connection.password.as_deref(),
             connection.key_path.as_deref(),
+            connection.proxy_jump.as_deref(),
             build_metrics_command(),
             SSH_COMMAND_TIMEOUT,
             "collect server metrics",
@@ -1251,6 +1408,7 @@ pub async fn list_remote_directory(
             connection.port,
             connection.password.as_deref(),
             connection.key_path.as_deref(),
+            connection.proxy_jump.as_deref(),
             &remote_command,
             SSH_COMMAND_TIMEOUT,
             "list remote directory",
@@ -1322,6 +1480,7 @@ pub async fn upload_file_to_server(
                 .as_deref()
                 .or(connection.key_passphrase.as_deref()),
             connection.key_path.as_deref(),
+            connection.proxy_jump.as_deref(),
             &local_path,
             &target,
             "upload file",
@@ -1417,6 +1576,7 @@ pub async fn download_file_from_server(
                 .as_deref()
                 .or(connection.key_passphrase.as_deref()),
             connection.key_path.as_deref(),
+            connection.proxy_jump.as_deref(),
             &source,
             &local_path,
             "download file",

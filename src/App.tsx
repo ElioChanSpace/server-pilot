@@ -5,6 +5,7 @@ import { confirm, message } from "@tauri-apps/plugin-dialog";
 import { ServerProvider, Server, Category, useServer } from "./context/ServerContext";
 import { AddServerModal } from "./components/AddServerModal";
 import { AddCategoryModal } from "./components/AddCategoryModal";
+import { ImportSshConfigModal } from "./components/ImportSshConfigModal";
 import { LeftSidebar } from "./components/LeftSidebar";
 import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
@@ -49,11 +50,12 @@ const clampRightSidebarWidth = (width: number) =>
 const MenuBar: React.FC<{
   onNewCategory: () => void;
   onNewServer: () => void;
+  onImportSshConfig: () => void;
   onViewLogs: () => void;
   onOpenSettings: () => void;
   theme: ThemeMode;
   onToggleTheme: () => void;
-}> = ({ onNewCategory, onNewServer, onViewLogs, onOpenSettings, theme, onToggleTheme }) => {
+}> = ({ onNewCategory, onNewServer, onImportSshConfig, onViewLogs, onOpenSettings, theme, onToggleTheme }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -105,6 +107,7 @@ const MenuBar: React.FC<{
           <div className="dropdown">
             <button className="dropdownItem" onClick={() => handleItemClick(onNewCategory)}>新建分类...</button>
             <button className="dropdownItem" onClick={() => handleItemClick(onNewServer)}>新建服务器...</button>
+            <button className="dropdownItem" onClick={() => handleItemClick(onImportSshConfig)}>从 SSH Config 导入...</button>
             <div className="separator" />
             <button className="dropdownItem" onClick={() => window.close()}>退出</button>
           </div>
@@ -376,6 +379,7 @@ const AppContent: React.FC = () => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"dashboard" | "settings" | "logs">("dashboard");
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
+  const [isSshImportOpen, setIsSshImportOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [initialCategoryId, setInitialCategoryId] = useState<string | undefined>(undefined);
   const [initialParentId, setInitialParentId] = useState<string | undefined>(undefined);
@@ -1025,6 +1029,7 @@ const AppContent: React.FC = () => {
     setInitialCategoryId(undefined);
     setIsServerModalOpen(true);
   }, []);
+  const handleOpenSshImport = useCallback(() => setIsSshImportOpen(true), []);
   const handleOpenSettings = useCallback(() => {
     setIsLogViewerOpen(false);
     clearSelection();
@@ -1094,6 +1099,7 @@ const AppContent: React.FC = () => {
       <MemoizedMenuBar 
         onNewCategory={handleNewCategory}
         onNewServer={handleNewServer}
+        onImportSshConfig={handleOpenSshImport}
         onOpenSettings={handleOpenSettings}
         onViewLogs={handleOpenLogViewer}
         theme={theme}
@@ -1220,6 +1226,7 @@ const AppContent: React.FC = () => {
           onSaved={handleEditServerSaved}
         />
       )}
+      {isSshImportOpen && <ImportSshConfigModal onClose={() => setIsSshImportOpen(false)} />}
       {isCategoryModalOpen && <AddCategoryModal onClose={() => setIsCategoryModalOpen(false)} parentId={initialParentId} />}
       {hostKeyPrompt && (
         <div className={modalStyles.overlay}>

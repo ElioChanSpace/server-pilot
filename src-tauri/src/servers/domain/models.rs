@@ -26,6 +26,7 @@ pub struct Server {
     #[serde(default = "default_auth_method")]
     pub auth_method: String,
     pub key_path: Option<String>,
+    pub proxy_jump: Option<String>,
     #[serde(default)]
     pub has_password: bool,
     #[serde(default)]
@@ -49,6 +50,7 @@ impl Server {
         password: Option<String>,
         key_path: Option<String>,
         key_passphrase: Option<String>,
+        proxy_jump: Option<String>,
     ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
@@ -61,6 +63,7 @@ impl Server {
             os_type,
             auth_method,
             key_path,
+            proxy_jump,
             has_password: password.as_ref().is_some_and(|value| !value.is_empty()),
             password,
             has_key_passphrase: key_passphrase

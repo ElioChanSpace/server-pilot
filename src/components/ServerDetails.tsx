@@ -214,6 +214,12 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
                         <td>{server.keyPath ?? '未指定（使用 ssh-agent）'}</td>
                       </tr>
                     )}
+                    {server.proxyJump && (
+                      <tr>
+                        <th>跳板机</th>
+                        <td>{server.proxyJump}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
