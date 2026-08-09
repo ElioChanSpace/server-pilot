@@ -2,7 +2,7 @@ use crate::servers::application::AppState;
 use crate::servers::domain::{AppData, AppSettings, Category, OsType, Server};
 use crate::servers::infrastructure::credential_store;
 use crate::servers::infrastructure::session_manager::{self, SessionManagerState};
-use log::info;
+use log::{info, warn};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
@@ -1349,8 +1349,23 @@ pub async fn connect_server(
         s.clone()
     };
 
-    let password = credential_store::get_password(&server.id)?;
-    let key_passphrase = credential_store::get_key_passphrase(&server.id)?;
+    let password = match credential_store::get_password(&server.id) {
+        Ok(password) => password,
+        Err(err) => {
+            warn!("Failed to read password from keychain for {}: {}", server.id, err);
+            None
+        }
+    };
+    let key_passphrase = match credential_store::get_key_passphrase(&server.id) {
+        Ok(passphrase) => passphrase,
+        Err(err) => {
+            warn!(
+                "Failed to read key passphrase from keychain for {}: {}",
+                server.id, err
+            );
+            None
+        }
+    };
     let use_key_auth = server.auth_method == "key";
 
     if !matches!(server.os_type, OsType::Linux) {

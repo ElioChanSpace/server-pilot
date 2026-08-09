@@ -396,59 +396,61 @@ pub fn start_session(
         let mut password_prompt_buffer = String::new();
         let mut password_sent = false;
         let mut connected_emitted = false;
-        let mut host_key_pending = false;
-        let mut host_key_receiver: Option<mpsc::Receiver<bool>> = None;
+        let mut host_key_confirmed = false;
         loop {
             match reader.read(&mut buf) {
                 Ok(n) if n > 0 => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    if !host_key_pending {
-                        password_prompt_buffer.push_str(&data);
-                        trim_prompt_buffer(&mut password_prompt_buffer);
+                    password_prompt_buffer.push_str(&data);
+                    trim_prompt_buffer(&mut password_prompt_buffer);
 
-                        if should_accept_host_key_prompt(&password_prompt_buffer) {
-                            let fingerprint = extract_host_key_fingerprint(&password_prompt_buffer);
-                            let (responder, receiver) = mpsc::channel();
-                            if let Ok(mut session_guard) = reader_session.lock() {
-                                session_guard.pending_host_key = Some(responder);
-                            }
-                            let _ = reader_window.emit(
-                                "host-key-prompt",
-                                HostKeyPromptEvent {
-                                    session_id: reader_session_id.clone(),
-                                    server_id: reader_server_id.clone(),
-                                    fingerprint,
-                                },
-                            );
-                            host_key_pending = true;
-                            host_key_receiver = Some(receiver);
-                            continue;
+                    if !host_key_confirmed && should_accept_host_key_prompt(&password_prompt_buffer) {
+                        let fingerprint = extract_host_key_fingerprint(&password_prompt_buffer);
+                        let (responder, receiver) = mpsc::channel();
+                        if let Ok(mut session_guard) = reader_session.lock() {
+                            session_guard.pending_host_key = Some(responder);
                         }
-                    }
+                        let _ = reader_window.emit(
+                            "host-key-prompt",
+                            HostKeyPromptEvent {
+                                session_id: reader_session_id.clone(),
+                                server_id: reader_server_id.clone(),
+                                fingerprint,
+                            },
+                        );
+                        host_key_confirmed = true;
 
-                    if host_key_pending {
-                        if let Some(receiver) = host_key_receiver.as_ref() {
-                            match receiver.try_recv() {
+                        // 独立线程等待用户响应并写入 PTY，避免 reader 阻塞在 read() 时
+                        // 无法处理指纹确认结果（否则首次连接会卡死）。
+                        let response_writer = reader_writer.clone();
+                        let response_session = reader_session.clone();
+                        thread::spawn(move || {
+                            match receiver.recv() {
                                 Ok(accept) => {
-                                    if let Ok(mut writer) = reader_writer.lock() {
+                                    if let Ok(mut writer) = response_writer.lock() {
                                         let _ = writer.write_all(if accept { b"yes\r" } else { b"no\r" });
                                         let _ = writer.flush();
                                     }
-                                    if let Ok(mut session_guard) = reader_session.lock() {
+                                    if let Ok(mut session_guard) = response_session.lock() {
                                         session_guard.pending_host_key = None;
                                     }
-                                    host_key_pending = false;
-                                    host_key_receiver = None;
-                                    password_prompt_buffer.clear();
                                 }
                                 Err(_) => {}
                             }
-                        }
+                        });
                     }
 
                     if !password_sent {
                         if let Some(password) = auto_password.as_deref() {
-                            if should_auto_fill_ssh_password(&password_prompt_buffer) {
+                            let host_key_resolved = if host_key_confirmed {
+                                reader_session
+                                    .lock()
+                                    .map(|guard| guard.pending_host_key.is_none())
+                                    .unwrap_or(true)
+                            } else {
+                                true
+                            };
+                            if host_key_resolved && should_auto_fill_ssh_password(&password_prompt_buffer) {
                                 match reader_writer.lock() {
                                     Ok(mut writer) => {
                                         if let Err(err) = writer.write_all(password.as_bytes()) {
@@ -891,6 +893,8 @@ pub fn close_session(
         let mut session_guard = session.lock().unwrap();
         session_guard.alive.store(false, Ordering::SeqCst);
         session_guard.close_reason = Some("manual".to_string());
+        session_guard.pending_host_key = None;
+        session_guard.pending_cwd_request = None;
         if let Err(err) = session_guard.child_process.kill() {
             warn!("Failed to kill session {}: {}", session_id, err);
         }
@@ -918,6 +922,8 @@ pub fn close_server_sessions(
         }
         session_guard.alive.store(false, Ordering::SeqCst);
         session_guard.close_reason = Some("server-disconnect".to_string());
+        session_guard.pending_host_key = None;
+        session_guard.pending_cwd_request = None;
         if let Err(err) = session_guard.child_process.kill() {
             warn!(
                 "Failed to kill session {} for server {}: {}",
