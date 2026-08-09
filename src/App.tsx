@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback, lazy, memo, Suspense }
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { confirm, message } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow, LogicalSize, LogicalPosition } from '@tauri-apps/api/window';
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 import { ServerProvider, Server, Category, useServer } from "./context/ServerContext";
 import { AddServerModal } from "./components/AddServerModal";
 import { AddCategoryModal } from "./components/AddCategoryModal";
@@ -400,6 +402,7 @@ const AppContent: React.FC = () => {
   const [terminalOutputs, setTerminalOutputs] = useState<Record<string, TerminalOutputState>>({});
   const pendingTerminalChunksRef = useRef<Record<string, string[]>>({});
   const terminalFlushFrameRef = useRef<number | null>(null);
+  const notificationPermissionRef = useRef(false);
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
   const [, setSessionCurrentDirectories] = useState<Record<string, string>>({});
   const [uploadProgressOverlay, setUploadProgressOverlay] = useState<UploadProgressOverlayState | null>(null);
@@ -420,6 +423,82 @@ const AppContent: React.FC = () => {
       .catch(error => {
         console.error("加载应用设置失败:", error);
       });
+  }, []);
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    const sizeKey = "server-pilot-window-size";
+    const positionKey = "server-pilot-window-position";
+
+    try {
+      const storedSize = window.localStorage.getItem(sizeKey);
+      if (storedSize) {
+        const { width, height } = JSON.parse(storedSize) as { width: number; height: number };
+        void appWindow.setSize(new LogicalSize(width, height));
+      }
+      const storedPosition = window.localStorage.getItem(positionKey);
+      if (storedPosition) {
+        const { x, y } = JSON.parse(storedPosition) as { x: number; y: number };
+        void appWindow.setPosition(new LogicalPosition(x, y));
+      }
+    } catch (error) {
+      console.error("恢复窗口状态失败:", error);
+    }
+
+    let saveTimer: number | null = null;
+    const scheduleSave = () => {
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+      saveTimer = window.setTimeout(() => {
+        void (async () => {
+          try {
+            const size = await appWindow.innerSize();
+            const position = await appWindow.outerPosition();
+            window.localStorage.setItem(sizeKey, JSON.stringify({ width: size.width, height: size.height }));
+            window.localStorage.setItem(positionKey, JSON.stringify({ x: position.x, y: position.y }));
+          } catch (error) {
+            console.error("保存窗口状态失败:", error);
+          }
+        })();
+      }, 400);
+    };
+
+    const unlistenFns: Array<() => void> = [];
+    void appWindow.onResized(scheduleSave).then(fn => unlistenFns.push(fn));
+    void appWindow.onMoved(scheduleSave).then(fn => unlistenFns.push(fn));
+
+    return () => {
+      unlistenFns.forEach(fn => fn());
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        let granted = await isPermissionGranted();
+        if (!granted) {
+          granted = (await requestPermission()) === "granted";
+        }
+        notificationPermissionRef.current = granted;
+      } catch (error) {
+        console.error("初始化通知权限失败:", error);
+      }
+    })();
+  }, []);
+
+  const notify = useCallback((title: string, body?: string) => {
+    if (!notificationPermissionRef.current) {
+      return;
+    }
+    try {
+      sendNotification({ title, body });
+    } catch (error) {
+      console.error("发送通知失败:", error);
+    }
   }, []);
 
   useEffect(() => {
@@ -636,6 +715,13 @@ const AppContent: React.FC = () => {
       }),
       listen<TerminalSessionClosedEvent>("terminal-session-closed", (event) => {
         setHostKeyPrompt(prev => (prev && prev.sessionId === event.payload.sessionId ? null : prev));
+        const serverName = serversRef.current.find(server => server.id === event.payload.serverId)?.name;
+        if (event.payload.reason !== "manual") {
+          notify(
+            "会话已断开",
+            serverName ? `${serverName}：${event.payload.reason}` : event.payload.reason,
+          );
+        }
         if (event.payload.shouldRemove) {
           applySessionRemoval([event.payload.sessionId], { anchorSessionId: event.payload.sessionId });
           return;
@@ -682,6 +768,18 @@ const AppContent: React.FC = () => {
       return;
     }
 
+    if (uploadProgressOverlay.status === "completed") {
+      notify(
+        "上传完成",
+        `${uploadProgressOverlay.serverName} · ${uploadProgressOverlay.currentFileName}`,
+      );
+    } else if (uploadProgressOverlay.status === "failed") {
+      notify(
+        "上传失败",
+        `${uploadProgressOverlay.serverName} · ${uploadProgressOverlay.message ?? ""}`,
+      );
+    }
+
     const timeoutId = window.setTimeout(() => {
       setUploadProgressOverlay(current => {
         if (!current || current.transferId !== uploadProgressOverlay.transferId) {
@@ -692,7 +790,7 @@ const AppContent: React.FC = () => {
     }, 3200);
 
     return () => window.clearTimeout(timeoutId);
-  }, [uploadProgressOverlay]);
+  }, [notify, uploadProgressOverlay]);
 
   useEffect(() => {
     setActiveServer(prev => {

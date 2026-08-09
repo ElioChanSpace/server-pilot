@@ -30,6 +30,7 @@
     "dialog:allow-message",
     "dialog:allow-ask",
     "dialog:allow-confirm",
+    "notification:default",
     "shell:default",
     "fs:default",
     "dialog:default"

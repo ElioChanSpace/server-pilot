@@ -108,6 +108,10 @@ fn default_terminal_scrollback() -> u32 {
     5000
 }
 
+fn default_minimize_to_tray_on_close() -> bool {
+    false
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -119,6 +123,8 @@ pub struct AppSettings {
     pub terminal_font_size: u8,
     #[serde(default = "default_terminal_scrollback")]
     pub terminal_scrollback: u32,
+    #[serde(default = "default_minimize_to_tray_on_close")]
+    pub minimize_to_tray_on_close: bool,
 }
 
 impl Default for AppSettings {
@@ -128,6 +134,7 @@ impl Default for AppSettings {
             terminal_idle_disconnect_minutes: default_terminal_idle_disconnect_minutes(),
             terminal_font_size: default_terminal_font_size(),
             terminal_scrollback: default_terminal_scrollback(),
+            minimize_to_tray_on_close: default_minimize_to_tray_on_close(),
         }
     }
 }

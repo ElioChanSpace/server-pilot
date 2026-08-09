@@ -261,6 +261,7 @@ pub struct UpdateAppSettingsRequest {
     pub terminal_idle_disconnect_minutes: u32,
     pub terminal_font_size: Option<u8>,
     pub terminal_scrollback: Option<u32>,
+    pub minimize_to_tray_on_close: Option<bool>,
 }
 
 fn resolve_app_log_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
@@ -1295,6 +1296,9 @@ pub fn update_app_settings(
             .terminal_scrollback
             .unwrap_or(current.terminal_scrollback)
             .max(500),
+        minimize_to_tray_on_close: payload
+            .minimize_to_tray_on_close
+            .unwrap_or(current.minimize_to_tray_on_close),
     };
     let settings = data.settings.clone();
     drop(data);

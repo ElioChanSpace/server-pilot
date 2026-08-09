@@ -3,4 +3,5 @@ export interface AppSettings {
   terminalIdleDisconnectMinutes: number;
   terminalFontSize: number;
   terminalScrollback: number;
+  minimizeToTrayOnClose: boolean;
 }

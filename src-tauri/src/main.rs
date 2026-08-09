@@ -24,10 +24,11 @@ use log4rs::{
 };
 use std::{fs, path::PathBuf, sync::Arc};
 use tauri::{
-    menu::{MenuBuilder, SubmenuBuilder},
+    menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     path::PathResolver,
     Manager,
 };
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
 fn resolve_app_log_path<R: tauri::Runtime>(
     path_resolver: &PathResolver<R>,
@@ -105,6 +106,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(SessionManagerState::default())
         .setup(|app| {
             initialize_logging(app.path())?;
@@ -139,6 +141,74 @@ fn main() {
             let repository = Arc::new(FileRepository::new(app.handle().clone()));
             let app_state = AppState::new(repository);
             migrate_legacy_passwords(&app_state)?;
+
+            // --- 系统托盘 ---
+            let show_item = MenuItemBuilder::with_id("show", "显示主窗口")
+                .build(app)
+                .map_err(|err| err.to_string())?;
+            let quit_item = MenuItemBuilder::with_id("quit", "退出")
+                .build(app)
+                .map_err(|err| err.to_string())?;
+            let tray_menu = MenuBuilder::new(app)
+                .item(&show_item)
+                .item(&quit_item)
+                .build()
+                .map_err(|err| err.to_string())?;
+
+            TrayIconBuilder::with_id("main-tray")
+                .icon(
+                    app.default_window_icon()
+                        .cloned()
+                        .ok_or("缺少应用图标")?,
+                )
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)
+                .map_err(|err| err.to_string())?;
+
+            // --- 关闭时最小化到托盘 ---
+            if let Some(window) = app.get_webview_window("main") {
+                let window_clone = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        let minimize = window_clone
+                            .state::<AppState>()
+                            .data
+                            .lock()
+                            .ok()
+                            .map(|data| data.settings.minimize_to_tray_on_close)
+                            .unwrap_or(false);
+                        if minimize {
+                            api.prevent_close();
+                            let _ = window_clone.hide();
+                        }
+                    }
+                });
+            }
 
             app.manage(app_state);
             Ok(())

@@ -8,6 +8,7 @@ const defaultSettings: AppSettings = {
   terminalIdleDisconnectMinutes: 30,
   terminalFontSize: 14,
   terminalScrollback: 5000,
+  minimizeToTrayOnClose: false,
 };
 
 export const Settings: React.FC = () => {
@@ -140,6 +141,21 @@ export const Settings: React.FC = () => {
                 <option value={10000}>10000 行</option>
                 <option value={50000}>50000 行</option>
               </select>
+            </label>
+
+            <label className={styles.fieldRow}>
+              <input
+                type="checkbox"
+                className={styles.checkbox}
+                checked={settings.minimizeToTrayOnClose}
+                onChange={(event) => {
+                  setSettings(prev => ({
+                    ...prev,
+                    minimizeToTrayOnClose: event.target.checked,
+                  }));
+                }}
+              />
+              <span className={styles.fieldLabel}>关闭窗口时最小化到系统托盘</span>
             </label>
 
             {error && (
