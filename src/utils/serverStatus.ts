@@ -22,19 +22,19 @@ export const getServerStatusMeta = (status: string): {
   switch (status) {
     case 'connected':
       return {
-        color: '#4caf50',
+        color: 'var(--success-color)',
         icon: FaPlug,
         spinning: false,
       };
     case 'connecting':
       return {
-        color: '#ff9800',
+        color: 'var(--warning-color)',
         icon: FaSpinner,
         spinning: true,
       };
     case 'disconnected':
       return {
-        color: '#f44336',
+        color: 'var(--danger-color)',
         icon: FaUnlink,
         spinning: false,
       };

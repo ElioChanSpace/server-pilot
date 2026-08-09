@@ -15,7 +15,16 @@ interface XtermTerminalProps {
   onFilesDropped: (paths: string[]) => void;
 }
 
-export const XtermTerminal: React.FC<XtermTerminalProps> = ({
+const arePropsEqual = (prev: XtermTerminalProps, next: XtermTerminalProps) =>
+  prev.resetToken === next.resetToken &&
+  prev.isActive === next.isActive &&
+  prev.onInput === next.onInput &&
+  prev.onResize === next.onResize &&
+  prev.onFilesDropped === next.onFilesDropped &&
+  // 非活动会话的累积输出只在激活时一次性补写，因此跳过重渲染。
+  (!prev.isActive || prev.outputChunks === next.outputChunks);
+
+const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   outputChunks,
   resetToken,
   onInput,
@@ -300,7 +309,7 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({
 
   useEffect(() => {
     const terminal = termInstance.current;
-    if (!terminal) {
+    if (!terminal || !isActive) {
       return;
     }
 
@@ -311,7 +320,7 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({
     const nextChunks = outputChunks.slice(renderedChunkCountRef.current);
     terminal.write(nextChunks.join(''));
     renderedChunkCountRef.current = outputChunks.length;
-  }, [outputChunks]);
+  }, [isActive, outputChunks]);
 
   const contextMenuActions = useMemo<ContextMenuAction[]>(() => [
     {
@@ -371,3 +380,5 @@ export const XtermTerminal: React.FC<XtermTerminalProps> = ({
     </>
   );
 };
+
+export const XtermTerminal = React.memo(XtermTerminalComponent, arePropsEqual);

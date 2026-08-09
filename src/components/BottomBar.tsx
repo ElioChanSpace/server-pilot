@@ -16,7 +16,7 @@ interface BottomBarProps {
   toggleTransferTray: () => void;
 }
 
-export const BottomBar: React.FC<BottomBarProps> = ({
+const BottomBarComponent: React.FC<BottomBarProps> = ({
   isLeftSidebarOpen,
   isRightSidebarOpen,
   isTransferTrayOpen,
@@ -53,3 +53,5 @@ export const BottomBar: React.FC<BottomBarProps> = ({
     </div>
   );
 };
+
+export const BottomBar = React.memo(BottomBarComponent);

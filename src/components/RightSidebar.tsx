@@ -6,7 +6,6 @@ import ServerDetails from "./ServerDetails";
 
 interface RightSidebarProps {
   isOpen: boolean;
-  width: number;
   activeServer: Server | null;
   activeCategory: Category | null;
   isUncategorizedSelected: boolean;
@@ -29,9 +28,8 @@ const formatServerStatus = (status: string) => {
   }
 };
 
-export const RightSidebar: React.FC<RightSidebarProps> = ({
+const RightSidebarComponent: React.FC<RightSidebarProps> = ({
   isOpen,
-  width,
   activeServer,
   activeCategory,
   isUncategorizedSelected,
@@ -94,7 +92,6 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     <div
       className={styles.rightSidebar}
       data-closed={!isOpen}
-      style={isOpen ? { width: `${width}px` } : undefined}
     >
       <div className={styles.content}>
         {connectionError && (
@@ -182,3 +179,5 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     </div>
   );
 };
+
+export const RightSidebar = React.memo(RightSidebarComponent);

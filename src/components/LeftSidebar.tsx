@@ -1,8 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useServer, Server, Category, OsType } from '../context/ServerContext';
 import { FaChevronDown, FaChevronRight, FaFolder, FaFolderOpen, FaLinux, FaPlus, FaPlug, FaUnlink, FaWindows } from 'react-icons/fa';
 import treeStyles from './TreeView.module.css';
 import sidebarStyles from './LeftSidebar.module.css';
+
+const EMPTY_CATEGORIES: Category[] = [];
+const EMPTY_SERVERS: Server[] = [];
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -21,7 +24,7 @@ const getServerIcon = (osType: OsType) => (
     : <FaLinux className={treeStyles.serverOsIcon} title="Linux" />
 );
 
-const ServerNode: React.FC<{
+interface ServerNodeProps {
   server: Server;
   depth: number;
   activeServer: Server | null;
@@ -29,7 +32,11 @@ const ServerNode: React.FC<{
   onConnectServer: (server: Server) => void;
   onDisconnectServer: (server: Server) => void;
   onServerContextMenu?: (event: React.MouseEvent, server: Server) => void;
-}> = ({ server, depth, activeServer, onSelectServer, onConnectServer, onDisconnectServer, onServerContextMenu }) => {
+}
+
+const ServerNode = memo<ServerNodeProps>(({
+  server, depth, activeServer, onSelectServer, onConnectServer, onDisconnectServer, onServerContextMenu,
+}) => {
   const handleActionClick = (event: React.MouseEvent) => {
     event.stopPropagation();
     if (server.status === 'connected' || server.status === 'connecting') {
@@ -72,12 +79,12 @@ const ServerNode: React.FC<{
       </button>
     </div>
   );
-};
+});
 
-const CategoryNode: React.FC<{
+interface CategoryNodeProps {
   category: Category;
-  allCategories: Category[];
-  allServers: Server[];
+  categoryChildrenMap: Map<string, Category[]>;
+  serversByCategory: Map<string, Server[]>;
   expandedCategories: Set<string>;
   toggleCategory: (id: string) => void;
   onCategoryContextMenu: (event: React.MouseEvent, category: Category | null) => void;
@@ -92,10 +99,17 @@ const CategoryNode: React.FC<{
   activeCategory: Category | null;
   categoryServerCounts: Map<string, number>;
   depth: number;
-}> = ({ category, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory, categoryServerCounts, depth }) => {
+}
+
+const CategoryNode = memo<CategoryNodeProps>(({
+  category, categoryChildrenMap, serversByCategory, expandedCategories, toggleCategory,
+  onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory,
+  onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory,
+  categoryServerCounts, depth,
+}) => {
   const isExpanded = expandedCategories.has(category.id);
-  const childCategories = allCategories.filter(c => c.parentId === category.id);
-  const childServers = allServers.filter(s => s.categoryId === category.id);
+  const childCategories = categoryChildrenMap.get(category.id) ?? EMPTY_CATEGORIES;
+  const childServers = serversByCategory.get(category.id) ?? EMPTY_SERVERS;
   const hasChildren = childCategories.length > 0 || childServers.length > 0;
   const serverCount = categoryServerCounts.get(category.id) ?? 0;
 
@@ -164,7 +178,26 @@ const CategoryNode: React.FC<{
       {isExpanded && (
         <div>
           {childCategories.map(child => (
-            <CategoryNode key={child.id} {...{ category: child, allCategories, allServers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory, categoryServerCounts, depth: depth + 1 }} />
+            <CategoryNode
+              key={child.id}
+              category={child}
+              categoryChildrenMap={categoryChildrenMap}
+              serversByCategory={serversByCategory}
+              expandedCategories={expandedCategories}
+              toggleCategory={toggleCategory}
+              onCategoryContextMenu={onCategoryContextMenu}
+              onSelectServer={onSelectServer}
+              onSelectCategory={onSelectCategory}
+              onCreateServer={onCreateServer}
+              onCreateSubCategory={onCreateSubCategory}
+              onConnectServer={onConnectServer}
+              onDisconnectServer={onDisconnectServer}
+              onServerContextMenu={onServerContextMenu}
+              activeServer={activeServer}
+              activeCategory={activeCategory}
+              categoryServerCounts={categoryServerCounts}
+              depth={depth + 1}
+            />
           ))}
           {childServers.map(server => (
             <ServerNode
@@ -182,10 +215,9 @@ const CategoryNode: React.FC<{
       )}
     </div>
   );
-};
+});
 
-// Main LeftSidebar component
-export const LeftSidebar: React.FC<{
+interface LeftSidebarProps {
   isOpen: boolean;
   activeServer: Server | null;
   activeCategory: Category | null;
@@ -198,7 +230,13 @@ export const LeftSidebar: React.FC<{
   onConnectServer: (server: Server) => void;
   onDisconnectServer: (server: Server) => void;
   onServerContextMenu?: (event: React.MouseEvent, server: Server) => void;
-}> = ({ isOpen, activeServer, activeCategory, isUncategorizedActive, onSelectServer, onSelectCategory, onCategoryContextMenu, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu }) => {
+}
+
+export const LeftSidebar = memo<LeftSidebarProps>(({
+  isOpen, activeServer, activeCategory, isUncategorizedActive, onSelectServer, onSelectCategory,
+  onCategoryContextMenu, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer,
+  onServerContextMenu,
+}) => {
   const { categories, servers } = useServer();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
@@ -211,42 +249,92 @@ export const LeftSidebar: React.FC<{
     });
   }, [categories]);
 
-  const toggleCategory = (categoryId: string) => {
+  const toggleCategory = useCallback((categoryId: string) => {
     setExpandedCategories(prev => {
       const newSet = new Set(prev);
       if (newSet.has(categoryId)) newSet.delete(categoryId);
       else newSet.add(categoryId);
       return newSet;
     });
-  };
+  }, []);
 
   const rootCategories = useMemo(() => categories.filter(c => !c.parentId), [categories]);
+
+  const categoryChildrenMap = useMemo(() => {
+    const map = new Map<string, Category[]>();
+    categories.forEach(category => {
+      if (!category.parentId) {
+        return;
+      }
+      const siblings = map.get(category.parentId);
+      if (siblings) {
+        siblings.push(category);
+      } else {
+        map.set(category.parentId, [category]);
+      }
+    });
+    return map;
+  }, [categories]);
+
+  const serversByCategory = useMemo(() => {
+    const map = new Map<string, Server[]>();
+    servers.forEach(server => {
+      if (!server.categoryId) {
+        return;
+      }
+      const siblings = map.get(server.categoryId);
+      if (siblings) {
+        siblings.push(server);
+      } else {
+        map.set(server.categoryId, [server]);
+      }
+    });
+    return map;
+  }, [servers]);
+
   const uncategorizedServers = useMemo(() => servers.filter(s => !s.categoryId), [servers]);
+
   const categoryServerCounts = useMemo(() => {
     const counts = new Map<string, number>();
 
     const collectServerCount = (categoryId: string): number => {
-      const directServers = servers.filter(server => server.categoryId === categoryId).length;
-      const childCategoryIds = categories.filter(category => category.parentId === categoryId).map(category => category.id);
-      const nestedServers = childCategoryIds.reduce((sum, childId) => sum + collectServerCount(childId), 0);
+      const directServers = serversByCategory.get(categoryId)?.length ?? 0;
+      const childCategoryIds = categoryChildrenMap.get(categoryId) ?? EMPTY_CATEGORIES;
+      const nestedServers = childCategoryIds.reduce((sum, child) => sum + collectServerCount(child.id), 0);
       const total = directServers + nestedServers;
       counts.set(categoryId, total);
       return total;
     };
 
-    categories
-      .filter(category => !category.parentId)
-      .forEach(category => collectServerCount(category.id));
-
+    rootCategories.forEach(category => collectServerCount(category.id));
     return counts;
-  }, [categories, servers]);
+  }, [categoryChildrenMap, rootCategories, serversByCategory]);
 
   return (
     <div className={sidebarStyles.leftSidebar} data-closed={!isOpen}>
       {rootCategories.map(category => (
-        <CategoryNode key={category.id} {...{ category, allCategories: categories, allServers: servers, expandedCategories, toggleCategory, onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory, categoryServerCounts, depth: 0 }} />
+        <CategoryNode
+          key={category.id}
+          category={category}
+          categoryChildrenMap={categoryChildrenMap}
+          serversByCategory={serversByCategory}
+          expandedCategories={expandedCategories}
+          toggleCategory={toggleCategory}
+          onCategoryContextMenu={onCategoryContextMenu}
+          onSelectServer={onSelectServer}
+          onSelectCategory={onSelectCategory}
+          onCreateServer={onCreateServer}
+          onCreateSubCategory={onCreateSubCategory}
+          onConnectServer={onConnectServer}
+          onDisconnectServer={onDisconnectServer}
+          onServerContextMenu={onServerContextMenu}
+          activeServer={activeServer}
+          activeCategory={activeCategory}
+          categoryServerCounts={categoryServerCounts}
+          depth={0}
+        />
       ))}
-      
+
       <div className={treeStyles.treeNode}>
         <div
           className={treeStyles.header}
@@ -313,4 +401,4 @@ export const LeftSidebar: React.FC<{
       </div>
     </div>
   );
-};
+});

@@ -189,7 +189,7 @@
 }
 
 .breadcrumbButton[data-active="true"] {
-  background: rgba(116, 93, 255, 0.14);
+  background: var(--surface-active);
   border-color: var(--accent-color);
 }
 
@@ -272,7 +272,7 @@
 
 .browserEntry[data-selected="true"] {
   border-color: var(--accent-color);
-  background: rgba(116, 93, 255, 0.14);
+  background: var(--surface-active);
 }
 
 .browserEntryMain {

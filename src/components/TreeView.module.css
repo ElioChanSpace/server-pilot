@@ -13,7 +13,7 @@
 
 .header[data-active="true"] {
   background-color: var(--surface-active);
-  box-shadow: inset 0 0 0 1px rgba(116, 93, 255, 0.18);
+  box-shadow: inset 0 0 0 1px var(--surface-active);
 }
 
 .header[data-active="true"] .headerMain {
@@ -77,9 +77,9 @@
 
 .header:hover,
 .serverItem:hover {
-  background-color: rgba(116, 93, 255, 0.1);
+  background-color: var(--surface-hover);
   color: var(--text-primary);
-  box-shadow: inset 0 0 0 1px rgba(116, 93, 255, 0.2);
+  box-shadow: inset 0 0 0 1px var(--surface-active);
 }
 
 .folderIcon {

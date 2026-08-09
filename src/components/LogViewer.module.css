@@ -110,19 +110,28 @@
 }
 
 .logLine {
-  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 42px;
+  margin: 0;
   padding: 8px 0;
   border-bottom: 1px solid var(--border-color);
-  word-break: break-word;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .logTimestamp {
   color: var(--text-secondary);
   margin-right: 12px;
+  flex-shrink: 0;
 }
 
 .logMessage {
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .logMessage[data-level="ERROR"] {
@@ -146,4 +155,32 @@
   color: var(--text-secondary);
   padding: 32px;
   font-style: italic;
+}
+
+.skeletonList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeletonLine {
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--surface-hover) 0%,
+    rgba(255, 255, 255, 0.16) 50%,
+    var(--surface-hover) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }

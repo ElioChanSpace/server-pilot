@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Server } from '../context/ServerContext';
 import { FaPlug, FaServer, FaUnlink } from 'react-icons/fa';
 import { useServer } from '../context/ServerContext';
-import ServerMonitoringPanel from './ServerMonitoringPanel';
 import styles from './ServerDetails.module.css';
+
+const ServerMonitoringPanel = lazy(() => import('./ServerMonitoringPanel'));
 
 interface ServerDetailsProps {
   server: Server;
@@ -28,7 +29,7 @@ const formatServerStatus = (status: string) => {
   }
 };
 
-const ServerDetails: React.FC<ServerDetailsProps> = ({
+const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
   server,
   onConnectServer,
   onDisconnectServer,
@@ -209,11 +210,16 @@ const ServerDetails: React.FC<ServerDetailsProps> = ({
           </>
         )}
 
-        {activeTab === 'monitoring' && <ServerMonitoringPanel server={server} />}
+        {activeTab === 'monitoring' && (
+          <Suspense fallback={<div className={styles.monitoringFallback}>正在加载监控面板...</div>}>
+            <ServerMonitoringPanel server={server} />
+          </Suspense>
+        )}
       </div>
     </div>
   );
 };
 
+const ServerDetails = React.memo(ServerDetailsComponent);
 
 export default ServerDetails;

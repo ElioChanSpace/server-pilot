@@ -25,7 +25,7 @@ interface TabContextMenuState {
   sessionId: string;
 }
 
-export const TabBar: React.FC<TabBarProps> = ({
+const TabBarComponent: React.FC<TabBarProps> = ({
   sessions,
   servers,
   currentSessionId,
@@ -189,3 +189,5 @@ export const TabBar: React.FC<TabBarProps> = ({
     </>
   );
 };
+
+export const TabBar = React.memo(TabBarComponent);

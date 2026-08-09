@@ -93,7 +93,7 @@ const TooltipContent = ({
   );
 };
 
-const ServerMonitoringPanel: React.FC<ServerMonitoringPanelProps> = ({ server }) => {
+const ServerMonitoringPanelComponent: React.FC<ServerMonitoringPanelProps> = ({ server }) => {
   const [samples, setSamples] = React.useState<ServerMetricsSnapshot[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -271,6 +271,7 @@ const ServerMonitoringPanel: React.FC<ServerMonitoringPanelProps> = ({ server })
                   stroke="#4f8cff"
                   fill="url(#cpuGradient)"
                   strokeWidth={2}
+                  isAnimationActive={false}
                 />
                 <Area
                   type="monotone"
@@ -280,6 +281,7 @@ const ServerMonitoringPanel: React.FC<ServerMonitoringPanelProps> = ({ server })
                   fill="url(#gpuGradient)"
                   strokeWidth={2}
                   connectNulls
+                  isAnimationActive={false}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -324,5 +326,7 @@ const ServerMonitoringPanel: React.FC<ServerMonitoringPanelProps> = ({ server })
     </div>
   );
 };
+
+const ServerMonitoringPanel = React.memo(ServerMonitoringPanelComponent);
 
 export default ServerMonitoringPanel;

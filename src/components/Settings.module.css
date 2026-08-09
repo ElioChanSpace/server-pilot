@@ -1,0 +1,98 @@
+.page {
+  padding: var(--space-4) 18px;
+  overflow: auto;
+}
+
+.card {
+  max-width: 620px;
+  padding: var(--space-4) 18px;
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  font-size: 13px;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.description {
+  color: var(--text-secondary);
+  margin-top: var(--space-2);
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+.fieldRow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  white-space: nowrap;
+}
+
+.checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-color);
+}
+
+.fieldLabel {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.numberInput {
+  width: 132px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.helper {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.error {
+  color: var(--danger-color);
+  margin-top: var(--space-3);
+  font-size: 12px;
+}
+
+.success {
+  color: var(--success-color);
+  margin-top: var(--space-3);
+  font-size: 12px;
+}
+
+.actions {
+  margin-top: 18px;
+}
+
+.saveButton {
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+
+.loading {
+  color: var(--text-secondary);
+  margin-top: 14px;
+  font-size: 13px;
+}

@@ -465,13 +465,6 @@ pub fn start_session(
                     {
                         warn!("Failed to emit PTY data for {}: {}", reader_session_id, err);
                     }
-                    let event_name = format!("pty-data-{}", reader_session_id);
-                    if let Err(err) = reader_window.emit(&event_name, display_data.clone()) {
-                        warn!(
-                            "Failed to emit PTY data event for {}: {}",
-                            reader_session_id, err
-                        );
-                    }
                 }
                 Ok(_) => break,
                 Err(err) => {
@@ -595,7 +588,6 @@ pub fn start_session(
             "disconnected",
         );
         let close_reason = close_reason.unwrap_or_else(|| "process-exit".to_string());
-        let log_event = format!("connection-log-{}", monitor_session_id);
         let close_message = connection_log_message_for_reason(&close_reason);
         if let Err(err) = monitor_window.emit(
             "connection-log",
@@ -603,12 +595,6 @@ pub fn start_session(
         ) {
             warn!(
                 "Failed to emit connection log for {}: {}",
-                monitor_session_id, err
-            );
-        }
-        if let Err(err) = monitor_window.emit(&log_event, close_message) {
-            warn!(
-                "Failed to emit connection log event for {}: {}",
                 monitor_session_id, err
             );
         }

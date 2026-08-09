@@ -1,8 +1,13 @@
+import React, { Suspense, useCallback, useMemo } from "react";
 import { Server } from "../context/ServerContext";
-import { Settings } from "./Settings";
 import { ConsoleView } from "./ConsoleView";
 import { TabBar } from "./TabBar";
 import type { TerminalSession } from "../types/terminal";
+import styles from "./MainContent.module.css";
+
+const Settings = React.lazy(() =>
+  import("./Settings").then(module => ({ default: module.Settings })),
+);
 
 interface MainContentProps {
   activeView: "dashboard" | "settings" | "logs";
@@ -35,25 +40,50 @@ export const MainContent: React.FC<MainContentProps> = ({
   onCloseAllSessions,
   onTerminalFilesDropped,
 }) => {
-  if (activeView === "settings") return <Settings />;
+  const serverById = useMemo(() => {
+    const map = new Map<string, Server>();
+    servers.forEach(server => map.set(server.id, server));
+    return map;
+  }, [servers]);
+
+  const currentSessions = useMemo(
+    () =>
+      sessions
+        .map(session => ({
+          session,
+          server: serverById.get(session.serverId) ?? null,
+        }))
+        .filter((entry): entry is { session: TerminalSession; server: Server } => entry.server !== null),
+    [sessions, serverById],
+  );
+
+  const handleFilesDropped = useCallback(
+    (sessionId: string, paths: string[]) => {
+      onTerminalFilesDropped(sessionId, paths);
+    },
+    [onTerminalFilesDropped],
+  );
+
+  const filesDroppedBySession = useMemo(() => {
+    const map = new Map<string, (paths: string[]) => void>();
+    sessions.forEach(session => {
+      map.set(session.id, (paths: string[]) => handleFilesDropped(session.id, paths));
+    });
+    return map;
+  }, [handleFilesDropped, sessions]);
+
+  if (activeView === "settings") {
+    return (
+      <Suspense fallback={<div className={styles.lazyFallback}>正在加载设置...</div>}>
+        <Settings />
+      </Suspense>
+    );
+  }
 
   const hasActiveSessions = sessions.length > 0 && currentSessionId;
-  const currentSessions = sessions
-    .map(session => ({
-      session,
-      server: servers.find(server => server.id === session.serverId) ?? null,
-    }))
-    .filter((entry): entry is { session: TerminalSession; server: Server } => entry.server !== null);
 
   return (
-    <main
-      style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
+    <main className={styles.main}>
       {sessions.length > 0 && (
         <TabBar
           sessions={sessions}
@@ -68,35 +98,15 @@ export const MainContent: React.FC<MainContentProps> = ({
           onCloseAllSessions={onCloseAllSessions}
         />
       )}
-      <div style={{ flex: 1, position: "relative" }}>
+      <div className={styles.stage}>
         <div
-          style={{
-            display: hasActiveSessions ? "none" : "block",
-            height: "100%",
-          }}
+          className={styles.emptyLayer}
+          data-hidden={hasActiveSessions}
         >
-          <div
-            style={{
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "32px",
-            }}
-          >
-            <div
-              style={{
-                maxWidth: "420px",
-                textAlign: "center",
-                padding: "24px 28px",
-                borderRadius: "20px",
-                background: "var(--glass-bg)",
-                border: "1px solid var(--glass-border)",
-                boxShadow: "0 16px 36px -28px var(--shadow-color)",
-              }}
-            >
-              <h2 style={{ fontSize: "20px", marginBottom: "10px" }}>终端工作区</h2>
-              <p style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
+          <div className={styles.emptyWrapper}>
+            <div className={styles.emptyCard}>
+              <h2 className={styles.emptyTitle}>终端工作区</h2>
+              <p className={styles.emptyDescription}>
                 选择一台服务器后打开终端，这里会显示当前会话内容。
               </p>
             </div>
@@ -106,21 +116,15 @@ export const MainContent: React.FC<MainContentProps> = ({
         {currentSessions.map(({ session }) => (
           <div
             key={session.id}
-            style={{
-              display: session.id === currentSessionId ? "block" : "none",
-              height: "100%",
-              width: "100%",
-              position: "absolute",
-              top: 0,
-              left: 0,
-            }}
+            className={styles.sessionLayer}
+            data-hidden={session.id !== currentSessionId}
           >
             <ConsoleView
               sessionId={session.id}
               outputChunks={terminalOutputs[session.id]?.chunks ?? []}
               resetToken={terminalOutputs[session.id]?.resetToken ?? 0}
               isActive={session.id === currentSessionId}
-              onFilesDropped={(paths) => onTerminalFilesDropped(session.id, paths)}
+              onFilesDropped={filesDroppedBySession.get(session.id)!}
             />
           </div>
         ))}

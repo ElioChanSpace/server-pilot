@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useServer } from '../context/ServerContext';
+import styles from './Modal.module.css';
 
 interface AddCategoryModalProps {
   onClose: () => void;
@@ -26,12 +27,12 @@ export const AddCategoryModal: React.FC<AddCategoryModalProps> = ({ onClose, par
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <h2 style={{ marginBottom: '20px' }}>新增分类</h2>
+    <div className={styles.overlay}>
+      <div className={styles.content}>
+        <h2 className={styles.title}>新增分类</h2>
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px' }}>分类名称</label>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>分类名称</label>
             <input 
               type="text" 
               required 
@@ -41,8 +42,8 @@ export const AddCategoryModal: React.FC<AddCategoryModalProps> = ({ onClose, par
               autoFocus
             />
           </div>
-          <div className="modalActions">
-            <button type="button" onClick={onClose} className="modalSecondaryButton">取消</button>
+          <div className={styles.actions}>
+            <button type="button" onClick={onClose} className={styles.secondaryButton}>取消</button>
             <button type="submit" disabled={loading}>{loading ? '添加中...' : '新增分类'}</button>
           </div>
         </form>

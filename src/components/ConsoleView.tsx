@@ -10,7 +10,14 @@ interface ConsoleViewProps {
   onFilesDropped: (paths: string[]) => void;
 }
 
-export const ConsoleView: React.FC<ConsoleViewProps> = ({
+const arePropsEqual = (prev: ConsoleViewProps, next: ConsoleViewProps) =>
+  prev.sessionId === next.sessionId &&
+  prev.resetToken === next.resetToken &&
+  prev.isActive === next.isActive &&
+  prev.onFilesDropped === next.onFilesDropped &&
+  (!prev.isActive || prev.outputChunks === next.outputChunks);
+
+const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
   sessionId,
   outputChunks,
   resetToken,
@@ -50,3 +57,5 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
     </div>
   );
 };
+
+export const ConsoleView = React.memo(ConsoleViewComponent, arePropsEqual);

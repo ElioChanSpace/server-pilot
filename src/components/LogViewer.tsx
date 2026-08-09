@@ -19,6 +19,9 @@ interface ParsedLogLine {
   message: string;
 }
 
+const ROW_HEIGHT = 42;
+const OVERSCAN_ROWS = 12;
+
 const parseLogLine = (line: string): ParsedLogLine => {
   const match = line.match(/^(.+?) - ([A-Z]+) - (.+?) - (.*)$/);
   if (!match) {
@@ -46,6 +49,8 @@ const LogViewer: React.FC<LogViewerProps> = ({ onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [logFilePath, setLogFilePath] = useState('');
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
 
   const loadLogs = useCallback(async (showLoading = false) => {
     if (showLoading) {
@@ -80,10 +85,32 @@ const LogViewer: React.FC<LogViewerProps> = ({ onClose }) => {
   }, [loadLogs]);
 
   useEffect(() => {
-    if (isAutoScroll && logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    const node = logContainerRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateViewportHeight = () => setViewportHeight(node.clientHeight);
+    updateViewportHeight();
+    const observer = new ResizeObserver(updateViewportHeight);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const node = logContainerRef.current;
+    if (isAutoScroll && node) {
+      node.scrollTop = node.scrollHeight;
+      setScrollTop(node.scrollTop);
     }
   }, [logs, isAutoScroll]);
+
+  const handleScroll = () => {
+    const node = logContainerRef.current;
+    if (node) {
+      setScrollTop(node.scrollTop);
+    }
+  };
 
   const toggleAutoScroll = () => {
     setIsAutoScroll(!isAutoScroll);
@@ -103,6 +130,12 @@ const LogViewer: React.FC<LogViewerProps> = ({ onClose }) => {
       setIsClearing(false);
     }
   };
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
+  const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN_ROWS * 2;
+  const endIndex = Math.min(logs.length, startIndex + visibleCount);
+  const visibleLogs = logs.slice(startIndex, endIndex);
+  const topPadding = startIndex * ROW_HEIGHT;
 
   return (
     <div className={styles.container}>
@@ -137,24 +170,37 @@ const LogViewer: React.FC<LogViewerProps> = ({ onClose }) => {
       <div
         ref={logContainerRef}
         className={styles.logContainer}
+        onScroll={handleScroll}
       >
         {error ? (
           <div className={styles.emptyState}>读取日志失败：{error}</div>
         ) : isLoading ? (
-          <div className={styles.emptyState}>正在加载日志...</div>
+          <div className={styles.skeletonList} aria-label="正在加载日志">
+            {Array.from({ length: 12 }).map((_, index) => (
+              <div
+                key={index}
+                className={styles.skeletonLine}
+                style={{ width: `${45 + (index % 5) * 10}%` }}
+              />
+            ))}
+          </div>
         ) : logs.length > 0 ? (
-          logs.map((log, index) => (
-            <div key={index} className={styles.logLine}>
-              {log.timestamp && (
-                <span className={styles.logTimestamp}>
-                  {log.timestamp}
-                </span>
-              )}
-              <span className={styles.logMessage} data-level={log.level}>
-                {log.message}
-              </span>
+          <div style={{ height: logs.length * ROW_HEIGHT, position: "relative" }}>
+            <div style={{ transform: `translateY(${topPadding}px)` }}>
+              {visibleLogs.map((log, index) => (
+                <div key={startIndex + index} className={styles.logLine} title={log.raw}>
+                  {log.timestamp && (
+                    <span className={styles.logTimestamp}>
+                      {log.timestamp}
+                    </span>
+                  )}
+                  <span className={styles.logMessage} data-level={log.level}>
+                    {log.message}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))
+          </div>
         ) : (
           <div className={styles.emptyState}>
             暂无日志。系统运行后会在这里显示真实日志。

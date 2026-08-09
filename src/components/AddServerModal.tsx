@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useServer, OsType, Server } from '../context/ServerContext';
+import styles from './Modal.module.css';
 
 interface AddServerModalProps {
   onClose: () => void;
@@ -117,24 +118,21 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
     }
   };
 
-  const formGroupStyle: React.CSSProperties = { marginBottom: '16px' };
-  const labelStyle: React.CSSProperties = { display: 'block', marginBottom: '8px', fontSize: '14px' };
-
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <h2 style={{ marginBottom: '20px' }}>{isEditMode ? '编辑服务器' : '新增服务器'}</h2>
+    <div className={styles.overlay}>
+      <div className={styles.content}>
+        <h2 className={styles.title}>{isEditMode ? '编辑服务器' : '新增服务器'}</h2>
         <form onSubmit={handleSubmit}>
-          <div style={formGroupStyle}>
-            <label style={labelStyle}>操作系统</label>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>操作系统</label>
             <select value={osType} onChange={handleOsChange} className="select-css">
               <option value={OsType.Linux}>Linux</option>
               <option value={OsType.Windows}>Windows</option>
             </select>
           </div>
 
-          <div style={formGroupStyle}>
-            <label style={labelStyle}>名称</label>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>名称</label>
             <input
               type="text"
               required
@@ -145,9 +143,9 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-            <div style={{ ...formGroupStyle, flex: 3 }}>
-              <label style={labelStyle}>主机地址</label>
+          <div className={styles.formRow}>
+            <div className={`${styles.formGroup} ${styles.grow}`}>
+              <label className={styles.formLabel}>主机地址</label>
               <input
                 type="text"
                 required
@@ -156,8 +154,8 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
                 placeholder="192.168.1.1"
               />
             </div>
-            <div style={{ ...formGroupStyle, flex: 1 }}>
-              <label style={labelStyle}>端口</label>
+            <div className={`${styles.formGroup} ${styles.shrink}`}>
+              <label className={styles.formLabel}>端口</label>
               <input
                 type="number"
                 required
@@ -169,8 +167,8 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
             </div>
           </div>
 
-          <div style={formGroupStyle}>
-            <label style={labelStyle}>用户名</label>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>用户名</label>
             <input
               type="text"
               required
@@ -183,8 +181,8 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
             />
           </div>
 
-          <div style={formGroupStyle}>
-            <label style={labelStyle}>密码</label>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>密码</label>
             <input
               type="password"
               value={formData.password}
@@ -193,8 +191,8 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
             />
           </div>
 
-          <div style={formGroupStyle}>
-            <label style={labelStyle}>分组</label>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>分组</label>
             <select value={formData.categoryId} onChange={e => handleFieldChange('categoryId', e.target.value)} className="select-css">
               <option value="">未分类</option>
               {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -202,22 +200,13 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
           </div>
 
           {submitError && (
-            <div style={{
-              marginTop: '8px',
-              padding: '10px 12px',
-              borderRadius: '12px',
-              border: '1px solid rgba(217, 108, 108, 0.28)',
-              background: 'rgba(217, 108, 108, 0.12)',
-              color: 'var(--danger-color)',
-              fontSize: '13px',
-              lineHeight: 1.5,
-            }}>
+            <div className={styles.formError}>
               {submitError}
             </div>
           )}
 
-          <div className="modalActions">
-            <button type="button" onClick={onClose} className="modalSecondaryButton">取消</button>
+          <div className={styles.actions}>
+            <button type="button" onClick={onClose} className={styles.secondaryButton}>取消</button>
             <button type="submit" disabled={loading}>
               {loading ? (isEditMode ? '保存中...' : '添加中...') : (isEditMode ? '保存修改' : '新增服务器')}
             </button>

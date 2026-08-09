@@ -111,7 +111,7 @@ const normalizeDirectoryListing = (listing: RemoteDirectoryListing): NormalizedR
   })),
 });
 
-export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, server }) => {
+const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, server }) => {
   const [uploadRemotePath, setUploadRemotePath] = React.useState("");
   const [downloadRemotePath, setDownloadRemotePath] = React.useState("");
   const [transferStatus, setTransferStatus] = React.useState<string | null>(null);
@@ -478,3 +478,5 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     </div>
   );
 };
+
+export const FileTransferTray = React.memo(FileTransferTrayComponent);

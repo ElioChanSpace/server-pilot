@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback, lazy, memo, Suspense } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { confirm, message } from "@tauri-apps/plugin-dialog";
@@ -10,7 +10,6 @@ import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
 import { FileTransferTray } from "./components/FileTransferTray";
 import { MainContent } from "./components/MainContent";
-import LogViewer from "./components/LogViewer";
 import { ContextMenu, ContextMenuAction } from "./components/ContextMenu";
 import { FaEdit, FaPlus, FaFolderPlus, FaMoon, FaPlug, FaSun, FaUnlink } from 'react-icons/fa';
 import type {
@@ -20,6 +19,8 @@ import type {
   TerminalSessionStatusEvent,
 } from "./types/terminal";
 import "./App.css";
+
+const LogViewer = lazy(() => import("./components/LogViewer"));
 
 type ThemeMode = "light" | "dark";
 
@@ -43,15 +44,6 @@ const getInitialTheme = (): ThemeMode => {
 
 const clampRightSidebarWidth = (width: number) =>
   Math.min(MAX_RIGHT_SIDEBAR_WIDTH, Math.max(MIN_RIGHT_SIDEBAR_WIDTH, width));
-
-const getInitialRightSidebarWidth = () => {
-  if (typeof window === "undefined") {
-    return 420;
-  }
-
-  const storedWidth = Number(window.localStorage.getItem(RIGHT_SIDEBAR_WIDTH_KEY));
-  return Number.isFinite(storedWidth) ? clampRightSidebarWidth(storedWidth) : 420;
-};
 
 const MenuBar: React.FC<{
   onNewCategory: () => void;
@@ -139,6 +131,8 @@ const MenuBar: React.FC<{
     </div>
   );
 };
+
+const MemoizedMenuBar = memo(MenuBar);
 
 interface ContextMenuState {
   x: number;
@@ -367,7 +361,6 @@ const AppContent: React.FC = () => {
   
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
-  const [rightSidebarWidth, setRightSidebarWidth] = useState(getInitialRightSidebarWidth);
   const [isResizingRightSidebar, setIsResizingRightSidebar] = useState(false);
   const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
   const [activeServer, setActiveServer] = useState<Server | null>(null);
@@ -387,6 +380,8 @@ const AppContent: React.FC = () => {
   const currentSessionIdRef = useRef<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [terminalOutputs, setTerminalOutputs] = useState<Record<string, TerminalOutputState>>({});
+  const pendingTerminalChunksRef = useRef<Record<string, string[]>>({});
+  const terminalFlushFrameRef = useRef<number | null>(null);
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
   const [, setSessionCurrentDirectories] = useState<Record<string, string>>({});
   const [uploadProgressOverlay, setUploadProgressOverlay] = useState<UploadProgressOverlayState | null>(null);
@@ -398,10 +393,6 @@ const AppContent: React.FC = () => {
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
-
-  useEffect(() => {
-    window.localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(rightSidebarWidth));
-  }, [rightSidebarWidth]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -416,17 +407,38 @@ const AppContent: React.FC = () => {
   }, [currentSessionId]);
 
   useEffect(() => {
+    const storedWidth = Number(window.localStorage.getItem(RIGHT_SIDEBAR_WIDTH_KEY));
+    const width = Number.isFinite(storedWidth) ? clampRightSidebarWidth(storedWidth) : 420;
+    document.documentElement.style.setProperty("--right-sidebar-width", `${width}px`);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (terminalFlushFrameRef.current !== null) {
+        cancelAnimationFrame(terminalFlushFrameRef.current);
+        terminalFlushFrameRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isResizingRightSidebar) {
       return;
     }
 
     const handlePointerMove = (event: PointerEvent) => {
       const nextWidth = clampRightSidebarWidth(window.innerWidth - event.clientX);
-      setRightSidebarWidth(nextWidth);
+      document.documentElement.style.setProperty("--right-sidebar-width", `${nextWidth}px`);
     };
 
     const handlePointerUp = () => {
       setIsResizingRightSidebar(false);
+      const currentWidth = Number.parseFloat(
+        document.documentElement.style.getPropertyValue("--right-sidebar-width"),
+      );
+      if (Number.isFinite(currentWidth)) {
+        window.localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(currentWidth));
+      }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
@@ -496,23 +508,44 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  const appendTerminalChunk = (sessionId: string, chunk: string) => {
+  const flushPendingTerminalChunks = useCallback(() => {
+    terminalFlushFrameRef.current = null;
+    const pendingChunks = pendingTerminalChunksRef.current;
+    pendingTerminalChunksRef.current = {};
+    const entries = Object.entries(pendingChunks);
+    if (entries.length === 0) {
+      return;
+    }
+
     setTerminalOutputs(prev => {
-      if (!prev[sessionId] && !sessionsRef.current.some(session => session.id === sessionId)) {
-        return prev;
+      const next = { ...prev };
+      for (const [sessionId, chunks] of entries) {
+        const existing = next[sessionId];
+        next[sessionId] = {
+          chunks: [...(existing?.chunks ?? []), ...chunks],
+          resetToken: existing?.resetToken ?? 0,
+        };
       }
-
-      return {
-        ...prev,
-        [sessionId]: {
-          chunks: [...(prev[sessionId]?.chunks ?? []), chunk],
-          resetToken: prev[sessionId]?.resetToken ?? 0,
-        },
-      };
+      return next;
     });
-  };
+  }, []);
 
-  const resetTerminalOutput = (sessionId: string, initialChunks: string[] = []) => {
+  const appendTerminalChunk = useCallback((sessionId: string, chunk: string) => {
+    if (!sessionsRef.current.some(session => session.id === sessionId)) {
+      return;
+    }
+
+    const pending = pendingTerminalChunksRef.current;
+    (pending[sessionId] ??= []).push(chunk);
+
+    if (terminalFlushFrameRef.current !== null) {
+      return;
+    }
+
+    terminalFlushFrameRef.current = requestAnimationFrame(flushPendingTerminalChunks);
+  }, [flushPendingTerminalChunks]);
+
+  const resetTerminalOutput = useCallback((sessionId: string, initialChunks: string[] = []) => {
     setTerminalOutputs(prev => ({
       ...prev,
       [sessionId]: {
@@ -520,9 +553,9 @@ const AppContent: React.FC = () => {
         resetToken: (prev[sessionId]?.resetToken ?? 0) + 1,
       },
     }));
-  };
+  }, []);
 
-  const removeTerminalOutputs = (sessionIds: string[]) => {
+  const removeTerminalOutputs = useCallback((sessionIds: string[]) => {
     if (sessionIds.length === 0) {
       return;
     }
@@ -535,9 +568,9 @@ const AppContent: React.FC = () => {
       });
       return next;
     });
-  };
+  }, []);
 
-  const removeSessionCurrentDirectories = (sessionIds: string[]) => {
+  const removeSessionCurrentDirectories = useCallback((sessionIds: string[]) => {
     if (sessionIds.length === 0) {
       return;
     }
@@ -550,15 +583,15 @@ const AppContent: React.FC = () => {
       });
       return next;
     });
-  };
+  }, []);
 
-  const updateSessionStatus = (sessionId: string, status: TerminalSessionStatus) => {
+  const updateSessionStatus = useCallback((sessionId: string, status: TerminalSessionStatus) => {
     setSessions(prev => prev.map(session => (
       session.id === sessionId
         ? { ...session, status }
         : session
     )));
-  };
+  }, []);
 
   useEffect(() => {
     const unlistenPromises: Array<Promise<UnlistenFn>> = [
@@ -647,19 +680,19 @@ const AppContent: React.FC = () => {
     ? servers.find(server => server.id === currentSession.serverId) ?? null
     : null);
 
-  const clearSelection = () => {
+  const clearSelection = useCallback(() => {
     setActiveServer(null);
     setActiveCategory(null);
     setIsUncategorizedSelected(false);
     setConnectionError(null);
-  };
+  }, []);
 
-  const handleSelectServer = (server: Server) => {
+  const handleSelectServer = useCallback((server: Server) => {
     clearSelection();
     setActiveServer(server);
-  };
+  }, [clearSelection]);
 
-  const handleConnectServer = async (server: Server) => {
+  const handleConnectServer = useCallback(async (server: Server) => {
     clearSelection();
     setActiveServer(server);
 
@@ -682,9 +715,9 @@ const AppContent: React.FC = () => {
       const message = err as string;
       setConnectionError(message);
     }
-  };
+  }, [clearSelection, connectToServer, resetTerminalOutput]);
 
-  const applySessionRemoval = (sessionIds: string[], options: SessionRemovalOptions = {}) => {
+  const applySessionRemoval = useCallback((sessionIds: string[], options: SessionRemovalOptions = {}) => {
     if (sessionIds.length === 0) {
       return;
     }
@@ -714,14 +747,14 @@ const AppContent: React.FC = () => {
     });
     removeTerminalOutputs(sessionIds);
     removeSessionCurrentDirectories(sessionIds);
-  };
+  }, [clearSelection, removeTerminalOutputs, removeSessionCurrentDirectories]);
 
-  const handleCloseSession = (sessionId: string) => {
+  const handleCloseSession = useCallback((sessionId: string) => {
     closeTerminalSession(sessionId).catch(err => console.error("关闭终端失败:", err));
     applySessionRemoval([sessionId], { anchorSessionId: sessionId });
-  };
+  }, [applySessionRemoval, closeTerminalSession]);
 
-  const handleSelectSession = (sessionId: string) => {
+  const handleSelectSession = useCallback((sessionId: string) => {
     const selectedSession = sessions.find(session => session.id === sessionId) ?? null;
     const selectedServer = selectedSession
       ? servers.find(server => server.id === selectedSession.serverId) ?? null
@@ -733,9 +766,9 @@ const AppContent: React.FC = () => {
     }
     setCurrentSessionId(sessionId);
     setActiveView("dashboard");
-  };
+  }, [clearSelection, servers, sessions]);
 
-  const handleDuplicateSession = (sessionId: string) => {
+  const handleDuplicateSession = useCallback((sessionId: string) => {
     const session = sessions.find(item => item.id === sessionId);
     if (!session) {
       return;
@@ -747,9 +780,9 @@ const AppContent: React.FC = () => {
     }
 
     void handleConnectServer(server);
-  };
+  }, [handleConnectServer, servers, sessions]);
 
-  const handleCloseSessionsToLeft = (sessionId: string) => {
+  const handleCloseSessionsToLeft = useCallback((sessionId: string) => {
     const sessionIndex = sessions.findIndex(session => session.id === sessionId);
     if (sessionIndex <= 0) {
       return;
@@ -760,9 +793,9 @@ const AppContent: React.FC = () => {
       closeTerminalSession(id).catch(err => console.error("关闭左侧终端失败:", err));
     });
     applySessionRemoval(targetSessionIds, { preferredNextSessionId: sessionId, anchorSessionId: sessionId });
-  };
+  }, [applySessionRemoval, closeTerminalSession, sessions]);
 
-  const handleCloseSessionsToRight = (sessionId: string) => {
+  const handleCloseSessionsToRight = useCallback((sessionId: string) => {
     const sessionIndex = sessions.findIndex(session => session.id === sessionId);
     if (sessionIndex < 0 || sessionIndex >= sessions.length - 1) {
       return;
@@ -773,9 +806,9 @@ const AppContent: React.FC = () => {
       closeTerminalSession(id).catch(err => console.error("关闭右侧终端失败:", err));
     });
     applySessionRemoval(targetSessionIds, { preferredNextSessionId: sessionId, anchorSessionId: sessionId });
-  };
+  }, [applySessionRemoval, closeTerminalSession, sessions]);
 
-  const handleCloseServerSessions = (sessionId: string) => {
+  const handleCloseServerSessions = useCallback((sessionId: string) => {
     const targetSession = sessions.find(session => session.id === sessionId);
     if (!targetSession) {
       return;
@@ -791,9 +824,9 @@ const AppContent: React.FC = () => {
 
     disconnectServer(targetSession.serverId).catch(err => console.error("关闭当前服务器所有终端失败:", err));
     applySessionRemoval(targetSessionIds, { anchorSessionId: sessionId });
-  };
+  }, [applySessionRemoval, disconnectServer, sessions]);
 
-  const handleCloseAllSessions = () => {
+  const handleCloseAllSessions = useCallback(() => {
     if (sessions.length === 0) {
       return;
     }
@@ -806,9 +839,9 @@ const AppContent: React.FC = () => {
     });
 
     applySessionRemoval(targetSessionIds, { anchorSessionId: currentSessionId });
-  };
+  }, [applySessionRemoval, currentSessionId, disconnectServer, sessions]);
 
-  const handleTerminalFilesDropped = async (sessionId: string, paths: string[]) => {
+  const handleTerminalFilesDropped = useCallback(async (sessionId: string, paths: string[]) => {
     const targetSession = sessions.find(session => session.id === sessionId);
     if (!targetSession) {
       return;
@@ -894,16 +927,16 @@ const AppContent: React.FC = () => {
         return;
       }
     }
-  };
+  }, [servers, sessions]);
 
-  const handleSelectCategory = (category: Category | null) => {
+  const handleSelectCategory = useCallback((category: Category | null) => {
     clearSelection();
     setActiveCategory(category);
     setIsUncategorizedSelected(category === null);
     setActiveView("dashboard");
-  };
+  }, [clearSelection]);
 
-  const handleDisconnectServer = async (server: Server) => {
+  const handleDisconnectServer = useCallback(async (server: Server) => {
     const relatedSessions = sessions.filter(session => session.serverId === server.id);
     if (relatedSessions.length > 0) {
       applySessionRemoval(relatedSessions.map(session => session.id), { anchorSessionId: currentSessionId });
@@ -916,23 +949,23 @@ const AppContent: React.FC = () => {
     } catch (err) {
       console.error("断开连接失败:", err);
     }
-  };
+  }, [applySessionRemoval, currentSessionId, disconnectServer, sessions]);
 
-  const handleEditServerSaved = (updatedServer: Server) => {
+  const handleEditServerSaved = useCallback((updatedServer: Server) => {
     setActiveServer(prev => (prev?.id === updatedServer.id ? updatedServer : prev));
     setEditingServer(undefined);
-  };
+  }, []);
 
-  const handleCategoryContextMenu = (event: React.MouseEvent, category: Category | null) => {
+  const handleCategoryContextMenu = useCallback((event: React.MouseEvent, category: Category | null) => {
     const actions: ContextMenuAction[] = [
       { label: "新建服务器", icon: <FaPlus />, action: () => { setEditingServer(undefined); setInitialCategoryId(category?.id); setIsServerModalOpen(true); }},
       { label: "新建子分类", icon: <FaFolderPlus />, action: () => { setInitialParentId(category?.id); setIsCategoryModalOpen(true); }}
     ];
     setContextMenu({ x: event.clientX, y: event.clientY, actions });
-  };
+  }, []);
 
   // --- 新增：处理服务器右键菜单 ---
-  const handleServerContextMenu = (event: React.MouseEvent, server: Server) => {
+  const handleServerContextMenu = useCallback((event: React.MouseEvent, server: Server) => {
     const actions: ContextMenuAction[] = [
       {
         label: server.status === 'connected' ? "打开终端" : "连接服务器",
@@ -968,9 +1001,48 @@ const AppContent: React.FC = () => {
     if (actions.length > 0) {
       setContextMenu({ x: event.clientX, y: event.clientY, actions });
     }
-  };
+  }, [handleConnectServer, handleDisconnectServer]);
 
-  const closeContextMenu = () => setContextMenu(null);
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  const handleNewCategory = useCallback(() => {
+    setInitialParentId(undefined);
+    setIsCategoryModalOpen(true);
+  }, []);
+  const handleNewServer = useCallback(() => {
+    setEditingServer(undefined);
+    setInitialCategoryId(undefined);
+    setIsServerModalOpen(true);
+  }, []);
+  const handleOpenSettings = useCallback(() => {
+    setIsLogViewerOpen(false);
+    clearSelection();
+    setCurrentSessionId(null);
+    setActiveView("settings");
+  }, [clearSelection]);
+  const handleOpenLogViewer = useCallback(() => setIsLogViewerOpen(true), []);
+  const handleCreateServerInCategory = useCallback((category: Category | null) => {
+    setEditingServer(undefined);
+    setInitialCategoryId(category?.id);
+    setIsServerModalOpen(true);
+  }, []);
+  const handleCreateSubCategory = useCallback((category: Category | null) => {
+    setInitialParentId(category?.id);
+    setIsCategoryModalOpen(true);
+  }, []);
+  const handleToggleTheme = useCallback(() => {
+    setTheme(prev => (prev === "dark" ? "light" : "dark"));
+  }, []);
+  const handleDismissError = useCallback(() => setConnectionError(null), []);
+  const handleCloseLogViewer = useCallback(() => setIsLogViewerOpen(false), []);
+  const toggleLeftSidebar = useCallback(() => {
+    setIsLeftSidebarOpen(prev => !prev);
+  }, []);
+  const toggleRightSidebar = useCallback(() => {
+    setIsRightSidebarOpen(prev => !prev);
+  }, []);
+  const toggleTransferTray = useCallback(() => {
+    setIsTransferTrayOpen(prev => !prev);
+  }, []);
 
   useEffect(() => {
     if (!contextMenu) {
@@ -996,18 +1068,13 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="app-wrapper">
-      <MenuBar 
-        onNewCategory={() => { setInitialParentId(undefined); setIsCategoryModalOpen(true); }}
-        onNewServer={() => { setEditingServer(undefined); setInitialCategoryId(undefined); setIsServerModalOpen(true); }}
-        onOpenSettings={() => {
-          setIsLogViewerOpen(false);
-          clearSelection();
-          setCurrentSessionId(null);
-          setActiveView("settings");
-        }}
-        onViewLogs={() => setIsLogViewerOpen(true)}
+      <MemoizedMenuBar 
+        onNewCategory={handleNewCategory}
+        onNewServer={handleNewServer}
+        onOpenSettings={handleOpenSettings}
+        onViewLogs={handleOpenLogViewer}
         theme={theme}
-        onToggleTheme={() => setTheme(prev => (prev === "dark" ? "light" : "dark"))}
+        onToggleTheme={handleToggleTheme}
       />
       <div className="content-wrapper">
         <LeftSidebar 
@@ -1018,11 +1085,11 @@ const AppContent: React.FC = () => {
           onSelectServer={handleSelectServer}
           onSelectCategory={handleSelectCategory}
           onCategoryContextMenu={handleCategoryContextMenu}
-          onCreateServer={(category) => { setEditingServer(undefined); setInitialCategoryId(category?.id); setIsServerModalOpen(true); }}
-          onCreateSubCategory={(category) => { setInitialParentId(category?.id); setIsCategoryModalOpen(true); }}
+          onCreateServer={handleCreateServerInCategory}
+          onCreateSubCategory={handleCreateSubCategory}
           onConnectServer={handleConnectServer}
           onDisconnectServer={handleDisconnectServer}
-          onServerContextMenu={handleServerContextMenu} // <-- 传递新的处理函数
+          onServerContextMenu={handleServerContextMenu}
         />
         <div className="workspace-shell">
           <MainContent 
@@ -1054,20 +1121,21 @@ const AppContent: React.FC = () => {
               />
               <RightSidebar
                 isOpen={true}
-                width={rightSidebarWidth}
                 activeServer={activeServer}
                 activeCategory={activeCategory}
                 isUncategorizedSelected={isUncategorizedSelected}
                 connectionError={connectionError}
                 onConnectServer={handleConnectServer}
                 onDisconnectServer={handleDisconnectServer}
-                onDismissError={() => setConnectionError(null)}
+                onDismissError={handleDismissError}
               />
             </div>
           )}
           {isLogViewerOpen && (
             <div className="log-viewer-overlay">
-              <LogViewer onClose={() => setIsLogViewerOpen(false)} />
+              <Suspense fallback={<div className="lazy-fallback">正在加载日志...</div>}>
+                <LogViewer onClose={handleCloseLogViewer} />
+              </Suspense>
             </div>
           )}
         </div>
@@ -1080,9 +1148,9 @@ const AppContent: React.FC = () => {
         isLeftSidebarOpen={isLeftSidebarOpen}
         isRightSidebarOpen={isRightSidebarOpen}
         isTransferTrayOpen={isTransferTrayOpen}
-        toggleLeftSidebar={() => setIsLeftSidebarOpen(prev => !prev)}
-        toggleRightSidebar={() => setIsRightSidebarOpen(prev => !prev)}
-        toggleTransferTray={() => setIsTransferTrayOpen(prev => !prev)}
+        toggleLeftSidebar={toggleLeftSidebar}
+        toggleRightSidebar={toggleRightSidebar}
+        toggleTransferTray={toggleTransferTray}
       />
       {uploadProgressOverlay && (
         <div className="upload-progress-toast" data-status={uploadProgressOverlay.status}>
@@ -1138,9 +1206,45 @@ const AppContent: React.FC = () => {
 function App() {
   return (
     <ServerProvider>
-      <AppContent />
+      <AppErrorBoundary>
+        <AppContent />
+      </AppErrorBoundary>
     </ServerProvider>
   );
+}
+
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("应用渲染失败:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="error-boundary">
+          <h2>应用遇到错误</h2>
+          <p>{this.state.error.message || String(this.state.error)}</p>
+          <button
+            type="button"
+            onClick={() => this.setState({ error: null })}
+          >
+            重试
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 export default App;

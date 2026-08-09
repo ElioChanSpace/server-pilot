@@ -7,6 +7,17 @@
   min-width: 0;
 }
 
+.monitoringFallback {
+  margin-top: 24px;
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-item-bg);
+  color: var(--sidebar-text-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
 .hero {
   display: flex;
   align-items: flex-start;
@@ -290,7 +301,7 @@
 
 .browserEntry[data-selected="true"] {
   border-color: var(--accent-color);
-  background: rgba(116, 93, 255, 0.14);
+  background: var(--surface-active);
 }
 
 .browserEntryMain {
@@ -431,17 +442,17 @@
 }
 
 .statusBadge[data-status="connected"] {
-  background-color: #4caf50;
+  background-color: var(--success-color);
   color: white;
 }
 
 .statusBadge[data-status="connecting"] {
-  background-color: #ff9800;
+  background-color: var(--warning-color);
   color: white;
 }
 
 .statusBadge[data-status="disconnected"] {
-  background-color: #f44336;
+  background-color: var(--danger-color);
   color: white;
 }
 
