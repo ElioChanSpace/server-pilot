@@ -1609,6 +1609,113 @@ pub async fn download_file_from_server(
 }
 
 #[tauri::command]
+pub async fn delete_remote_path(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    is_dir: bool,
+) -> Result<(), String> {
+    let path = path.trim().to_string();
+    if path.is_empty() || path == "/" {
+        return Err("无效的远程路径".to_string());
+    }
+
+    let connection = resolve_transfer_server(&state, &id)?;
+    let command = if is_dir {
+        format!("rm -rf -- {}", shell_quote(&path))
+    } else {
+        format!("rm -f -- {}", shell_quote(&path))
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        run_ssh_command(
+            &connection.username,
+            &connection.host,
+            connection.port,
+            connection.password.as_deref(),
+            connection.key_path.as_deref(),
+            connection.proxy_jump.as_deref(),
+            &command,
+            SSH_COMMAND_TIMEOUT,
+            "delete remote path",
+        )?;
+        Ok(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub async fn rename_remote_path(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    new_path: String,
+) -> Result<(), String> {
+    let path = path.trim().to_string();
+    let new_path = new_path.trim().to_string();
+    if path.is_empty() || new_path.is_empty() {
+        return Err("无效的远程路径".to_string());
+    }
+
+    let connection = resolve_transfer_server(&state, &id)?;
+    let command = format!(
+        "mv -- {} {}",
+        shell_quote(&path),
+        shell_quote(&new_path)
+    );
+
+    tauri::async_runtime::spawn_blocking(move || {
+        run_ssh_command(
+            &connection.username,
+            &connection.host,
+            connection.port,
+            connection.password.as_deref(),
+            connection.key_path.as_deref(),
+            connection.proxy_jump.as_deref(),
+            &command,
+            SSH_COMMAND_TIMEOUT,
+            "rename remote path",
+        )?;
+        Ok(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub async fn create_remote_directory(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+) -> Result<(), String> {
+    let path = path.trim().to_string();
+    if path.is_empty() {
+        return Err("无效的远程路径".to_string());
+    }
+
+    let connection = resolve_transfer_server(&state, &id)?;
+    let command = format!("mkdir -p -- {}", shell_quote(&path));
+
+    tauri::async_runtime::spawn_blocking(move || {
+        run_ssh_command(
+            &connection.username,
+            &connection.host,
+            connection.port,
+            connection.password.as_deref(),
+            connection.key_path.as_deref(),
+            connection.proxy_jump.as_deref(),
+            &command,
+            SSH_COMMAND_TIMEOUT,
+            "create remote directory",
+        )?;
+        Ok(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
 pub async fn read_app_logs(
     app_handle: AppHandle,
     limit: Option<usize>,
