@@ -1756,6 +1756,50 @@ pub async fn create_remote_directory(
     .map_err(|err| err.to_string())?
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteLogResult {
+    pub path: String,
+    pub lines: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn read_remote_log(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    lines: Option<u32>,
+) -> Result<RemoteLogResult, String> {
+    let path = path.trim().to_string();
+    if path.is_empty() {
+        return Err("请指定远程日志文件路径".to_string());
+    }
+
+    let connection = resolve_transfer_server(&state, &id)?;
+    let count = lines.unwrap_or(200).clamp(10, 2000);
+    let command = format!("tail -n {} -- {}", count, shell_quote(&path));
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = run_ssh_command(
+            &connection.username,
+            &connection.host,
+            connection.port,
+            connection.password.as_deref(),
+            connection.key_path.as_deref(),
+            connection.proxy_jump.as_deref(),
+            &command,
+            SSH_COMMAND_TIMEOUT,
+            "read remote log",
+        )?;
+        Ok(RemoteLogResult {
+            path: path.clone(),
+            lines: output.lines().map(str::to_string).collect(),
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 #[tauri::command]
 pub async fn read_app_logs(
     app_handle: AppHandle,

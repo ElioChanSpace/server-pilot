@@ -13,6 +13,7 @@ interface RightSidebarProps {
   onConnectServer: (server: Server) => void;
   onDisconnectServer: (server: Server) => void;
   onDismissError: () => void;
+  onViewLogs: (server: Server) => void;
 }
 
 const formatServerStatus = (status: string) => {
@@ -37,6 +38,7 @@ const RightSidebarComponent: React.FC<RightSidebarProps> = ({
   onConnectServer,
   onDisconnectServer,
   onDismissError,
+  onViewLogs,
 }) => {
   const { categories, servers } = useServer();
 
@@ -112,6 +114,7 @@ const RightSidebarComponent: React.FC<RightSidebarProps> = ({
             onDisconnectServer={onDisconnectServer}
             connectionError={connectionError}
             onDismissError={onDismissError}
+            onViewLogs={onViewLogs}
           />
         ) : activeCategory || isUncategorizedSelected ? (
           <div className={styles.panel}>

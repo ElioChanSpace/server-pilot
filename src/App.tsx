@@ -7,6 +7,7 @@ import { AddServerModal } from "./components/AddServerModal";
 import { AddCategoryModal } from "./components/AddCategoryModal";
 import { ImportSshConfigModal } from "./components/ImportSshConfigModal";
 import { BatchCommandModal } from "./components/BatchCommandModal";
+import { RemoteLogModal } from "./components/RemoteLogModal";
 import { LeftSidebar } from "./components/LeftSidebar";
 import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
@@ -385,6 +386,7 @@ const AppContent: React.FC = () => {
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [isSshImportOpen, setIsSshImportOpen] = useState(false);
   const [isBatchCommandOpen, setIsBatchCommandOpen] = useState(false);
+  const [remoteLogServer, setRemoteLogServer] = useState<Server | null>(null);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [initialCategoryId, setInitialCategoryId] = useState<string | undefined>(undefined);
   const [initialParentId, setInitialParentId] = useState<string | undefined>(undefined);
@@ -1045,6 +1047,7 @@ const AppContent: React.FC = () => {
   }, []);
   const handleOpenSshImport = useCallback(() => setIsSshImportOpen(true), []);
   const handleOpenBatchCommand = useCallback(() => setIsBatchCommandOpen(true), []);
+  const handleOpenRemoteLog = useCallback((server: Server) => setRemoteLogServer(server), []);
   const handleOpenSettings = useCallback(() => {
     setIsLogViewerOpen(false);
     clearSelection();
@@ -1211,6 +1214,7 @@ const AppContent: React.FC = () => {
                 onConnectServer={handleConnectServer}
                 onDisconnectServer={handleDisconnectServer}
                 onDismissError={handleDismissError}
+                onViewLogs={handleOpenRemoteLog}
               />
             </div>
           )}
@@ -1287,6 +1291,9 @@ const AppContent: React.FC = () => {
           servers={servers}
           onClose={() => setIsBatchCommandOpen(false)}
         />
+      )}
+      {remoteLogServer && (
+        <RemoteLogModal server={remoteLogServer} onClose={() => setRemoteLogServer(null)} />
       )}
       {isCategoryModalOpen && <AddCategoryModal onClose={() => setIsCategoryModalOpen(false)} parentId={initialParentId} />}
       {hostKeyPrompt && (

@@ -12,6 +12,7 @@ interface ServerDetailsProps {
   onDisconnectServer: (server: Server) => void;
   connectionError: string | null;
   onDismissError: () => void;
+  onViewLogs: (server: Server) => void;
 }
 
 type ServerDetailsTab = 'overview' | 'monitoring';
@@ -35,6 +36,7 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
   onDisconnectServer,
   connectionError,
   onDismissError,
+  onViewLogs,
 }) => {
   const { categories } = useServer();
   const [activeTab, setActiveTab] = React.useState<ServerDetailsTab>('overview');
@@ -92,6 +94,11 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
           <button type="button" className={styles.secondaryButton} onClick={() => onDisconnectServer(server)}>
             <FaUnlink />
             <span>断开连接</span>
+          </button>
+        )}
+        {isLinux && (
+          <button type="button" className={styles.secondaryButton} onClick={() => onViewLogs(server)}>
+            查看日志
           </button>
         )}
       </div>
