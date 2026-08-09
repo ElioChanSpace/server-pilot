@@ -39,6 +39,9 @@ const ServerNode = memo<ServerNodeProps>(({
 }) => {
   const handleActionClick = (event: React.MouseEvent) => {
     event.stopPropagation();
+    if (server.osType !== OsType.Linux) {
+      return;
+    }
     if (server.status === 'connected' || server.status === 'connecting') {
       onDisconnectServer(server);
       return;
@@ -73,7 +76,14 @@ const ServerNode = memo<ServerNodeProps>(({
         type="button"
         className={treeStyles.nodeAction}
         onClick={handleActionClick}
-        title={server.status === 'connected' || server.status === 'connecting' ? '断开连接' : '连接服务器'}
+        disabled={server.osType !== OsType.Linux}
+        title={
+          server.osType !== OsType.Linux
+            ? '暂不支持 Windows 服务器'
+            : server.status === 'connected' || server.status === 'connecting'
+              ? '断开连接'
+              : '连接服务器'
+        }
       >
         {server.status === 'connected' || server.status === 'connecting' ? <FaUnlink size={11} /> : <FaPlug size={11} />}
       </button>

@@ -42,7 +42,13 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
   const isConnected = server.status === 'connected';
   const isConnecting = server.status === 'connecting';
   const isLinux = server.osType === 'linux';
-  const primaryActionLabel = isConnected ? '打开终端' : isConnecting ? '查看连接中' : '连接服务器';
+  const primaryActionLabel = !isLinux
+    ? '暂不支持'
+    : isConnected
+      ? '打开终端'
+      : isConnecting
+        ? '查看连接中'
+        : '连接服务器';
   const statusText = isConnected ? '已连接，可直接进入终端操作。' : isConnecting ? '连接正在建立，请稍候。' : '当前未连接，适合先检查主机和账号信息。';
   const protocolLabel = isLinux ? 'SSH' : '远程桌面';
   const credentialStatus = server.hasPassword ? '已保存密码' : '未保存密码';
@@ -72,7 +78,13 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
       </div>
 
       <div className={styles.actionRow}>
-        <button type="button" className={styles.primaryButton} onClick={() => onConnectServer(server)}>
+        <button
+          type="button"
+          className={styles.primaryButton}
+          onClick={() => onConnectServer(server)}
+          disabled={!isLinux}
+          title={!isLinux ? '当前版本暂不支持 Windows 服务器' : undefined}
+        >
           <FaPlug />
           <span>{primaryActionLabel}</span>
         </button>

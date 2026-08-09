@@ -491,7 +491,7 @@ fn resolve_transfer_server(
     };
 
     if !matches!(server.os_type, OsType::Linux) {
-        return Err("Only Linux file transfer is supported currently".to_string());
+        return Err("当前版本仅支持 Linux 服务器传输文件".to_string());
     }
 
     let password = credential_store::get_password(id)?.filter(|value| !value.is_empty());
@@ -1281,7 +1281,7 @@ pub async fn connect_server(
     let use_key_auth = server.auth_method == "key";
 
     if !matches!(server.os_type, OsType::Linux) {
-        return Err("Only Linux SSH is supported currently".into());
+        return Err("当前版本暂不支持 Windows 服务器（仅支持 Linux SSH）".into());
     }
 
     let username = if matches!(&server.os_type, OsType::Linux)
@@ -1367,7 +1367,7 @@ pub async fn fetch_server_metrics(
     };
 
     if !matches!(server.os_type, OsType::Linux) {
-        return Err("Only Linux server monitoring is supported currently".to_string());
+        return Err("当前版本仅支持 Linux 服务器监控".to_string());
     }
 
     let connection = resolve_transfer_server(&state, &id)?;
