@@ -766,6 +766,35 @@ pub fn respond_to_host_key_prompt(
         .map_err(|_| "主机指纹请求已失效，请重试".to_string())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_ansi_removes_escape_sequences() {
+        assert_eq!(strip_ansi_sequences("\u{1b}[31mred\u{1b}[0m"), "red");
+        assert_eq!(strip_ansi_sequences("plain"), "plain");
+    }
+
+    #[test]
+    fn auto_fill_matches_password_and_passphrase_prompts() {
+        assert!(should_auto_fill_ssh_password("user@host's password: "));
+        assert!(should_auto_fill_ssh_password(
+            "Enter passphrase for key '/root/.ssh/id_ed25519': "
+        ));
+        assert!(!should_auto_fill_ssh_password("sudo password: "));
+    }
+
+    #[test]
+    fn host_key_prompt_detection_and_fingerprint_extraction() {
+        let prompt = "The authenticity of host '1.2.3.4 (1.2.3.4)' can't be established.\r\nED25519 key fingerprint is SHA256:AbCdEf.\r\nAre you sure you want to continue connecting (yes/no/[fingerprint])? ";
+        assert!(should_accept_host_key_prompt(prompt));
+
+        let fingerprint = extract_host_key_fingerprint(prompt);
+        assert!(fingerprint.contains("SHA256:AbCdEf"));
+    }
+}
+
 pub fn read_session_current_directory(
     session_manager_state: State<'_, SessionManagerState>,
     session_id: String,

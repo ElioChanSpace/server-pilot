@@ -1852,6 +1852,75 @@ pub fn import_app_data(state: State<'_, AppState>, load_path: String) -> Result<
     Ok(server_count)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shell_quote_escapes_single_quotes() {
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
+        assert_eq!(shell_quote("plain"), "'plain'");
+    }
+
+    #[test]
+    fn join_remote_path_handles_root_and_trailing_slash() {
+        assert_eq!(join_remote_path("/", "file.txt"), "/file.txt");
+        assert_eq!(join_remote_path("/tmp", "a.txt"), "/tmp/a.txt");
+        assert_eq!(join_remote_path("/tmp/", "a.txt"), "/tmp/a.txt");
+    }
+
+    #[test]
+    fn ssh_config_value_matches_case_insensitively() {
+        assert_eq!(ssh_config_value("HostName 1.2.3.4", "hostname"), Some("1.2.3.4"));
+        assert_eq!(ssh_config_value("HOST github.com", "host"), Some("github.com"));
+        assert_eq!(ssh_config_value("Port 2222", "port"), Some("2222"));
+        assert_eq!(ssh_config_value("User root", "hostname"), None);
+    }
+
+    #[test]
+    fn parse_metrics_output_extracts_disk_and_load() {
+        let output = format!(
+            "prefix\n{start}\ncpu_usage=12.5\nmemory_used_mb=1024\nmemory_total_mb=4096\nmemory_usage=25.0\ndisk_usage=41.0\nload_1=0.5\nload_5=0.3\nload_15=0.2\ngpu_status=unsupported\n{end}\nsuffix",
+            start = METRICS_OUTPUT_START,
+            end = METRICS_OUTPUT_END,
+        );
+
+        let snapshot = parse_metrics_output(&output).expect("metrics should parse");
+        assert_eq!(snapshot.cpu_usage, 12.5);
+        assert_eq!(snapshot.memory_used_mb, 1024);
+        assert_eq!(snapshot.disk_usage, 41.0);
+        assert_eq!(snapshot.load_1, 0.5);
+        assert_eq!(snapshot.load_15, 0.2);
+        assert!(snapshot.gpu.is_none());
+        assert_eq!(snapshot.gpu_status, "unsupported");
+    }
+
+    #[test]
+    fn ssh_config_parser_skips_wildcards_and_invalid_blocks() {
+        let path = std::env::temp_dir().join(format!(
+            "server-pilot-test-config-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_millis()
+        ));
+        std::fs::write(
+            &path,
+            "Host prod\n  HostName 10.0.0.1\n  User deploy\n  Port 2200\n  IdentityFile ~/.ssh/prod\n  ProxyJump jump@bastion\n\nHost *.example.com\n  HostName example.com\n\nHost broken\n  # 无 HostName，应被跳过\n",
+        )
+        .expect("write config");
+
+        let hosts = parse_ssh_config(Some(path.to_string_lossy().to_string())).expect("parse");
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].host, "prod");
+        assert_eq!(hosts[0].host_name, "10.0.0.1");
+        assert_eq!(hosts[0].user.as_deref(), Some("deploy"));
+        assert_eq!(hosts[0].port, Some(2200));
+        assert_eq!(hosts[0].identity_file.as_deref(), Some("~/.ssh/prod"));
+        assert_eq!(hosts[0].proxy_jump.as_deref(), Some("jump@bastion"));
+    }
+}
+
 #[tauri::command]
 pub async fn read_app_logs(
     app_handle: AppHandle,
