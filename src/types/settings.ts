@@ -4,4 +4,7 @@ export interface AppSettings {
   terminalFontSize: number;
   terminalScrollback: number;
   minimizeToTrayOnClose: boolean;
+  themePreference: 'system' | 'light' | 'dark';
+  notificationsEnabled: boolean;
+  confirmOnDisconnect: boolean;
 }

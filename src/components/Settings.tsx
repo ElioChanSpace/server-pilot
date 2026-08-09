@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { useServer } from "../context/ServerContext";
 import type { AppSettings } from "../types/settings";
 import styles from "./Settings.module.css";
 
@@ -9,9 +11,13 @@ const defaultSettings: AppSettings = {
   terminalFontSize: 14,
   terminalScrollback: 5000,
   minimizeToTrayOnClose: false,
+  themePreference: "system",
+  notificationsEnabled: true,
+  confirmOnDisconnect: true,
 };
 
 export const Settings: React.FC = () => {
+  const { refreshServers, refreshCategories } = useServer();
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -52,6 +58,45 @@ export const Settings: React.FC = () => {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleExport = async () => {
+    const targetPath = await save({
+      title: "导出配置",
+      defaultPath: "server-pilot-backup.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (typeof targetPath !== "string") {
+      return;
+    }
+
+    try {
+      await invoke("export_app_data", { savePath: targetPath });
+      setSuccessMessage("配置已导出（不含任何密码）。");
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : String(exportError));
+    }
+  };
+
+  const handleImport = async () => {
+    const sourcePath = await open({
+      multiple: false,
+      directory: false,
+      title: "导入配置",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (typeof sourcePath !== "string") {
+      return;
+    }
+
+    try {
+      const count = await invoke<number>("import_app_data", { loadPath: sourcePath });
+      await refreshServers();
+      await refreshCategories();
+      setSuccessMessage(`已导入 ${count} 台服务器，凭据已迁移到系统钥匙串。`);
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError));
     }
   };
 
@@ -157,6 +202,67 @@ export const Settings: React.FC = () => {
               />
               <span className={styles.fieldLabel}>关闭窗口时最小化到系统托盘</span>
             </label>
+
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>主题</span>
+              <select
+                value={settings.themePreference}
+                onChange={(event) => {
+                  setSettings(prev => ({
+                    ...prev,
+                    themePreference: event.target.value as AppSettings["themePreference"],
+                  }));
+                }}
+                className="select-css"
+              >
+                <option value="system">跟随系统</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select>
+            </label>
+
+            <label className={styles.fieldRow}>
+              <input
+                type="checkbox"
+                className={styles.checkbox}
+                checked={settings.notificationsEnabled}
+                onChange={(event) => {
+                  setSettings(prev => ({
+                    ...prev,
+                    notificationsEnabled: event.target.checked,
+                  }));
+                }}
+              />
+              <span className={styles.fieldLabel}>启用桌面通知（断连、上传完成等）</span>
+            </label>
+
+            <label className={styles.fieldRow}>
+              <input
+                type="checkbox"
+                className={styles.checkbox}
+                checked={settings.confirmOnDisconnect}
+                onChange={(event) => {
+                  setSettings(prev => ({
+                    ...prev,
+                    confirmOnDisconnect: event.target.checked,
+                  }));
+                }}
+              />
+              <span className={styles.fieldLabel}>断开连接前确认</span>
+            </label>
+
+            <div className={styles.backupSection}>
+              <span className={styles.fieldLabel}>数据备份</span>
+              <div className={styles.backupActions}>
+                <button type="button" className={styles.backupButton} onClick={() => void handleExport()}>
+                  导出配置
+                </button>
+                <button type="button" className={styles.backupButton} onClick={() => void handleImport()}>
+                  导入配置
+                </button>
+              </div>
+              <span className={styles.helper}>导出文件不包含密码，导入后凭据自动迁移到系统钥匙串。</span>
+            </div>
 
             {error && (
               <p className={styles.error}>{error}</p>

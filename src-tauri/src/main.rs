@@ -10,9 +10,9 @@ use crate::servers::infrastructure::FileRepository;
 use crate::servers::interface::commands::{
     clear_app_logs, close_terminal_session, connect_server, create_category, create_server,
     create_remote_directory, delete_remote_path, disconnect_server, download_file_from_server,
-    fetch_server_metrics, get_app_settings, get_categories, get_servers,
+    export_app_data, fetch_server_metrics, get_app_settings, get_categories, get_servers,
     get_terminal_session_directory, list_remote_directory, parse_ssh_config, pty_resize, pty_write,
-    read_app_logs, read_remote_log, rename_remote_path, update_app_settings, update_server,
+    import_app_data, read_app_logs, read_remote_log, rename_remote_path, update_app_settings, update_server,
     upload_file_to_server,
 };
 use crate::servers::infrastructure::session_manager;
@@ -81,19 +81,10 @@ fn initialize_logging<R: tauri::Runtime>(
 }
 
 fn migrate_legacy_passwords(app_state: &AppState) -> Result<(), String> {
-    let mut changed = false;
-    {
+    let changed = {
         let mut data = app_state.data.lock().map_err(|err| err.to_string())?;
-        for server in data.servers.iter_mut() {
-            if let Some(password) = server.password.take() {
-                if !password.is_empty() {
-                    credential_store::save_password(&server.id, &password)?;
-                    server.has_password = true;
-                }
-                changed = true;
-            }
-        }
-    }
+        credential_store::migrate_legacy_passwords(&mut data)?
+    };
 
     if changed {
         app_state.save()?;
@@ -238,7 +229,9 @@ fn main() {
             delete_remote_path,
             rename_remote_path,
             create_remote_directory,
-            read_remote_log
+            read_remote_log,
+            export_app_data,
+            import_app_data
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

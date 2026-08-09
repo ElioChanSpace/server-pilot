@@ -112,6 +112,18 @@ fn default_minimize_to_tray_on_close() -> bool {
     false
 }
 
+fn default_theme_preference() -> String {
+    "system".to_string()
+}
+
+fn default_notifications_enabled() -> bool {
+    true
+}
+
+fn default_confirm_on_disconnect() -> bool {
+    true
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -125,6 +137,12 @@ pub struct AppSettings {
     pub terminal_scrollback: u32,
     #[serde(default = "default_minimize_to_tray_on_close")]
     pub minimize_to_tray_on_close: bool,
+    #[serde(default = "default_theme_preference")]
+    pub theme_preference: String,
+    #[serde(default = "default_notifications_enabled")]
+    pub notifications_enabled: bool,
+    #[serde(default = "default_confirm_on_disconnect")]
+    pub confirm_on_disconnect: bool,
 }
 
 impl Default for AppSettings {
@@ -135,6 +153,9 @@ impl Default for AppSettings {
             terminal_font_size: default_terminal_font_size(),
             terminal_scrollback: default_terminal_scrollback(),
             minimize_to_tray_on_close: default_minimize_to_tray_on_close(),
+            theme_preference: default_theme_preference(),
+            notifications_enabled: default_notifications_enabled(),
+            confirm_on_disconnect: default_confirm_on_disconnect(),
         }
     }
 }
@@ -142,8 +163,14 @@ impl Default for AppSettings {
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppData {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     pub servers: Vec<Server>,
     pub categories: Vec<Category>,
     #[serde(default)]
     pub settings: AppSettings,
+}
+
+fn default_schema_version() -> u32 {
+    1
 }

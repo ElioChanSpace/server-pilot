@@ -412,6 +412,8 @@ const AppContent: React.FC = () => {
   const pendingTerminalChunksRef = useRef<Record<string, string[]>>({});
   const terminalFlushFrameRef = useRef<number | null>(null);
   const notificationPermissionRef = useRef(false);
+  const notificationsEnabledRef = useRef(true);
+  const confirmOnDisconnectRef = useRef(true);
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
   const [, setSessionCurrentDirectories] = useState<Record<string, string>>({});
   const [uploadProgressOverlay, setUploadProgressOverlay] = useState<UploadProgressOverlayState | null>(null);
@@ -458,6 +460,23 @@ const AppContent: React.FC = () => {
         console.error("加载应用设置失败:", error);
       });
   }, []);
+
+  useEffect(() => {
+    if (!appSettings) {
+      return;
+    }
+
+    notificationsEnabledRef.current = appSettings.notificationsEnabled;
+    confirmOnDisconnectRef.current = appSettings.confirmOnDisconnect;
+
+    if (appSettings.themePreference === "light" || appSettings.themePreference === "dark") {
+      setTheme(appSettings.themePreference);
+    } else {
+      setTheme(
+        window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+      );
+    }
+  }, [appSettings]);
 
   useEffect(() => {
     const appWindow = getCurrentWindow();
@@ -525,7 +544,7 @@ const AppContent: React.FC = () => {
   }, []);
 
   const notify = useCallback((title: string, body?: string) => {
-    if (!notificationPermissionRef.current) {
+    if (!notificationPermissionRef.current || !notificationsEnabledRef.current) {
       return;
     }
     try {
@@ -1101,6 +1120,16 @@ const AppContent: React.FC = () => {
   }, [clearSelection]);
 
   const handleDisconnectServer = useCallback(async (server: Server) => {
+    if (confirmOnDisconnectRef.current) {
+      const confirmed = await confirm(
+        `确定要断开 ${server.name}（${server.username}@${server.host}:${server.port}）的连接吗？`,
+        "断开连接",
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
     const relatedSessions = sessions.filter(session => session.serverId === server.id);
     if (relatedSessions.length > 0) {
       applySessionRemoval(relatedSessions.map(session => session.id), { anchorSessionId: currentSessionId });
@@ -1201,7 +1230,20 @@ const AppContent: React.FC = () => {
     setIsCategoryModalOpen(true);
   }, []);
   const handleToggleTheme = useCallback(() => {
-    setTheme(prev => (prev === "dark" ? "light" : "dark"));
+    setTheme(prev => {
+      const next = prev === "dark" ? "light" : "dark";
+      setAppSettings(settingsPrev => {
+        if (!settingsPrev) {
+          return settingsPrev;
+        }
+        const nextSettings: AppSettings = { ...settingsPrev, themePreference: next as AppSettings["themePreference"] };
+        void invoke("update_app_settings", { payload: nextSettings }).catch(error => {
+          console.error("保存主题设置失败:", error);
+        });
+        return nextSettings;
+      });
+      return next;
+    });
   }, []);
   const handleDismissError = useCallback(() => setConnectionError(null), []);
   const handleCloseLogViewer = useCallback(() => setIsLogViewerOpen(false), []);

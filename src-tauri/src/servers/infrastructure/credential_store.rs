@@ -35,6 +35,29 @@ pub fn get_key_passphrase(server_id: &str) -> Result<Option<String>, String> {
     }
 }
 
+pub fn migrate_legacy_passwords(
+    data: &mut crate::servers::domain::AppData,
+) -> Result<bool, String> {
+    let mut changed = false;
+    for server in data.servers.iter_mut() {
+        if let Some(password) = server.password.take() {
+            if !password.is_empty() {
+                save_password(&server.id, &password)?;
+                server.has_password = true;
+            }
+            changed = true;
+        }
+        if let Some(passphrase) = server.key_passphrase.take() {
+            if !passphrase.is_empty() {
+                save_key_passphrase(&server.id, &passphrase)?;
+                server.has_key_passphrase = true;
+            }
+            changed = true;
+        }
+    }
+    Ok(changed)
+}
+
 #[allow(dead_code)]
 pub fn delete_password(server_id: &str) -> Result<(), String> {
     match entry_for(&format!("password:{server_id}"))?.delete_credential() {
