@@ -31,6 +31,7 @@ pub struct Session {
     pub was_connected: bool,
     pub last_activity_at: Instant,
     pub close_reason: Option<String>,
+    last_output: String,
     pending_cwd_request: Option<PendingCwdRequest>,
     pending_host_key: Option<mpsc::Sender<bool>>,
 }
@@ -56,6 +57,7 @@ struct TerminalSessionClosedEvent {
     session_id: String,
     server_id: String,
     reason: String,
+    message: String,
     should_remove: bool,
 }
 
@@ -93,6 +95,7 @@ fn emit_terminal_session_closed(
     session_id: &str,
     server_id: &str,
     reason: &str,
+    message: &str,
     should_remove: bool,
 ) {
     if let Err(err) = window.emit(
@@ -101,6 +104,7 @@ fn emit_terminal_session_closed(
             session_id: session_id.to_string(),
             server_id: server_id.to_string(),
             reason: reason.to_string(),
+            message: message.to_string(),
             should_remove,
         },
     ) {
@@ -222,6 +226,39 @@ fn extract_host_key_fingerprint(buffer: &str) -> String {
             .trim()
             .to_string()
     })
+}
+
+fn append_session_output(session: &Arc<Mutex<Session>>, data: &str) {
+    if let Ok(mut guard) = session.lock() {
+        guard.last_output.push_str(data);
+        if guard.last_output.len() > 8192 {
+            let keep_from = guard.last_output.len() - 8192;
+            let start = guard
+                .last_output
+                .char_indices()
+                .find(|(index, _)| *index >= keep_from)
+                .map(|(index, _)| index)
+                .unwrap_or(guard.last_output.len());
+            guard.last_output.drain(..start);
+        }
+    }
+}
+
+fn extract_connect_error(output: &str) -> String {
+    strip_ansi_sequences(output)
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| {
+            !line.is_empty()
+                && !line.eq_ignore_ascii_case("yes")
+                && !line.ends_with("password:")
+                && !line.contains("continue connecting")
+                && !line.contains("are you sure")
+                && !line.contains("fingerprint is")
+        })
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "连接失败，请检查网络与服务器状态".to_string())
 }
 
 fn should_mark_session_connected(output_tail: &str) -> bool {
@@ -368,6 +405,7 @@ pub fn start_session(
         was_connected: false,
         last_activity_at: Instant::now(),
         close_reason: None,
+        last_output: String::new(),
         pending_cwd_request: None,
         pending_host_key: None,
     }));
@@ -401,6 +439,7 @@ pub fn start_session(
             match reader.read(&mut buf) {
                 Ok(n) if n > 0 => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    append_session_output(&reader_session, &data);
                     password_prompt_buffer.push_str(&data);
                     trim_prompt_buffer(&mut password_prompt_buffer);
 
@@ -690,7 +729,12 @@ pub fn start_session(
             "disconnected",
         );
         let close_reason = close_reason.unwrap_or_else(|| "process-exit".to_string());
-        let close_message = connection_log_message_for_reason(&close_reason);
+        let mut close_message = connection_log_message_for_reason(&close_reason);
+        if close_reason == "connect-failed" {
+            if let Ok(session_guard) = session.lock() {
+                close_message = extract_connect_error(&session_guard.last_output);
+            }
+        }
         if let Err(err) = monitor_window.emit(
             "connection-log",
             (monitor_session_id.clone(), close_message.clone()),
@@ -705,6 +749,7 @@ pub fn start_session(
             &monitor_session_id,
             &monitor_server_id,
             &close_reason,
+            &close_message,
             should_remove,
         );
     });

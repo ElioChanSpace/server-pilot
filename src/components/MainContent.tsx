@@ -27,6 +27,7 @@ interface MainContentProps {
   terminalScrollback: number;
   onTerminalFontSizeChange: (delta: number) => void;
   onReconnectSession: (sessionId: string) => void;
+  disconnectMessage?: string | null;
 }
 
 export const MainContent: React.FC<MainContentProps> = ({
@@ -47,6 +48,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   terminalScrollback,
   onTerminalFontSizeChange,
   onReconnectSession,
+  disconnectMessage,
 }) => {
   const serverById = useMemo(() => {
     const map = new Map<string, Server>();
@@ -147,6 +149,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               status={session.status}
               onReconnect={reconnectBySession.get(session.id)!}
               onFontSizeChange={onTerminalFontSizeChange}
+              disconnectMessage={disconnectMessage}
             />
           </div>
         ))}

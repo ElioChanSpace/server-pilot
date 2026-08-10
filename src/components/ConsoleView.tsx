@@ -15,6 +15,7 @@ interface ConsoleViewProps {
   status: TerminalSessionStatus;
   onReconnect: () => void;
   onFontSizeChange: (delta: number) => void;
+  disconnectMessage?: string | null;
 }
 
 const arePropsEqual = (prev: ConsoleViewProps, next: ConsoleViewProps) =>
@@ -27,6 +28,7 @@ const arePropsEqual = (prev: ConsoleViewProps, next: ConsoleViewProps) =>
   prev.status === next.status &&
   prev.onReconnect === next.onReconnect &&
   prev.onFontSizeChange === next.onFontSizeChange &&
+  prev.disconnectMessage === next.disconnectMessage &&
   (!prev.isActive || prev.outputChunks === next.outputChunks);
 
 const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
@@ -40,6 +42,7 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
   status,
   onReconnect,
   onFontSizeChange,
+  disconnectMessage,
 }) => {
   const handleInput = useCallback((data: string) => {
     void invoke('pty_write', { sessionId, data }).catch(error => {
@@ -78,6 +81,9 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
         <div className="console-reconnect-overlay">
           <div className="console-reconnect-card">
             <p className="console-reconnect-title">会话已断开</p>
+            {disconnectMessage && (
+              <p className="console-reconnect-message">{disconnectMessage}</p>
+            )}
             <button
               type="button"
               className="console-reconnect-button"

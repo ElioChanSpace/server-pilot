@@ -775,6 +775,9 @@ const AppContent: React.FC = () => {
             serverName ? `${serverName}：${event.payload.reason}` : event.payload.reason,
           );
         }
+        if (event.payload.reason === "connect-failed") {
+          setConnectionError(event.payload.message ?? "连接失败，请检查网络与服务器状态");
+        }
         if (event.payload.shouldRemove) {
           applySessionRemoval([event.payload.sessionId], { anchorSessionId: event.payload.sessionId });
           return;
@@ -1370,6 +1373,7 @@ const AppContent: React.FC = () => {
             terminalScrollback={appSettings?.terminalScrollback ?? 5000}
             onTerminalFontSizeChange={handleTerminalFontSizeChange}
             onReconnectSession={handleReconnectSession}
+            disconnectMessage={connectionError}
           />
           {!isLogViewerOpen && isRightSidebarOpen && (
             <div className="right-sidebar-overlay">

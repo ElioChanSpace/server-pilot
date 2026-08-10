@@ -24,5 +24,6 @@ export interface TerminalSessionClosedEvent {
   sessionId: string;
   serverId: string;
   reason: string;
+  message?: string;
   shouldRemove: boolean;
 }

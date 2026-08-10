@@ -316,6 +316,15 @@ select {
   color: var(--text-primary);
 }
 
+.console-reconnect-message {
+  max-width: 420px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  text-align: center;
+  word-break: break-word;
+}
+
 .console-reconnect-button {
   display: inline-flex;
   align-items: center;
