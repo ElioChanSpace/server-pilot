@@ -93,6 +93,44 @@
   margin-bottom: 20px;
 }
 
+.testRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.testButton {
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: none;
+  transform: none;
+  font-size: 12px;
+}
+
+.testButton:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-color);
+}
+
+.testResult {
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.testResult[data-ok="true"] {
+  color: var(--success-color);
+}
+
+.testResult[data-ok="false"] {
+  color: var(--danger-color);
+}
+
 .primaryButton,
 .secondaryButton {
   display: inline-flex;

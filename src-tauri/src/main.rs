@@ -13,7 +13,7 @@ use crate::servers::interface::commands::{
     export_app_data, fetch_server_metrics, get_app_settings, get_categories, get_servers,
     get_terminal_session_directory, list_remote_directory, parse_ssh_config, pty_resize, pty_write,
     import_app_data, read_app_logs, read_remote_log, rename_remote_path, update_app_settings, update_server,
-    upload_file_to_server,
+    test_server_connection, upload_file_to_server,
 };
 use crate::servers::infrastructure::session_manager;
 use log::LevelFilter;
@@ -231,7 +231,8 @@ fn main() {
             create_remote_directory,
             read_remote_log,
             export_app_data,
-            import_app_data
+            import_app_data,
+            test_server_connection
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

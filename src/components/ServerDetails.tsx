@@ -1,4 +1,5 @@
 import React, { lazy, Suspense } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Server } from '../context/ServerContext';
 import { FaPlug, FaServer, FaUnlink } from 'react-icons/fa';
 import { useServer } from '../context/ServerContext';
@@ -40,6 +41,8 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
 }) => {
   const { categories } = useServer();
   const [activeTab, setActiveTab] = React.useState<ServerDetailsTab>('overview');
+  const [testResult, setTestResult] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const [isTesting, setIsTesting] = React.useState(false);
   const category = categories.find(item => item.id === server.categoryId);
   const isConnected = server.status === 'connected';
   const isConnecting = server.status === 'connecting';
@@ -59,6 +62,19 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
   React.useEffect(() => {
     setActiveTab('overview');
   }, [server.id]);
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const text = await invoke<string>("test_server_connection", { id: server.id });
+      setTestResult({ ok: true, text });
+    } catch (err) {
+      setTestResult({ ok: false, text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setIsTesting(false);
+    }
+  };
 
   return (
     <div className={styles.container}>
@@ -100,6 +116,22 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
           <button type="button" className={styles.secondaryButton} onClick={() => onViewLogs(server)}>
             查看日志
           </button>
+        )}
+      </div>
+
+      <div className={styles.testRow}>
+        <button
+          type="button"
+          className={styles.testButton}
+          onClick={() => void handleTestConnection()}
+          disabled={isTesting}
+        >
+          {isTesting ? "测试中..." : "测试连接"}
+        </button>
+        {testResult && (
+          <span className={styles.testResult} data-ok={testResult.ok}>
+            {testResult.text}
+          </span>
         )}
       </div>
 

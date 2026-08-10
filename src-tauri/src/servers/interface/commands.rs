@@ -1867,6 +1867,39 @@ pub fn import_app_data(state: State<'_, AppState>, load_path: String) -> Result<
     Ok(server_count)
 }
 
+#[tauri::command]
+pub async fn test_server_connection(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<String, String> {
+    let server = {
+        let data = state.data.lock().map_err(|err| err.to_string())?;
+        data.servers
+            .iter()
+            .find(|server| server.id == id)
+            .cloned()
+            .ok_or("Server not found")?
+    };
+
+    let host = server.host.clone();
+    let port = server.port;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let start = Instant::now();
+        let address = format!("{host}:{port}");
+        let parsed = address
+            .parse::<std::net::SocketAddr>()
+            .map_err(|err| format!("地址解析失败: {err}"))?;
+
+        match std::net::TcpStream::connect_timeout(&parsed, Duration::from_secs(5)) {
+            Ok(_) => Ok(format!("端口可达（延迟约 {:.0} ms）", start.elapsed().as_millis())),
+            Err(err) => Err(format!("连接失败: {err}")),
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
