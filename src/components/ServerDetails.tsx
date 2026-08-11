@@ -1,7 +1,7 @@
 import React, { lazy, Suspense } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Server } from '../context/ServerContext';
-import { FaPlug, FaServer, FaUnlink } from 'react-icons/fa';
+import { FaPlug, FaServer, FaTrash, FaUnlink } from 'react-icons/fa';
 import { useServer } from '../context/ServerContext';
 import styles from './ServerDetails.module.css';
 
@@ -11,6 +11,7 @@ interface ServerDetailsProps {
   server: Server;
   onConnectServer: (server: Server) => void;
   onDisconnectServer: (server: Server) => void;
+  onDeleteServer: (server: Server) => void;
   connectionError: string | null;
   onDismissError: () => void;
   onViewLogs: (server: Server) => void;
@@ -35,6 +36,7 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
   server,
   onConnectServer,
   onDisconnectServer,
+  onDeleteServer,
   connectionError,
   onDismissError,
   onViewLogs,
@@ -117,6 +119,10 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
             查看日志
           </button>
         )}
+        <button type="button" className={styles.dangerButton} onClick={() => onDeleteServer(server)}>
+          <FaTrash />
+          <span>删除</span>
+        </button>
       </div>
 
       <div className={styles.testRow}>

@@ -22,7 +22,7 @@ import { MenuBar } from "./components/MenuBar";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { UploadProgressToast } from "./components/UploadProgressToast";
 import { HostKeyPromptModal } from "./components/HostKeyPromptModal";
-import { FaEdit, FaPlus, FaFolderPlus, FaPlug, FaUnlink } from "react-icons/fa";
+import { FaEdit, FaPlus, FaFolderPlus, FaPlug, FaUnlink, FaTrash } from "react-icons/fa";
 import type { TerminalSession, TerminalSessionClosedEvent, TerminalSessionStatusEvent } from "./types/terminal";
 import type { AppSettings } from "./types/settings";
 import type { ContextMenuState, HostKeyPromptEvent, FileTransferProgressEvent } from "./types/app";
@@ -67,6 +67,7 @@ const AppContent: React.FC = () => {
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [initialCategoryId, setInitialCategoryId] = useState<string | undefined>(undefined);
   const [initialParentId, setInitialParentId] = useState<string | undefined>(undefined);
+  const [editingCategory, setEditingCategory] = useState<Category | undefined>(undefined);
   const [editingServer, setEditingServer] = useState<Server | undefined>(undefined);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -403,13 +404,47 @@ const AppContent: React.FC = () => {
     setEditingServer(undefined);
   }, []);
 
+  const handleDeleteServer = useCallback(async (server: Server) => {
+    const confirmed = await confirm(`确定要删除服务器「${server.name}」吗？此操作不可撤销。`, { title: "删除服务器", kind: "warning" });
+    if (!confirmed) return;
+    try {
+      await invoke("delete_server", { id: server.id });
+      setActiveServer(prev => (prev?.id === server.id ? null : prev));
+      setSessions(prev => prev.filter(s => s.serverId !== server.id));
+      setCurrentSessionId(prev => {
+        const remaining = sessions.filter(s => s.serverId !== server.id);
+        return prev && sessions.find(s => s.id === prev)?.serverId === server.id
+          ? (remaining[0]?.id ?? null)
+          : prev;
+      });
+    } catch (error) {
+      console.error("删除服务器失败:", error);
+    }
+  }, [sessions]);
+
+  const handleDeleteCategory = useCallback(async (category: Category) => {
+    const confirmed = await confirm(`确定要删除分类「${category.name}」吗？其中的服务器将变为未分类。`, { title: "删除分类", kind: "warning" });
+    if (!confirmed) return;
+    try {
+      await invoke("delete_category", { id: category.id, moveToUncategorized: true });
+    } catch (error) {
+      console.error("删除分类失败:", error);
+    }
+  }, []);
+
   const handleCategoryContextMenu = useCallback((event: React.MouseEvent, category: Category | null) => {
     const actions: ContextMenuAction[] = [
       { label: "新建服务器", icon: <FaPlus />, action: () => { setEditingServer(undefined); setInitialCategoryId(category?.id); setIsServerModalOpen(true); }},
-      { label: "新建子分类", icon: <FaFolderPlus />, action: () => { setInitialParentId(category?.id); setIsCategoryModalOpen(true); }}
+      { label: "新建子分类", icon: <FaFolderPlus />, action: () => { setEditingCategory(undefined); setInitialParentId(category?.id); setIsCategoryModalOpen(true); }}
     ];
+    if (category) {
+      actions.push(
+        { label: "编辑分类", icon: <FaEdit />, action: () => { setEditingCategory(category); setIsCategoryModalOpen(true); }},
+        { label: "删除分类", icon: <FaTrash />, action: () => { void handleDeleteCategory(category); }}
+      );
+    }
     setContextMenu({ x: event.clientX, y: event.clientY, actions });
-  }, []);
+  }, [handleDeleteCategory]);
 
   const handleServerContextMenu = useCallback((event: React.MouseEvent, server: Server) => {
     const actions: ContextMenuAction[] = [
@@ -421,13 +456,13 @@ const AppContent: React.FC = () => {
       actions.push({ label: "断开连接", icon: <FaUnlink />, action: () => { handleDisconnectServer(server); }});
     }
 
-    if (actions.length > 0) {
-      setContextMenu({ x: event.clientX, y: event.clientY, actions });
-    }
-  }, [handleConnectServer, handleDisconnectServer]);
+    actions.push({ label: "删除服务器", icon: <FaTrash />, action: () => { void handleDeleteServer(server); }});
+
+    setContextMenu({ x: event.clientX, y: event.clientY, actions });
+  }, [handleConnectServer, handleDisconnectServer, handleDeleteServer]);
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
-  const handleNewCategory = useCallback(() => { setInitialParentId(undefined); setIsCategoryModalOpen(true); }, []);
+  const handleNewCategory = useCallback(() => { setEditingCategory(undefined); setInitialParentId(undefined); setIsCategoryModalOpen(true); }, []);
   const handleNewServer = useCallback(() => { setEditingServer(undefined); setInitialCategoryId(undefined); setIsServerModalOpen(true); }, []);
   const handleOpenSshImport = useCallback(() => setIsSshImportOpen(true), []);
   const handleOpenBatchCommand = useCallback(() => setIsBatchCommandOpen(true), []);
@@ -436,7 +471,7 @@ const AppContent: React.FC = () => {
   const handleOpenSettings = useCallback(() => { setIsLogViewerOpen(false); clearSelection(); setCurrentSessionId(null); setActiveView("settings"); }, [clearSelection]);
   const handleOpenLogViewer = useCallback(() => setIsLogViewerOpen(true), []);
   const handleCreateServerInCategory = useCallback((category: Category | null) => { setEditingServer(undefined); setInitialCategoryId(category?.id); setIsServerModalOpen(true); }, []);
-  const handleCreateSubCategory = useCallback((category: Category | null) => { setInitialParentId(category?.id); setIsCategoryModalOpen(true); }, []);
+  const handleCreateSubCategory = useCallback((category: Category | null) => { setEditingCategory(undefined); setInitialParentId(category?.id); setIsCategoryModalOpen(true); }, []);
 
   const handleToggleTheme = useCallback(() => {
     const next = theme === "dark" ? "light" : "dark";
@@ -549,6 +584,7 @@ const AppContent: React.FC = () => {
                 connectionError={connectionError}
                 onConnectServer={handleConnectServer}
                 onDisconnectServer={handleDisconnectServer}
+                onDeleteServer={handleDeleteServer}
                 onDismissError={handleDismissError}
                 onViewLogs={handleOpenRemoteLog}
               />
@@ -588,7 +624,7 @@ const AppContent: React.FC = () => {
       {remoteLogServer && (
         <RemoteLogModal server={remoteLogServer} onClose={() => setRemoteLogServer(null)} />
       )}
-      {isCategoryModalOpen && <AddCategoryModal onClose={() => setIsCategoryModalOpen(false)} parentId={initialParentId} />}
+      {isCategoryModalOpen && <AddCategoryModal onClose={() => { setIsCategoryModalOpen(false); setEditingCategory(undefined); }} parentId={initialParentId} editCategory={editingCategory} />}
       {hostKeyPrompt && (
         <HostKeyPromptModal
           prompt={hostKeyPrompt}

@@ -66,3 +66,11 @@ pub fn delete_password(server_id: &str) -> Result<(), String> {
         Err(err) => Err(format!("删除系统钥匙串凭据失败: {err}")),
     }
 }
+
+pub fn delete_key_passphrase(server_id: &str) -> Result<(), String> {
+    match entry_for(&format!("key-passphrase:{server_id}"))?.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(format!("删除系统钥匙串密钥口令失败: {err}")),
+    }
+}

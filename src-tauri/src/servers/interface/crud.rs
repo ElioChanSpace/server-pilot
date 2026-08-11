@@ -136,6 +136,99 @@ pub fn create_category(
 }
 
 #[tauri::command]
+pub fn delete_server(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let mut data = state.data.lock().map_err(|e| e.to_string())?;
+    let idx = data
+        .servers
+        .iter()
+        .position(|s| s.id == id)
+        .ok_or("Server not found")?;
+    let server = data.servers.remove(idx);
+    drop(data);
+
+    // Clean up stored credentials
+    if server.has_password {
+        let _ = credential_store::delete_password(&id);
+    }
+    if server.has_key_passphrase {
+        let _ = credential_store::delete_key_passphrase(&id);
+    }
+
+    state.save()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_category(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    parent_id: Option<String>,
+) -> Result<Category, String> {
+    let mut data = state.data.lock().map_err(|e| e.to_string())?;
+    let category = data
+        .categories
+        .iter_mut()
+        .find(|c| c.id == id)
+        .ok_or("Category not found")?;
+    category.name = name;
+    category.parent_id = parent_id;
+    let updated = category.clone();
+    drop(data);
+    state.save()?;
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn delete_category(
+    state: State<'_, AppState>,
+    id: String,
+    move_to_uncategorized: bool,
+) -> Result<(), String> {
+    let mut data = state.data.lock().map_err(|e| e.to_string())?;
+    let idx = data
+        .categories
+        .iter()
+        .position(|c| c.id == id)
+        .ok_or("Category not found")?;
+
+    // Remove child categories recursively
+    let child_ids: Vec<String> = data
+        .categories
+        .iter()
+        .filter(|c| c.parent_id.as_deref() == Some(&id))
+        .map(|c| c.id.clone())
+        .collect();
+    for child_id in child_ids {
+        data.categories.retain(|c| c.id != child_id);
+        // Move servers from child categories
+        for server in &mut data.servers {
+            if server.category_id.as_deref() == Some(&child_id) {
+                server.category_id = if move_to_uncategorized {
+                    None
+                } else {
+                    None
+                };
+            }
+        }
+    }
+
+    // Move servers from this category
+    if move_to_uncategorized {
+        for server in &mut data.servers {
+            if server.category_id.as_deref() == Some(&id) {
+                server.category_id = None;
+            }
+        }
+    }
+
+    data.categories.remove(idx);
+    drop(data);
+    state.save()?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_servers(state: State<'_, AppState>) -> Result<Vec<Server>, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     Ok(data.servers.clone())

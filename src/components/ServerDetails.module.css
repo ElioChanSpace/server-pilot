@@ -151,6 +151,24 @@
   background: var(--surface-hover);
 }
 
+.dangerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+  background: transparent;
+  color: var(--danger-color);
+  border: 1px solid var(--danger-color);
+  opacity: 0.7;
+}
+
+.dangerButton:hover {
+  opacity: 1;
+  background: rgba(220, 53, 69, 0.1);
+}
+
 .section {
   margin-top: 24px;
 }

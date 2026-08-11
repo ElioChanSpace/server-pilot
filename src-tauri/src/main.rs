@@ -9,11 +9,12 @@ use crate::servers::infrastructure::session_manager::SessionManagerState;
 use crate::servers::infrastructure::FileRepository;
 use crate::servers::interface::commands::{
     clear_app_logs, close_terminal_session, connect_server, create_category, create_server,
-    create_remote_directory, delete_remote_path, disconnect_server, download_file_from_server,
-    export_app_data, fetch_server_metrics, get_app_settings, get_categories, get_servers,
-    get_terminal_session_directory, list_remote_directory, parse_ssh_config, pty_resize, pty_write,
-    import_app_data, read_app_logs, read_remote_log, rename_remote_path, update_app_settings, update_server,
-    test_server_connection, upload_file_to_server,
+    create_remote_directory, delete_category, delete_remote_path, delete_server,
+    disconnect_server, download_file_from_server, export_app_data, fetch_server_metrics,
+    get_app_settings, get_categories, get_servers, get_terminal_session_directory,
+    list_remote_directory, parse_ssh_config, pty_resize, pty_write, import_app_data,
+    read_app_logs, read_remote_log, rename_remote_path, update_app_settings, update_category,
+    update_server, test_server_connection, upload_file_to_server,
 };
 use crate::servers::infrastructure::session_manager;
 use log::LevelFilter;
@@ -227,9 +228,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             create_server,
             update_server,
+            delete_server,
             get_servers,
             connect_server,
             create_category,
+            update_category,
+            delete_category,
             get_categories,
             get_app_settings,
             update_app_settings,

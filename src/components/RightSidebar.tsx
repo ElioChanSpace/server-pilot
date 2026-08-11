@@ -12,6 +12,7 @@ interface RightSidebarProps {
   connectionError: string | null;
   onConnectServer: (server: Server) => void;
   onDisconnectServer: (server: Server) => void;
+  onDeleteServer: (server: Server) => void;
   onDismissError: () => void;
   onViewLogs: (server: Server) => void;
 }
@@ -37,6 +38,7 @@ const RightSidebarComponent: React.FC<RightSidebarProps> = ({
   connectionError,
   onConnectServer,
   onDisconnectServer,
+  onDeleteServer,
   onDismissError,
   onViewLogs,
 }) => {
@@ -112,6 +114,7 @@ const RightSidebarComponent: React.FC<RightSidebarProps> = ({
             server={activeServer}
             onConnectServer={onConnectServer}
             onDisconnectServer={onDisconnectServer}
+            onDeleteServer={onDeleteServer}
             connectionError={connectionError}
             onDismissError={onDismissError}
             onViewLogs={onViewLogs}
