@@ -1,1 +1,9 @@
 pub mod commands;
+pub mod util;
+pub mod crud;
+pub mod session;
+pub mod monitoring;
+pub mod file_transfer;
+pub mod ssh_config;
+pub mod logs;
+pub mod data;

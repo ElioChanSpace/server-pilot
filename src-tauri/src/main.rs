@@ -92,6 +92,25 @@ fn migrate_legacy_passwords(app_state: &AppState) -> Result<(), String> {
     Ok(())
 }
 
+/// Reset all server statuses to "disconnected" on startup.
+/// If the app was force-quit while servers were connected, the persisted status
+/// would be stale ("connected") with no active sessions, leaving only a disconnect button.
+fn reset_server_statuses(app_state: &AppState) -> Result<(), String> {
+    let mut data = app_state.data.lock().map_err(|err| err.to_string())?;
+    let mut changed = false;
+    for server in &mut data.servers {
+        if server.status != "disconnected" {
+            server.status = "disconnected".to_string();
+            changed = true;
+        }
+    }
+    drop(data);
+    if changed {
+        app_state.save()?;
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -132,6 +151,7 @@ fn main() {
             let repository = Arc::new(FileRepository::new(app.handle().clone()));
             let app_state = AppState::new(repository);
             migrate_legacy_passwords(&app_state)?;
+            reset_server_statuses(&app_state)?;
 
             // --- 系统托盘 ---
             let show_item = MenuItemBuilder::with_id("show", "显示主窗口")

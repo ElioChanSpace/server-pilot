@@ -5,6 +5,10 @@ fn default_auth_method() -> String {
     "password".to_string()
 }
 
+fn default_status() -> String {
+    "disconnected".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub enum OsType {
@@ -21,6 +25,7 @@ pub struct Server {
     pub port: u16,
     pub username: String,
     pub category_id: Option<String>,
+    #[serde(default = "default_status")]
     pub status: String,
     pub os_type: OsType,
     #[serde(default = "default_auth_method")]
