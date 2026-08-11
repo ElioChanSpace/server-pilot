@@ -8,14 +8,15 @@ use crate::servers::infrastructure::credential_store;
 use crate::servers::infrastructure::session_manager::SessionManagerState;
 use crate::servers::infrastructure::FileRepository;
 use crate::servers::interface::commands::{
-    clear_app_logs, close_terminal_session, connect_server, create_category, create_server,
-    create_remote_directory, delete_category, delete_remote_path, delete_server,
-    disconnect_server, download_file_from_server, export_app_data, fetch_server_metrics,
-    generate_ssh_key, get_app_settings, get_categories, get_default_ssh_key_path,
-    get_servers, get_terminal_session_directory, list_remote_directory, list_ssh_keys,
-    parse_ssh_config, pty_resize, pty_write, import_app_data, read_app_logs, read_remote_log,
-    rename_remote_path, update_app_settings, update_category, update_server,
-    test_server_connection, upload_directory_to_server, upload_file_to_server,
+    check_port_available, clear_app_logs, close_ssh_tunnel, close_terminal_session,
+    connect_server, create_category, create_remote_directory, create_server, create_ssh_tunnel,
+    delete_category, delete_remote_path, delete_server, disconnect_server,
+    download_file_from_server, export_app_data, fetch_server_metrics, generate_ssh_key,
+    get_app_settings, get_categories, get_default_ssh_key_path, get_servers,
+    get_terminal_session_directory, import_app_data, list_remote_directory, list_ssh_keys,
+    list_ssh_tunnels, parse_ssh_config, pty_resize, pty_write, read_app_logs, read_remote_log,
+    rename_remote_path, test_server_connection, update_app_settings, update_category,
+    update_server, upload_directory_to_server, upload_file_to_server,
 };
 use crate::servers::infrastructure::session_manager;
 use log::LevelFilter;
@@ -120,6 +121,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .manage(SessionManagerState::default())
+        .manage(servers::interface::ssh_tunnel::TunnelManager::new())
         .setup(|app| {
             initialize_logging(app.path())?;
 
@@ -261,7 +263,11 @@ fn main() {
             test_server_connection,
             generate_ssh_key,
             list_ssh_keys,
-            get_default_ssh_key_path
+            get_default_ssh_key_path,
+            create_ssh_tunnel,
+            close_ssh_tunnel,
+            list_ssh_tunnels,
+            check_port_available
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

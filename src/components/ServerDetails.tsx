@@ -1,8 +1,9 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Server } from '../context/ServerContext';
-import { FaPlug, FaServer, FaTrash, FaUnlink } from 'react-icons/fa';
+import { FaNetworkWired, FaPlug, FaServer, FaTrash, FaUnlink } from 'react-icons/fa';
 import { useServer } from '../context/ServerContext';
+import { SshTunnelManager } from './SshTunnelManager';
 import styles from './ServerDetails.module.css';
 
 const ServerMonitoringPanel = lazy(() => import('./ServerMonitoringPanel'));
@@ -45,6 +46,7 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
   const [activeTab, setActiveTab] = React.useState<ServerDetailsTab>('overview');
   const [testResult, setTestResult] = React.useState<{ ok: boolean; text: string } | null>(null);
   const [isTesting, setIsTesting] = React.useState(false);
+  const [showTunnelManager, setShowTunnelManager] = useState(false);
   const category = categories.find(item => item.id === server.categoryId);
   const isConnected = server.status === 'connected';
   const isConnecting = server.status === 'connecting';
@@ -117,6 +119,12 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
         {isLinux && (
           <button type="button" className={styles.secondaryButton} onClick={() => onViewLogs(server)}>
             查看日志
+          </button>
+        )}
+        {isLinux && (
+          <button type="button" className={styles.secondaryButton} onClick={() => setShowTunnelManager(true)}>
+            <FaNetworkWired />
+            <span>隧道</span>
           </button>
         )}
         <button type="button" className={styles.dangerButton} onClick={() => onDeleteServer(server)}>
@@ -290,6 +298,13 @@ const ServerDetailsComponent: React.FC<ServerDetailsProps> = ({
           </Suspense>
         )}
       </div>
+
+      {showTunnelManager && (
+        <SshTunnelManager
+          server={server}
+          onClose={() => setShowTunnelManager(false)}
+        />
+      )}
     </div>
   );
 };

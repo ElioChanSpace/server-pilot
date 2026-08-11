@@ -7,5 +7,6 @@ pub use super::monitoring::*;
 pub use super::file_transfer::*;
 pub use super::ssh_config::*;
 pub use super::ssh_keys::*;
+pub use super::ssh_tunnel::*;
 pub use super::logs::*;
 pub use super::data::*;
