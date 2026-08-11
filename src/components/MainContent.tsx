@@ -28,6 +28,7 @@ interface MainContentProps {
   onTerminalFontSizeChange: (delta: number) => void;
   onReconnectSession: (sessionId: string) => void;
   disconnectMessage?: string | null;
+  terminalTheme?: string;
 }
 
 export const MainContent: React.FC<MainContentProps> = ({
@@ -49,6 +50,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   onTerminalFontSizeChange,
   onReconnectSession,
   disconnectMessage,
+  terminalTheme,
 }) => {
   const serverById = useMemo(() => {
     const map = new Map<string, Server>();
@@ -150,6 +152,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               onReconnect={reconnectBySession.get(session.id)!}
               onFontSizeChange={onTerminalFontSizeChange}
               disconnectMessage={disconnectMessage}
+              themeName={terminalTheme}
             />
           </div>
         ))}

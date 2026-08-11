@@ -15,6 +15,7 @@ pub struct UpdateAppSettingsRequest {
     pub theme_preference: Option<String>,
     pub notifications_enabled: Option<bool>,
     pub confirm_on_disconnect: Option<bool>,
+    pub terminal_theme: Option<String>,
 }
 
 #[tauri::command]
@@ -285,6 +286,9 @@ pub fn update_app_settings(
         confirm_on_disconnect: payload
             .confirm_on_disconnect
             .unwrap_or(current.confirm_on_disconnect),
+        terminal_theme: payload
+            .terminal_theme
+            .unwrap_or(current.terminal_theme),
     };
     let settings = data.settings.clone();
     drop(data);

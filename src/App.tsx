@@ -566,6 +566,7 @@ const AppContent: React.FC = () => {
             onTerminalFontSizeChange={handleTerminalFontSizeChange}
             onReconnectSession={handleReconnectSession}
             disconnectMessage={connectionError}
+            terminalTheme={appSettings?.terminalTheme}
           />
           {!isLogViewerOpen && isRightSidebarOpen && (
             <div className="right-sidebar-overlay">

@@ -4,6 +4,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { FaKey } from "react-icons/fa";
 import { useServer } from "../context/ServerContext";
 import type { AppSettings } from "../types/settings";
+import { TERMINAL_THEMES, DEFAULT_TERMINAL_THEME } from "../utils/terminal-themes";
 import { SshKeyManager } from "./SshKeyManager";
 import styles from "./Settings.module.css";
 
@@ -16,6 +17,7 @@ const defaultSettings: AppSettings = {
   themePreference: "system",
   notificationsEnabled: true,
   confirmOnDisconnect: true,
+  terminalTheme: DEFAULT_TERMINAL_THEME,
 };
 
 export const Settings: React.FC = () => {
@@ -222,6 +224,27 @@ export const Settings: React.FC = () => {
                 <option value="light">浅色</option>
                 <option value="dark">深色</option>
               </select>
+            </label>
+
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>终端配色主题</span>
+              <select
+                value={settings.terminalTheme || DEFAULT_TERMINAL_THEME}
+                onChange={(event) => {
+                  setSettings(prev => ({
+                    ...prev,
+                    terminalTheme: event.target.value,
+                  }));
+                }}
+                className="select-css"
+              >
+                {Object.values(TERMINAL_THEMES).map(theme => (
+                  <option key={theme.name} value={theme.name}>
+                    {theme.label}
+                  </option>
+                ))}
+              </select>
+              <span className={styles.helper}>更改后对新打开的终端会话生效。</span>
             </label>
 
             <label className={styles.fieldRow}>

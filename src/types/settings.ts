@@ -7,4 +7,5 @@ export interface AppSettings {
   themePreference: 'system' | 'light' | 'dark';
   notificationsEnabled: boolean;
   confirmOnDisconnect: boolean;
+  terminalTheme?: string;
 }

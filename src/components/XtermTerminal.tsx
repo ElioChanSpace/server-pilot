@@ -5,6 +5,7 @@ import { FitAddon } from 'xterm-addon-fit';
 import { SearchAddon } from 'xterm-addon-search';
 import { FaChevronDown, FaChevronUp, FaCopy, FaPaste, FaSearch, FaTimes } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
+import { TERMINAL_THEMES, DEFAULT_TERMINAL_THEME } from '../utils/terminal-themes';
 import 'xterm/css/xterm.css';
 
 interface XtermTerminalProps {
@@ -17,6 +18,7 @@ interface XtermTerminalProps {
   fontSize: number;
   scrollback: number;
   onFontSizeChange: (delta: number) => void;
+  themeName?: string;
 }
 
 const arePropsEqual = (prev: XtermTerminalProps, next: XtermTerminalProps) =>
@@ -28,6 +30,7 @@ const arePropsEqual = (prev: XtermTerminalProps, next: XtermTerminalProps) =>
   prev.fontSize === next.fontSize &&
   prev.scrollback === next.scrollback &&
   prev.onFontSizeChange === next.onFontSizeChange &&
+  prev.themeName === next.themeName &&
   // 非活动会话的累积输出只在激活时一次性补写，因此跳过重渲染。
   (!prev.isActive || prev.outputChunks === next.outputChunks);
 
@@ -41,6 +44,7 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   fontSize,
   scrollback,
   onFontSizeChange,
+  themeName = DEFAULT_TERMINAL_THEME,
 }) => {
   const termRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
@@ -92,12 +96,28 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   const closeContextMenu = () => setContextMenuPosition(null);
 
   const applyTerminalTheme = (terminal: Terminal) => {
-    const styles = getComputedStyle(document.documentElement);
+    const theme = TERMINAL_THEMES[themeName] || TERMINAL_THEMES[DEFAULT_TERMINAL_THEME];
     terminal.options.theme = {
-      background: styles.getPropertyValue('--terminal-bg').trim() || '#0d1520',
-      foreground: styles.getPropertyValue('--terminal-fg').trim() || '#edf6f0',
-      cursor: styles.getPropertyValue('--terminal-cursor').trim() || '#7eb99f',
-      selectionBackground: styles.getPropertyValue('--terminal-selection').trim() || 'rgba(126, 185, 159, 0.28)',
+      background: theme.colors.background,
+      foreground: theme.colors.foreground,
+      cursor: theme.colors.cursor,
+      selectionBackground: theme.colors.selectionBackground,
+      black: theme.colors.black,
+      red: theme.colors.red,
+      green: theme.colors.green,
+      yellow: theme.colors.yellow,
+      blue: theme.colors.blue,
+      magenta: theme.colors.magenta,
+      cyan: theme.colors.cyan,
+      white: theme.colors.white,
+      brightBlack: theme.colors.brightBlack,
+      brightRed: theme.colors.brightRed,
+      brightGreen: theme.colors.brightGreen,
+      brightYellow: theme.colors.brightYellow,
+      brightBlue: theme.colors.brightBlue,
+      brightMagenta: theme.colors.brightMagenta,
+      brightCyan: theme.colors.brightCyan,
+      brightWhite: theme.colors.brightWhite,
     };
   };
 
@@ -369,7 +389,7 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
     });
 
     return () => observer.disconnect();
-  }, []);
+  }, [themeName]);
 
   useEffect(() => {
     const terminal = termInstance.current;
