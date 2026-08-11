@@ -371,25 +371,32 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     setTransferError(null);
     setActiveTransfer("download");
 
+    const transferId = createTransferId();
+    const fileName = getBaseName(remotePath);
+
+    setTransfers(prev => [
+      ...prev,
+      {
+        transferId,
+        fileName,
+        direction: "download",
+        status: "preparing",
+        progressPercent: 0,
+        message: "准备下载",
+      },
+    ]);
+
     try {
       const result = await invoke<FileTransferResult>("download_file_from_server", {
         id: server.id,
         remotePath,
         localPath: selected,
+        transferId,
       });
+      updateTransfer(transferId, { status: "completed", progressPercent: 100, message: "下载完成" });
       setTransferStatus(result.message);
-      setTransfers(prev => [
-        ...prev,
-        {
-          transferId: createTransferId(),
-          fileName: getBaseName(remotePath),
-          direction: "download",
-          status: "completed",
-          progressPercent: 100,
-          message: "下载完成",
-        },
-      ]);
     } catch (error) {
+      updateTransfer(transferId, { status: "failed", message: getErrorMessage(error) });
       setTransferError(getErrorMessage(error));
     } finally {
       setActiveTransfer(null);

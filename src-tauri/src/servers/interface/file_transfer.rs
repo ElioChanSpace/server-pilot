@@ -616,10 +616,12 @@ pub async fn upload_file_to_server(
 
 #[tauri::command]
 pub async fn download_file_from_server(
+    window: Window,
     state: State<'_, AppState>,
     id: String,
     remote_path: String,
     local_path: String,
+    transfer_id: Option<String>,
 ) -> Result<FileTransferResult, String> {
     let remote_path = remote_path.trim().to_string();
     if remote_path.is_empty() {
@@ -635,11 +637,32 @@ pub async fn download_file_from_server(
     let source = build_remote_scp_argument(&connection.username, &connection.host, &remote_path);
     let local_path_for_result = local_path.clone();
     let remote_path_for_result = remote_path.clone();
+    let transfer_id_for_result = transfer_id.clone();
 
-    tauri::async_runtime::spawn_blocking(move || {
-        run_scp_transfer(
-            None,
-            None,
+    if let Some(current_transfer_id) = transfer_id.as_deref() {
+        emit_file_transfer_progress(
+            Some(&window),
+            Some(current_transfer_id),
+            FileTransferProgressEvent {
+                transfer_id: current_transfer_id.to_string(),
+                direction: "download".to_string(),
+                local_path: local_path.clone(),
+                remote_path: remote_path.clone(),
+                status: "preparing".to_string(),
+                progress_percent: 0,
+                transferred_bytes: Some(0),
+                total_bytes: None,
+                bytes_per_second: None,
+                eta_seconds: None,
+                message: Some("准备下载文件".to_string()),
+            },
+        );
+    }
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<FileTransferResult, String> {
+        let transfer_result = run_scp_transfer(
+            Some(window.clone()),
+            transfer_id.clone(),
             connection.port,
             connection
                 .password
@@ -654,7 +677,50 @@ pub async fn download_file_from_server(
             &local_path,
             &remote_path,
             None,
-        )?;
+        );
+
+        if let Err(err) = transfer_result {
+            if let Some(current_transfer_id) = transfer_id.as_deref() {
+                emit_file_transfer_progress(
+                    Some(&window),
+                    Some(current_transfer_id),
+                    FileTransferProgressEvent {
+                        transfer_id: current_transfer_id.to_string(),
+                        direction: "download".to_string(),
+                        local_path: local_path.clone(),
+                        remote_path: remote_path.clone(),
+                        status: "failed".to_string(),
+                        progress_percent: 0,
+                        transferred_bytes: None,
+                        total_bytes: None,
+                        bytes_per_second: None,
+                        eta_seconds: None,
+                        message: Some(err.clone()),
+                    },
+                );
+            }
+            return Err(err);
+        }
+
+        if let Some(current_transfer_id) = transfer_id_for_result.as_deref() {
+            emit_file_transfer_progress(
+                Some(&window),
+                Some(current_transfer_id),
+                FileTransferProgressEvent {
+                    transfer_id: current_transfer_id.to_string(),
+                    direction: "download".to_string(),
+                    local_path: local_path_for_result.clone(),
+                    remote_path: remote_path_for_result.clone(),
+                    status: "completed".to_string(),
+                    progress_percent: 100,
+                    transferred_bytes: None,
+                    total_bytes: None,
+                    bytes_per_second: None,
+                    eta_seconds: Some(0),
+                    message: Some(format!("已下载到 {}", local_path_for_result)),
+                },
+            );
+        }
 
         Ok(FileTransferResult {
             direction: "download".to_string(),
