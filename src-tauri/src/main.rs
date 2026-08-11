@@ -11,10 +11,11 @@ use crate::servers::interface::commands::{
     clear_app_logs, close_terminal_session, connect_server, create_category, create_server,
     create_remote_directory, delete_category, delete_remote_path, delete_server,
     disconnect_server, download_file_from_server, export_app_data, fetch_server_metrics,
-    get_app_settings, get_categories, get_servers, get_terminal_session_directory,
-    list_remote_directory, parse_ssh_config, pty_resize, pty_write, import_app_data,
-    read_app_logs, read_remote_log, rename_remote_path, update_app_settings, update_category,
-    update_server, test_server_connection, upload_directory_to_server, upload_file_to_server,
+    generate_ssh_key, get_app_settings, get_categories, get_default_ssh_key_path,
+    get_servers, get_terminal_session_directory, list_remote_directory, list_ssh_keys,
+    parse_ssh_config, pty_resize, pty_write, import_app_data, read_app_logs, read_remote_log,
+    rename_remote_path, update_app_settings, update_category, update_server,
+    test_server_connection, upload_directory_to_server, upload_file_to_server,
 };
 use crate::servers::infrastructure::session_manager;
 use log::LevelFilter;
@@ -257,7 +258,10 @@ fn main() {
             read_remote_log,
             export_app_data,
             import_app_data,
-            test_server_connection
+            test_server_connection,
+            generate_ssh_key,
+            list_ssh_keys,
+            get_default_ssh_key_path
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

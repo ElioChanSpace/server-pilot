@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { FaKey } from "react-icons/fa";
 import { useServer } from "../context/ServerContext";
 import type { AppSettings } from "../types/settings";
+import { SshKeyManager } from "./SshKeyManager";
 import styles from "./Settings.module.css";
 
 const defaultSettings: AppSettings = {
@@ -23,6 +25,7 @@ export const Settings: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showSshKeyManager, setShowSshKeyManager] = useState(false);
 
   useEffect(() => {
     void invoke<AppSettings>("get_app_settings")
@@ -252,6 +255,21 @@ export const Settings: React.FC = () => {
             </label>
 
             <div className={styles.backupSection}>
+              <span className={styles.fieldLabel}>SSH 密钥管理</span>
+              <div className={styles.backupActions}>
+                <button
+                  type="button"
+                  className={styles.backupButton}
+                  onClick={() => setShowSshKeyManager(true)}
+                >
+                  <FaKey />
+                  <span>管理 SSH 密钥</span>
+                </button>
+              </div>
+              <span className={styles.helper}>生成、查看和管理 SSH 密钥对。</span>
+            </div>
+
+            <div className={styles.backupSection}>
               <span className={styles.fieldLabel}>数据备份</span>
               <div className={styles.backupActions}>
                 <button type="button" className={styles.backupButton} onClick={() => void handleExport()}>
@@ -283,6 +301,10 @@ export const Settings: React.FC = () => {
           </>
         )}
       </div>
+
+      {showSshKeyManager && (
+        <SshKeyManager onClose={() => setShowSshKeyManager(false)} />
+      )}
     </div>
   );
 };

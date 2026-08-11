@@ -23,6 +23,9 @@ tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 keyring = { version = "4.1.6", features = ["apple-native-keyring-store"] }
 tauri-plugin-notification = "2.3.3"
+dirs = "6.0.0"
+whoami = "2.1.2"
+hostname = "0.4.2"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem

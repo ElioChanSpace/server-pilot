@@ -5,5 +5,6 @@ pub mod session;
 pub mod monitoring;
 pub mod file_transfer;
 pub mod ssh_config;
+pub mod ssh_keys;
 pub mod logs;
 pub mod data;
