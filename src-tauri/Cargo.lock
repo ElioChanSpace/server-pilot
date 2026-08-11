@@ -3514,6 +3514,7 @@ dependencies = [
  "dirs",
  "hostname",
  "keyring",
+ "lazy_static",
  "log",
  "log4rs",
  "portable-pty",

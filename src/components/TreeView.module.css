@@ -186,3 +186,34 @@
   background-color: var(--surface-hover);
   color: var(--accent-strong);
 }
+
+.dragHandle {
+  flex-shrink: 0;
+  width: 16px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.header:hover .dragHandle {
+  opacity: 1;
+}
+
+.dragHandle:hover {
+  color: var(--text-secondary);
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.header[data-drag-over="true"] {
+  background-color: var(--accent-color);
+  opacity: 0.8;
+  border-radius: 10px;
+}

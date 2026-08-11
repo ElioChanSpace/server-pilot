@@ -27,8 +27,9 @@ import type { TerminalSession, TerminalSessionClosedEvent, TerminalSessionStatus
 import type { AppSettings } from "./types/settings";
 import type { ContextMenuState, HostKeyPromptEvent, FileTransferProgressEvent } from "./types/app";
 import { reindexSessions, resolveNextSessionId } from "./utils/session-helpers";
-import { getInitialTheme, THEME_STORAGE_KEY } from "./utils/theme-helpers";
+import { getInitialThemeId, getThemeMode, applyTheme } from "./utils/theme-helpers";
 import type { ThemeMode } from "./utils/theme-helpers";
+import { APP_THEMES, DEFAULT_THEME } from "./utils/app-themes";
 import { useTerminalOutputs } from "./hooks/useTerminalOutputs";
 import { useWindowPersistence } from "./hooks/useWindowPersistence";
 import { useRightSidebarResize } from "./hooks/useRightSidebarResize";
@@ -74,7 +75,8 @@ const AppContent: React.FC = () => {
   const sessionsRef = useRef<TerminalSession[]>([]);
   const serversRef = useRef<Server[]>([]);
   const currentSessionIdRef = useRef<string | null>(null);
-  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+  const [themeId, setThemeId] = useState<string>(getInitialThemeId);
+  const theme: ThemeMode = getThemeMode(themeId);
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPromptEvent | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
@@ -93,10 +95,9 @@ const AppContent: React.FC = () => {
 
   // Theme effect
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
+    const currentTheme = APP_THEMES[themeId] ?? APP_THEMES[DEFAULT_THEME];
+    applyTheme(currentTheme);
+  }, [themeId]);
 
   // Welcome dismissal
   useEffect(() => {
@@ -143,12 +144,11 @@ const AppContent: React.FC = () => {
     notificationsEnabledRef.current = appSettings.notificationsEnabled;
     confirmOnDisconnectRef.current = appSettings.confirmOnDisconnect;
 
-    if (appSettings.themePreference === "light" || appSettings.themePreference === "dark") {
-      setTheme(appSettings.themePreference);
-    } else {
-      setTheme(
-        window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
-      );
+    if (appSettings.themePreference && APP_THEMES[appSettings.themePreference]) {
+      setThemeId(appSettings.themePreference);
+    } else if (appSettings.themePreference === "system") {
+      const systemThemeId = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      setThemeId(systemThemeId);
     }
   }, [appSettings, notificationsEnabledRef]);
 
@@ -474,15 +474,27 @@ const AppContent: React.FC = () => {
   const handleCreateSubCategory = useCallback((category: Category | null) => { setEditingCategory(undefined); setInitialParentId(category?.id); setIsCategoryModalOpen(true); }, []);
 
   const handleToggleTheme = useCallback(() => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
+    // 在深色和浅色主题之间切换
+    const currentTheme = APP_THEMES[themeId];
+    const nextThemeId = currentTheme?.type === 'dark' ? 'light' : 'dark';
+    setThemeId(nextThemeId);
     setAppSettings(prev => {
       if (!prev) return prev;
-      const nextSettings: AppSettings = { ...prev, themePreference: next as AppSettings["themePreference"] };
+      const nextSettings: AppSettings = { ...prev, themePreference: nextThemeId };
       void invoke("update_app_settings", { payload: nextSettings }).catch(error => { console.error("保存主题设置失败:", error); });
       return nextSettings;
     });
-  }, [theme]);
+  }, [themeId]);
+
+  const handleChangeTheme = useCallback((newThemeId: string) => {
+    setThemeId(newThemeId);
+    setAppSettings(prev => {
+      if (!prev) return prev;
+      const nextSettings: AppSettings = { ...prev, themePreference: newThemeId };
+      void invoke("update_app_settings", { payload: nextSettings }).catch(error => { console.error("保存主题设置失败:", error); });
+      return nextSettings;
+    });
+  }, []);
 
   const handleTerminalFontSizeChange = useCallback((delta: number) => {
     setAppSettings(prev => {
@@ -529,7 +541,9 @@ const AppContent: React.FC = () => {
         onOpenSettings={handleOpenSettings}
         onViewLogs={handleOpenLogViewer}
         theme={theme}
+        themeId={themeId}
         onToggleTheme={handleToggleTheme}
+        onChangeTheme={handleChangeTheme}
       />
       <div className="content-wrapper">
         <LeftSidebar

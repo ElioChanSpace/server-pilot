@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useServer, Server, Category, OsType } from '../context/ServerContext';
-import { FaChevronDown, FaChevronRight, FaFolder, FaFolderOpen, FaLinux, FaPlus, FaPlug, FaUnlink, FaWindows } from 'react-icons/fa';
+import { FaChevronDown, FaChevronRight, FaFolder, FaFolderOpen, FaGripVertical, FaLinux, FaPlus, FaPlug, FaUnlink, FaWindows } from 'react-icons/fa';
 import treeStyles from './TreeView.module.css';
 import sidebarStyles from './LeftSidebar.module.css';
 
@@ -109,13 +109,18 @@ interface CategoryNodeProps {
   activeCategory: Category | null;
   categoryServerCounts: Map<string, number>;
   depth: number;
+  onDragStart?: (event: React.DragEvent, categoryId: string) => void;
+  onDragOver?: (event: React.DragEvent, categoryId: string) => void;
+  onDrop?: (event: React.DragEvent, categoryId: string) => void;
+  onDragEnd?: (event: React.DragEvent) => void;
+  isDragOver?: boolean;
 }
 
 const CategoryNode = memo<CategoryNodeProps>(({
   category, categoryChildrenMap, serversByCategory, expandedCategories, toggleCategory,
   onCategoryContextMenu, onSelectServer, onSelectCategory, onCreateServer, onCreateSubCategory,
   onConnectServer, onDisconnectServer, onServerContextMenu, activeServer, activeCategory,
-  categoryServerCounts, depth,
+  categoryServerCounts, depth, onDragStart, onDragOver, onDrop, onDragEnd, isDragOver,
 }) => {
   const isExpanded = expandedCategories.has(category.id);
   const childCategories = categoryChildrenMap.get(category.id) ?? EMPTY_CATEGORIES;
@@ -130,7 +135,19 @@ const CategoryNode = memo<CategoryNodeProps>(({
         style={{ paddingLeft: `${depth * 20}px` }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onCategoryContextMenu(e, category); }}
         data-active={activeCategory?.id === category.id}
+        data-drag-over={isDragOver}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); onDragOver?.(e, category.id); }}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop?.(e, category.id); }}
       >
+        <div
+          className={treeStyles.dragHandle}
+          draggable
+          onDragStart={(e) => { e.stopPropagation(); onDragStart?.(e, category.id); }}
+          onDragEnd={(e) => { e.stopPropagation(); onDragEnd?.(e); }}
+          title="拖拽排序"
+        >
+          <FaGripVertical size={10} />
+        </div>
         <button
           type="button"
           className={treeStyles.expander}
@@ -207,6 +224,10 @@ const CategoryNode = memo<CategoryNodeProps>(({
               activeCategory={activeCategory}
               categoryServerCounts={categoryServerCounts}
               depth={depth + 1}
+              onDragStart={onDragStart}
+              onDragOver={onDragOver}
+              onDrop={onDrop}
+              onDragEnd={onDragEnd}
             />
           ))}
           {childServers.map(server => (
@@ -247,8 +268,10 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
   onCategoryContextMenu, onCreateServer, onCreateSubCategory, onConnectServer, onDisconnectServer,
   onServerContextMenu,
 }) => {
-  const { categories, servers } = useServer();
+  const { categories, servers, updateCategoryOrder } = useServer();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null);
+  const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
 
   useEffect(() => {
     setExpandedCategories(prev => {
@@ -268,7 +291,76 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
     });
   }, []);
 
-  const rootCategories = useMemo(() => categories.filter(c => !c.parentId), [categories]);
+  const handleDragStart = useCallback((event: React.DragEvent, categoryId: string) => {
+    setDraggedCategoryId(categoryId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', categoryId);
+  }, []);
+
+  const handleDragOver = useCallback((event: React.DragEvent, categoryId: string) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (categoryId !== draggedCategoryId) {
+      setDragOverCategoryId(categoryId);
+    }
+  }, [draggedCategoryId]);
+
+  const handleDrop = useCallback(async (event: React.DragEvent, targetCategoryId: string) => {
+    event.preventDefault();
+    setDragOverCategoryId(null);
+
+    if (!draggedCategoryId || draggedCategoryId === targetCategoryId) {
+      return;
+    }
+
+    const draggedCategory = categories.find(c => c.id === draggedCategoryId);
+    const targetCategory = categories.find(c => c.id === targetCategoryId);
+
+    if (!draggedCategory || !targetCategory) {
+      return;
+    }
+
+    // Only allow reordering within the same parent level
+    if (draggedCategory.parentId !== targetCategory.parentId) {
+      return;
+    }
+
+    // Get siblings (same parent)
+    const siblings = categories.filter(c => c.parentId === draggedCategory.parentId);
+    const draggedIndex = siblings.findIndex(c => c.id === draggedCategoryId);
+    const targetIndex = siblings.findIndex(c => c.id === targetCategoryId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      return;
+    }
+
+    const newSiblings = [...siblings];
+    const [removed] = newSiblings.splice(draggedIndex, 1);
+    newSiblings.splice(targetIndex, 0, removed);
+
+    const orderItems = newSiblings.map((cat, index) => ({
+      id: cat.id,
+      order: index,
+    }));
+
+    try {
+      await updateCategoryOrder(orderItems);
+    } catch (error) {
+      console.error('Failed to update category order:', error);
+    }
+  }, [draggedCategoryId, categories, updateCategoryOrder]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedCategoryId(null);
+    setDragOverCategoryId(null);
+  }, []);
+
+  const rootCategories = useMemo(() =>
+    categories
+      .filter(c => !c.parentId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [categories]
+  );
 
   const categoryChildrenMap = useMemo(() => {
     const map = new Map<string, Category[]>();
@@ -282,6 +374,10 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
       } else {
         map.set(category.parentId, [category]);
       }
+    });
+    // Sort children by order
+    map.forEach((children, parentId) => {
+      map.set(parentId, children.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
     });
     return map;
   }, [categories]);
@@ -342,6 +438,11 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
           activeCategory={activeCategory}
           categoryServerCounts={categoryServerCounts}
           depth={0}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          onDragEnd={handleDragEnd}
+          isDragOver={dragOverCategoryId === category.id}
         />
       ))}
 

@@ -85,6 +85,8 @@ pub struct Category {
     pub id: String,
     pub name: String,
     pub parent_id: Option<String>,
+    #[serde(default)]
+    pub order: u32,
 }
 
 impl Category {
@@ -93,6 +95,7 @@ impl Category {
             id: Uuid::new_v4().to_string(),
             name,
             parent_id,
+            order: 0,
         }
     }
 }

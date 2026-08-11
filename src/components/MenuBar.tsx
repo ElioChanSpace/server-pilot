@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
-import { FaMoon, FaSun } from "react-icons/fa";
+import { FaMoon, FaSun, FaPalette } from "react-icons/fa";
 import type { ThemeMode } from "../utils/theme-helpers";
+import { APP_THEMES } from "../utils/app-themes";
 
 export const MenuBar: React.FC<{
   onNewCategory: () => void;
@@ -10,8 +11,10 @@ export const MenuBar: React.FC<{
   onViewLogs: () => void;
   onOpenSettings: () => void;
   theme: ThemeMode;
+  themeId: string;
   onToggleTheme: () => void;
-}> = ({ onNewCategory, onNewServer, onImportSshConfig, onBatchCommand, onViewLogs, onOpenSettings, theme, onToggleTheme }) => {
+  onChangeTheme: (themeId: string) => void;
+}> = ({ onNewCategory, onNewServer, onImportSshConfig, onBatchCommand, onViewLogs, onOpenSettings, theme, themeId, onToggleTheme, onChangeTheme }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -36,6 +39,11 @@ export const MenuBar: React.FC<{
     setOpenMenu(null);
   };
 
+  const handleThemeSelect = (selectedThemeId: string) => {
+    onChangeTheme(selectedThemeId);
+    setOpenMenu(null);
+  };
+
   const handleMenuBarPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!openMenu) {
       return;
@@ -48,12 +56,14 @@ export const MenuBar: React.FC<{
 
     // Keep existing button/dropdown interactions intact; only close when clicking
     // the menu bar background or spacer area around the top-level menus.
-    if (target.closest('.menuItem') || target.closest('.themeToggle')) {
+    if (target.closest('.menuItem') || target.closest('.themeToggle') || target.closest('.themeMenu')) {
       return;
     }
 
     setOpenMenu(null);
   };
+
+  const currentTheme = APP_THEMES[themeId];
 
   return (
     <div className="menuBar" ref={menuRef} onPointerDown={handleMenuBarPointerDown}>
@@ -80,6 +90,51 @@ export const MenuBar: React.FC<{
         )}
       </div>
       <div className="menuBarSpacer" />
+      <div className="menuItem themeMenu">
+        <button
+          className="themeToggle"
+          onClick={() => setOpenMenu(openMenu === 'theme' ? null : 'theme')}
+          data-active={openMenu === 'theme'}
+          title="切换主题"
+          aria-label="切换主题"
+        >
+          <FaPalette size={14} />
+          <span>{currentTheme?.name ?? '主题'}</span>
+        </button>
+        {openMenu === 'theme' && (
+          <div className="dropdown themeDropdown">
+            <div className="themeDropdownHeader">深色主题</div>
+            {Object.values(APP_THEMES)
+              .filter(t => t.type === 'dark')
+              .map(t => (
+                <button
+                  key={t.id}
+                  className="dropdownItem themeItem"
+                  data-active={t.id === themeId}
+                  onClick={() => handleThemeSelect(t.id)}
+                >
+                  <span className="themeColorPreview" style={{ background: t.colors.accent }} />
+                  <span>{t.name}</span>
+                </button>
+              ))}
+            <div className="separator" />
+            <div className="themeDropdownHeader">浅色主题</div>
+            {Object.values(APP_THEMES)
+              .filter(t => t.type === 'light')
+              .map(t => (
+                <button
+                  key={t.id}
+                  className="dropdownItem themeItem"
+                  data-active={t.id === themeId}
+                  onClick={() => handleThemeSelect(t.id)}
+                >
+                  <span className="themeColorPreview" style={{ background: t.colors.accent }} />
+                  <span>{t.name}</span>
+                </button>
+              ))}
+          </div>
+        )}
+      </div>
       <button
         className="themeToggle"
         onClick={onToggleTheme}
@@ -87,7 +142,6 @@ export const MenuBar: React.FC<{
         aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
       >
         {theme === "dark" ? <FaSun size={14} /> : <FaMoon size={14} />}
-        <span>{theme === "dark" ? "浅色" : "深色"}</span>
       </button>
     </div>
   );

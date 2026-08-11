@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { FaKey } from "react-icons/fa";
+import { FaKey, FaDownload, FaUpload } from "react-icons/fa";
 import { useServer } from "../context/ServerContext";
 import type { AppSettings } from "../types/settings";
 import { TERMINAL_THEMES, DEFAULT_TERMINAL_THEME } from "../utils/terminal-themes";
+import { APP_THEMES, DEFAULT_THEME } from "../utils/app-themes";
+import { exportTheme, importTheme } from "../utils/theme-helpers";
 import { SshKeyManager } from "./SshKeyManager";
 import styles from "./Settings.module.css";
 
@@ -14,7 +16,7 @@ const defaultSettings: AppSettings = {
   terminalFontSize: 14,
   terminalScrollback: 5000,
   minimizeToTrayOnClose: false,
-  themePreference: "system",
+  themePreference: DEFAULT_THEME,
   notificationsEnabled: true,
   confirmOnDisconnect: true,
   terminalTheme: DEFAULT_TERMINAL_THEME,
@@ -100,6 +102,65 @@ export const Settings: React.FC = () => {
       await refreshServers();
       await refreshCategories();
       setSuccessMessage(`已导入 ${count} 台服务器，凭据已迁移到系统钥匙串。`);
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError));
+    }
+  };
+
+  const handleExportTheme = async () => {
+    const currentTheme = APP_THEMES[settings.themePreference] ?? APP_THEMES[DEFAULT_THEME];
+    const themeJson = exportTheme(currentTheme);
+
+    const targetPath = await save({
+      title: "导出主题",
+      defaultPath: `${currentTheme.name}-theme.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (typeof targetPath !== "string") {
+      return;
+    }
+
+    try {
+      // 使用 Tauri fs API 写入文件
+      const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+      await writeTextFile(targetPath, themeJson);
+      setSuccessMessage("主题已导出。");
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : String(exportError));
+    }
+  };
+
+  const handleImportTheme = async () => {
+    const sourcePath = await open({
+      multiple: false,
+      directory: false,
+      title: "导入主题",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (typeof sourcePath !== "string") {
+      return;
+    }
+
+    try {
+      const { readTextFile } = await import("@tauri-apps/plugin-fs");
+      const themeJson = await readTextFile(sourcePath);
+      const importedTheme = importTheme(themeJson);
+
+      if (!importedTheme) {
+        setError("无效的主题文件格式。");
+        return;
+      }
+
+      // 添加到主题列表
+      APP_THEMES[importedTheme.id] = importedTheme;
+
+      // 设置为当前主题
+      setSettings(prev => ({
+        ...prev,
+        themePreference: importedTheme.id,
+      }));
+
+      setSuccessMessage(`主题「${importedTheme.name}」已导入并应用。`);
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : String(importError));
     }
@@ -209,22 +270,48 @@ export const Settings: React.FC = () => {
             </label>
 
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>主题</span>
+              <span className={styles.fieldLabel}>应用主题</span>
               <select
                 value={settings.themePreference}
                 onChange={(event) => {
                   setSettings(prev => ({
                     ...prev,
-                    themePreference: event.target.value as AppSettings["themePreference"],
+                    themePreference: event.target.value,
                   }));
                 }}
                 className="select-css"
               >
-                <option value="system">跟随系统</option>
-                <option value="light">浅色</option>
-                <option value="dark">深色</option>
+                <optgroup label="深色主题">
+                  {Object.values(APP_THEMES)
+                    .filter(t => t.type === 'dark')
+                    .map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                </optgroup>
+                <optgroup label="浅色主题">
+                  {Object.values(APP_THEMES)
+                    .filter(t => t.type === 'light')
+                    .map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                </optgroup>
               </select>
             </label>
+
+            <div className={styles.backupSection}>
+              <span className={styles.fieldLabel}>主题管理</span>
+              <div className={styles.backupActions}>
+                <button type="button" className={styles.backupButton} onClick={() => void handleExportTheme()}>
+                  <FaDownload />
+                  <span>导出当前主题</span>
+                </button>
+                <button type="button" className={styles.backupButton} onClick={() => void handleImportTheme()}>
+                  <FaUpload />
+                  <span>导入主题</span>
+                </button>
+              </div>
+              <span className={styles.helper}>导出当前主题配置，或从文件导入自定义主题。</span>
+            </div>
 
             <label className={styles.field}>
               <span className={styles.fieldLabel}>终端配色主题</span>

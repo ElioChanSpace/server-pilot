@@ -241,6 +241,29 @@ pub fn get_categories(state: State<'_, AppState>) -> Result<Vec<Category>, Strin
     Ok(data.categories.clone())
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryOrderItem {
+    pub id: String,
+    pub order: u32,
+}
+
+#[tauri::command]
+pub fn update_category_order(
+    state: State<'_, AppState>,
+    items: Vec<CategoryOrderItem>,
+) -> Result<(), String> {
+    let mut data = state.data.lock().map_err(|e| e.to_string())?;
+    for item in items {
+        if let Some(category) = data.categories.iter_mut().find(|c| c.id == item.id) {
+            category.order = item.order;
+        }
+    }
+    drop(data);
+    state.save()?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;

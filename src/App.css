@@ -22,6 +22,7 @@
   --font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: Menlo, Monaco, "SF Mono", "Courier New", monospace;
 
+  /* 默认深色主题颜色（会被 JavaScript 覆盖） */
   --bg-primary: rgba(10, 18, 28, 0.68);
   --bg-secondary: rgba(18, 28, 40, 0.72);
   --bg-elevated: rgba(23, 36, 50, 0.82);
@@ -63,52 +64,6 @@
     radial-gradient(circle at top left, rgba(108, 171, 145, 0.22), transparent 34%),
     radial-gradient(circle at top right, rgba(132, 178, 206, 0.18), transparent 30%),
     linear-gradient(160deg, #09111b 0%, #102130 52%, #173544 100%);
-}
-
-:root[data-theme="light"] {
-  --accent-color: #5f9f87;
-  --accent-hover: #74b198;
-  --accent-strong: #4d8a74;
-  --primary-color: var(--accent-color);
-  --primary-color-hover: var(--accent-hover);
-
-  --bg-primary: rgba(252, 254, 251, 0.76);
-  --bg-secondary: rgba(245, 250, 246, 0.86);
-  --bg-elevated: rgba(255, 255, 255, 0.92);
-  --glass-bg: rgba(255, 255, 255, 0.64);
-  --glass-border: rgba(126, 158, 145, 0.18);
-  --border-color: rgba(126, 158, 145, 0.18);
-  --shadow-color: rgba(110, 132, 122, 0.12);
-
-  --text-primary: #24352d;
-  --text-secondary: #5f766d;
-  --text-muted: #7c928a;
-
-  --surface-hover: rgba(95, 159, 135, 0.1);
-  --surface-active: rgba(95, 159, 135, 0.18);
-  --surface-overlay: rgba(214, 227, 221, 0.48);
-
-  --sidebar-item-bg: rgba(95, 159, 135, 0.05);
-  --sidebar-item-hover-bg: rgba(95, 159, 135, 0.1);
-
-  --success-color: #3da66b;
-  --warning-color: #d89d43;
-  --danger-color: #d96c6c;
-  --danger-color-hover: #e27c7c;
-  --error-color: #d25454;
-  --info-color: #4f8fca;
-  --debug-color: #6f7ba6;
-  --danger-soft: rgba(217, 108, 108, 0.14);
-
-  --terminal-bg: #f5f9f6;
-  --terminal-fg: #24352d;
-  --terminal-cursor: #4d8a74;
-  --terminal-selection: rgba(95, 159, 135, 0.2);
-
-  --body-gradient:
-    radial-gradient(circle at top left, rgba(153, 214, 186, 0.3), transparent 32%),
-    radial-gradient(circle at top right, rgba(193, 224, 239, 0.28), transparent 30%),
-    linear-gradient(180deg, #f5fbf7 0%, #edf6f2 52%, #e4f0eb 100%);
 }
 
 * {
@@ -586,6 +541,41 @@ select {
 
 .menuBarSpacer {
   flex: 1;
+}
+
+/* 主题选择器样式 */
+.themeDropdown {
+  min-width: 200px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.themeDropdownHeader {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.themeItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.themeItem[data-active="true"] {
+  background-color: var(--surface-active);
+  color: var(--accent-strong);
+}
+
+.themeColorPreview {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid var(--glass-border);
 }
 
 .dropdown {
