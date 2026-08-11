@@ -346,6 +346,59 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     setActiveTransfer(null);
   };
 
+  const handleUploadDirectory = async () => {
+    if (!server || !canTransferFiles) {
+      setTransferError(transferHint);
+      return;
+    }
+
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "选择要上传的本地文件夹",
+    });
+
+    if (!selected || typeof selected !== "string") {
+      return;
+    }
+
+    const dirName = getBaseName(selected);
+    const remotePath = uploadRemotePath.trim() || joinRemotePath(remoteBrowserPath || "/tmp", dirName);
+    const transferId = createTransferId();
+
+    setTransferStatus(null);
+    setTransferError(null);
+    setActiveTransfer("upload");
+
+    setTransfers(prev => [
+      ...prev,
+      {
+        transferId,
+        fileName: dirName,
+        direction: "upload",
+        status: "preparing",
+        progressPercent: 0,
+        message: "准备上传目录",
+      },
+    ]);
+
+    try {
+      const result = await invoke<FileTransferResult>("upload_directory_to_server", {
+        id: server.id,
+        localPath: selected,
+        remotePath,
+        transferId,
+      });
+      updateTransfer(transferId, { status: "completed", progressPercent: 100, message: "目录上传完成" });
+      setTransferStatus(result.message);
+    } catch (error) {
+      updateTransfer(transferId, { status: "failed", message: getErrorMessage(error) });
+      setTransferError(getErrorMessage(error));
+    } finally {
+      setActiveTransfer(null);
+    }
+  };
+
   const handleDownload = async () => {
     if (!server || !canTransferFiles) {
       setTransferError(transferHint);
@@ -574,7 +627,18 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
                 disabled={activeTransfer !== null || !canTransferFiles}
               >
                 <FaUpload />
-                <span>{activeTransfer === "upload" ? "上传中..." : "上传到当前目录"}</span>
+                <span>{activeTransfer === "upload" ? "上传中..." : "上传文件"}</span>
+              </button>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => {
+                  void handleUploadDirectory();
+                }}
+                disabled={activeTransfer !== null || !canTransferFiles}
+              >
+                <FaFolder />
+                <span>{activeTransfer === "upload" ? "上传中..." : "上传目录"}</span>
               </button>
               <button
                 type="button"

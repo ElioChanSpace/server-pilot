@@ -615,6 +615,209 @@ pub async fn upload_file_to_server(
 }
 
 #[tauri::command]
+pub async fn upload_directory_to_server(
+    window: Window,
+    state: State<'_, AppState>,
+    id: String,
+    local_path: String,
+    remote_path: String,
+    transfer_id: Option<String>,
+) -> Result<FileTransferResult, String> {
+    let local_path_obj = Path::new(&local_path);
+    if !local_path_obj.exists() {
+        return Err("Local path does not exist".to_string());
+    }
+    if !local_path_obj.is_dir() {
+        return Err("Path is not a directory".to_string());
+    }
+
+    let remote_path = remote_path.trim().to_string();
+    if remote_path.is_empty() {
+        return Err("Remote path is required".to_string());
+    }
+
+    let connection = resolve_transfer_server(&state, &id)?;
+    let target = build_remote_scp_argument(&connection.username, &connection.host, &remote_path);
+    let local_path_for_result = local_path.clone();
+    let remote_path_for_result = remote_path.clone();
+    let transfer_id_for_result = transfer_id.clone();
+
+    if let Some(current_transfer_id) = transfer_id.as_deref() {
+        emit_file_transfer_progress(
+            Some(&window),
+            Some(current_transfer_id),
+            FileTransferProgressEvent {
+                transfer_id: current_transfer_id.to_string(),
+                direction: "upload".to_string(),
+                local_path: local_path.clone(),
+                remote_path: remote_path.clone(),
+                status: "preparing".to_string(),
+                progress_percent: 0,
+                transferred_bytes: Some(0),
+                total_bytes: None,
+                bytes_per_second: None,
+                eta_seconds: None,
+                message: Some("准备上传目录".to_string()),
+            },
+        );
+    }
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<FileTransferResult, String> {
+        let pty_system = NativePtySystem::default();
+        let pair = pty_system
+            .openpty(PtySize::default())
+            .map_err(|err| err.to_string())?;
+
+        let mut cmd = CommandBuilder::new("scp");
+        cmd.arg("-r");  // Recursive copy
+        cmd.arg("-P");
+        cmd.arg(connection.port.to_string());
+        cmd.arg("-o");
+        cmd.arg("StrictHostKeyChecking=accept-new");
+        if let Some(proxy_jump) = connection.proxy_jump.as_deref() {
+            cmd.arg("-J");
+            cmd.arg(proxy_jump);
+        }
+        if let Some(key_path) = connection.key_path.as_deref() {
+            cmd.arg("-i");
+            cmd.arg(key_path);
+        }
+        cmd.arg(&local_path);
+        cmd.arg(&target);
+
+        let mut child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|err| err.to_string())?;
+        let reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|err| err.to_string())?;
+        let writer = pair.master.take_writer().map_err(|err| err.to_string())?;
+
+        let (tx, rx) = mpsc::channel::<Result<Vec<u8>, String>>();
+        thread::spawn(move || {
+            let mut local_reader = reader;
+            loop {
+                let mut buffer = vec![0_u8; 8192];
+                match local_reader.read(&mut buffer) {
+                    Ok(0) => {
+                        let _ = tx.send(Ok(Vec::new()));
+                        break;
+                    }
+                    Ok(size) => {
+                        buffer.truncate(size);
+                        if tx.send(Ok(buffer)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        let _ = tx.send(Err(err.to_string()));
+                        break;
+                    }
+                }
+            }
+        });
+
+        let mut writer = writer;
+        let mut output = String::new();
+        let mut prompt_buffer = String::new();
+        let mut password_sent = false;
+        let deadline = Instant::now() + FILE_TRANSFER_TIMEOUT;
+
+        loop {
+            if Instant::now() > deadline {
+                let _ = child.kill();
+                return Err("Timed out while uploading directory".to_string());
+            }
+
+            match rx.recv_timeout(Duration::from_millis(250)) {
+                Ok(Ok(chunk)) => {
+                    if chunk.is_empty() {
+                        break;
+                    }
+
+                    let text = String::from_utf8_lossy(&chunk).to_string();
+                    output.push_str(&text);
+                    prompt_buffer.push_str(&text);
+                    trim_prompt_buffer(&mut prompt_buffer);
+
+                    if !password_sent {
+                        if let Some(credential) = connection
+                            .password
+                            .as_deref()
+                            .or(connection.key_passphrase.as_deref())
+                            .filter(|value| !value.is_empty())
+                        {
+                            if should_auto_fill_ssh_password(&prompt_buffer) {
+                                writer
+                                    .write_all(credential.as_bytes())
+                                    .map_err(|err| err.to_string())?;
+                                writer.write_all(b"\r").map_err(|err| err.to_string())?;
+                                writer.flush().map_err(|err| err.to_string())?;
+                                password_sent = true;
+                            }
+                        }
+                    }
+                }
+                Ok(Err(err)) => return Err(err),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
+                        if !status.success() {
+                            return Err(command_error_message(
+                                "upload directory",
+                                &output,
+                                &status.to_string(),
+                            ));
+                        }
+                        break;
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+
+        let status = child.wait().map_err(|err| err.to_string())?;
+        if !status.success() {
+            return Err(command_error_message(
+                "upload directory",
+                &output,
+                &status.to_string(),
+            ));
+        }
+
+        if let Some(current_transfer_id) = transfer_id_for_result.as_deref() {
+            emit_file_transfer_progress(
+                Some(&window),
+                Some(current_transfer_id),
+                FileTransferProgressEvent {
+                    transfer_id: current_transfer_id.to_string(),
+                    direction: "upload".to_string(),
+                    local_path: local_path_for_result.clone(),
+                    remote_path: remote_path_for_result.clone(),
+                    status: "completed".to_string(),
+                    progress_percent: 100,
+                    transferred_bytes: None,
+                    total_bytes: None,
+                    bytes_per_second: None,
+                    eta_seconds: Some(0),
+                    message: Some(format!("已上传目录到 {}", remote_path_for_result)),
+                },
+            );
+        }
+
+        Ok(FileTransferResult {
+            direction: "upload".to_string(),
+            local_path: local_path_for_result,
+            remote_path: remote_path_for_result.clone(),
+            message: format!("Uploaded directory to {}", remote_path_for_result),
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
 pub async fn download_file_from_server(
     window: Window,
     state: State<'_, AppState>,

@@ -14,7 +14,7 @@ use crate::servers::interface::commands::{
     get_app_settings, get_categories, get_servers, get_terminal_session_directory,
     list_remote_directory, parse_ssh_config, pty_resize, pty_write, import_app_data,
     read_app_logs, read_remote_log, rename_remote_path, update_app_settings, update_category,
-    update_server, test_server_connection, upload_file_to_server,
+    update_server, test_server_connection, upload_directory_to_server, upload_file_to_server,
 };
 use crate::servers::infrastructure::session_manager;
 use log::LevelFilter;
@@ -249,6 +249,7 @@ fn main() {
             read_app_logs,
             clear_app_logs,
             upload_file_to_server,
+            upload_directory_to_server,
             download_file_from_server,
             delete_remote_path,
             rename_remote_path,
