@@ -1,6 +1,7 @@
 use crate::servers::application::AppState;
 use crate::servers::domain::OsType;
 use crate::servers::infrastructure::credential_store;
+use log::{error, info, warn};
 use serde::Serialize;
 use std::fs;
 use std::io::{Read, Write};
@@ -76,16 +77,21 @@ pub fn resolve_transfer_server(
     state: &State<'_, AppState>,
     id: &str,
 ) -> Result<TransferConnection, String> {
+    info!("[Transfer] Resolving server: id={}", id);
     let server = {
         let data = state.data.lock().map_err(|err| err.to_string())?;
         data.servers
             .iter()
             .find(|server| server.id == id)
             .cloned()
-            .ok_or("Server not found")?
+            .ok_or_else(|| {
+                error!("[Transfer] Server not found: id={}", id);
+                "Server not found"
+            })?
     };
 
     if !matches!(server.os_type, OsType::Linux) {
+        error!("[Transfer] Unsupported OS type: {:?} for server {}", server.os_type, id);
         return Err("当前版本仅支持 Linux 服务器传输文件".to_string());
     }
 
@@ -93,7 +99,14 @@ pub fn resolve_transfer_server(
     let key_passphrase =
         credential_store::get_key_passphrase(id)?.filter(|value| !value.is_empty());
 
+    info!(
+        "[Transfer] Credential resolved: server={}, host={}, port={}, user={}, has_password={}, has_key={}, auth_method={}",
+        id, server.host, server.port, server.username,
+        password.is_some(), server.key_path.is_some(), server.auth_method
+    );
+
     if server.auth_method != "key" && password.is_none() {
+        warn!("[Transfer] No password saved for server {} (auth_method={})", id, server.auth_method);
         return Err("文件传输需要已保存的 SSH 密码，请编辑服务器并保存密码".to_string());
     }
 
@@ -309,10 +322,18 @@ fn run_scp_transfer(
     remote_path: &str,
     total_bytes: Option<u64>,
 ) -> Result<(), String> {
+    info!(
+        "[Transfer] Starting SCP transfer: direction={}, port={}, local={}, remote={}, total_bytes={:?}",
+        direction, port, local_path, remote_path, total_bytes
+    );
+
     let pty_system = NativePtySystem::default();
     let pair = pty_system
         .openpty(PtySize::default())
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| {
+            error!("[Transfer] Failed to create PTY for SCP: {}", err);
+            err.to_string()
+        })?;
 
     let mut cmd = CommandBuilder::new("scp");
     cmd.arg("-P");
@@ -330,10 +351,14 @@ fn run_scp_transfer(
     cmd.arg(source);
     cmd.arg(target);
 
+    info!("[Transfer] Spawning SCP command...");
     let mut child = pair
         .slave
         .spawn_command(cmd)
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| {
+            error!("[Transfer] Failed to spawn SCP command: {}", err);
+            err.to_string()
+        })?;
     let reader = pair
         .master
         .try_clone_reader()
@@ -379,6 +404,10 @@ fn run_scp_transfer(
     loop {
         if Instant::now() > deadline {
             let _ = child.kill();
+            error!(
+                "[Transfer] SCP timed out after {:?}: direction={}, local={}, remote={}",
+                FILE_TRANSFER_TIMEOUT, direction, local_path, remote_path
+            );
             return Err(format!("Timed out while trying to {}", action_label));
         }
 
@@ -428,6 +457,7 @@ fn run_scp_transfer(
                 if !password_sent {
                     if let Some(credential) = credential.filter(|value| !value.is_empty()) {
                         if should_auto_fill_ssh_password(&prompt_buffer) {
+                            info!("[Transfer] SCP password prompt detected, auto-filling credential");
                             writer
                                 .write_all(credential.as_bytes())
                                 .map_err(|err| err.to_string())?;
@@ -438,10 +468,14 @@ fn run_scp_transfer(
                     }
                 }
             }
-            Ok(Err(err)) => return Err(err),
+            Ok(Err(err)) => {
+                error!("[Transfer] SCP reader error during {}: {}", action_label, err);
+                return Err(err);
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
                     if !status.success() {
+                        warn!("[Transfer] SCP exited with non-zero status: {} (action={})", status, action_label);
                         return Err(command_error_message(
                             action_label,
                             &output,
@@ -451,14 +485,19 @@ fn run_scp_transfer(
                     break;
                 }
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                warn!("[Transfer] SCP reader channel disconnected during {}", action_label);
+                break;
+            }
         }
     }
 
     let status = child.wait().map_err(|err| err.to_string())?;
     if status.success() {
+        info!("[Transfer] SCP transfer completed: direction={}, local={}, remote={}", direction, local_path, remote_path);
         Ok(())
     } else {
+        error!("[Transfer] SCP transfer failed: direction={}, status={}", direction, status);
         Err(command_error_message(
             action_label,
             &output,
@@ -474,6 +513,7 @@ pub async fn list_remote_directory(
     path: Option<String>,
 ) -> Result<RemoteDirectoryListing, String> {
     let requested_path = path.unwrap_or_default().trim().to_string();
+    info!("[Transfer] List directory: server_id={}, path={}", id, requested_path);
 
     let connection = resolve_transfer_server(&state, &id)?;
     let remote_command = build_list_directory_command(&requested_path);
@@ -505,6 +545,9 @@ pub async fn upload_file_to_server(
     remote_path: String,
     transfer_id: Option<String>,
 ) -> Result<FileTransferResult, String> {
+    info!("[Transfer] Upload file: server_id={}, local={}, remote={}, transfer_id={:?}",
+        id, local_path, remote_path, transfer_id);
+
     let local_metadata = fs::metadata(&local_path)
         .map_err(|_| "Local file does not exist".to_string())?;
     if !local_metadata.is_file() {
@@ -520,6 +563,7 @@ pub async fn upload_file_to_server(
         return Err("Remote path is required".to_string());
     }
 
+    info!("[Transfer] Upload file size: {} bytes", local_metadata.len());
     let connection = resolve_transfer_server(&state, &id)?;
     let target = build_remote_scp_argument(&connection.username, &connection.host, &remote_path);
     let local_path_for_result = local_path.clone();
@@ -630,6 +674,9 @@ pub async fn upload_directory_to_server(
     remote_path: String,
     transfer_id: Option<String>,
 ) -> Result<FileTransferResult, String> {
+    info!("[Transfer] Upload directory: server_id={}, local={}, remote={}, transfer_id={:?}",
+        id, local_path, remote_path, transfer_id);
+
     let local_path_obj = Path::new(&local_path);
     if !local_path_obj.exists() {
         return Err("Local path does not exist".to_string());
@@ -840,6 +887,9 @@ pub async fn download_file_from_server(
     local_path: String,
     transfer_id: Option<String>,
 ) -> Result<FileTransferResult, String> {
+    info!("[Transfer] Download file: server_id={}, remote={}, local={}, transfer_id={:?}",
+        id, remote_path, local_path, transfer_id);
+
     let remote_path = remote_path.trim().to_string();
     if remote_path.is_empty() {
         return Err("Remote path is required".to_string());
@@ -957,6 +1007,8 @@ pub async fn delete_remote_path(
     path: String,
     is_dir: bool,
 ) -> Result<(), String> {
+    info!("[Transfer] Delete path: server_id={}, path={}, is_dir={}", id, path, is_dir);
+
     let path = path.trim().to_string();
     if path.is_empty() || path == "/" {
         return Err("无效的远程路径".to_string());
@@ -994,6 +1046,8 @@ pub async fn rename_remote_path(
     path: String,
     new_path: String,
 ) -> Result<(), String> {
+    info!("[Transfer] Rename: server_id={}, {} -> {}", id, path, new_path);
+
     let path = path.trim().to_string();
     let new_path = new_path.trim().to_string();
     if path.is_empty() || new_path.is_empty() {
@@ -1031,6 +1085,8 @@ pub async fn create_remote_directory(
     id: String,
     path: String,
 ) -> Result<(), String> {
+    info!("[Transfer] Create directory: server_id={}, path={}", id, path);
+
     let path = path.trim().to_string();
     if path.is_empty() {
         return Err("无效的远程路径".to_string());

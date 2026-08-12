@@ -1,4 +1,5 @@
 use keyring::Entry;
+use log::{info, warn};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -32,15 +33,26 @@ pub fn get_password(server_id: &str) -> Result<Option<String>, String> {
     // 先检查缓存
     if let Ok(cache) = PASSWORD_CACHE.lock() {
         if let Some(cached) = cache.get(server_id) {
+            info!("[Credential] Password cache hit for server: {}", server_id);
             return Ok(cached.clone());
         }
     }
 
     // 缓存未命中，从钥匙串读取
+    info!("[Credential] Reading password from keychain for server: {}", server_id);
     let password = match entry_for(&format!("password:{server_id}"))?.get_password() {
-        Ok(password) => Some(password),
-        Err(keyring::Error::NoEntry) => None,
-        Err(err) => return Err(format!("读取系统钥匙串失败: {err}")),
+        Ok(password) => {
+            info!("[Credential] Password found in keychain for server: {}", server_id);
+            Some(password)
+        }
+        Err(keyring::Error::NoEntry) => {
+            info!("[Credential] No password entry in keychain for server: {}", server_id);
+            None
+        }
+        Err(err) => {
+            warn!("[Credential] Keychain read error for server {}: {}", server_id, err);
+            return Err(format!("读取系统钥匙串失败: {err}"));
+        }
     };
 
     // 存入缓存
@@ -68,15 +80,26 @@ pub fn get_key_passphrase(server_id: &str) -> Result<Option<String>, String> {
     // 先检查缓存
     if let Ok(cache) = PASSPHRASE_CACHE.lock() {
         if let Some(cached) = cache.get(server_id) {
+            info!("[Credential] Key passphrase cache hit for server: {}", server_id);
             return Ok(cached.clone());
         }
     }
 
     // 缓存未命中，从钥匙串读取
+    info!("[Credential] Reading key passphrase from keychain for server: {}", server_id);
     let passphrase = match entry_for(&format!("key-passphrase:{server_id}"))?.get_password() {
-        Ok(passphrase) => Some(passphrase),
-        Err(keyring::Error::NoEntry) => None,
-        Err(err) => return Err(format!("读取系统钥匙串密钥口令失败: {err}")),
+        Ok(passphrase) => {
+            info!("[Credential] Key passphrase found in keychain for server: {}", server_id);
+            Some(passphrase)
+        }
+        Err(keyring::Error::NoEntry) => {
+            info!("[Credential] No key passphrase entry in keychain for server: {}", server_id);
+            None
+        }
+        Err(err) => {
+            warn!("[Credential] Keychain read error for key passphrase, server {}: {}", server_id, err);
+            return Err(format!("读取系统钥匙串密钥口令失败: {err}"));
+        }
     };
 
     // 存入缓存

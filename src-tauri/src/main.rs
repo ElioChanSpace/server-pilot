@@ -14,7 +14,7 @@ use crate::servers::interface::commands::{
     download_file_from_server, export_app_data, fetch_server_metrics, generate_ssh_key,
     get_app_settings, get_categories, get_default_ssh_key_path, get_file_content, get_servers,
     get_terminal_session_directory, highlight_code, import_app_data, list_remote_directory,
-    list_ssh_keys, list_ssh_tunnels, parse_ssh_config, pty_resize, pty_write, read_app_logs,
+    list_ssh_keys, list_ssh_tunnels, move_category, parse_ssh_config, pty_resize, pty_write, read_app_logs,
     read_remote_log, rename_remote_path, save_remote_file, test_server_connection,
     update_app_settings, update_category, update_category_order, update_server,
     upload_directory_to_server, upload_file_to_server,
@@ -126,22 +126,19 @@ fn main() {
         .setup(|app| {
             initialize_logging(app.path())?;
 
-            let system_menu = SubmenuBuilder::new(app, "系统")
-                .build()
-                .map_err(|err| err.to_string())?;
-            let mut menu_builder = MenuBuilder::new(app).item(&system_menu);
-
+            // 仅在 debug 模式下设置原生菜单（用于开发工具）
             #[cfg(debug_assertions)]
             {
                 let dev_menu = SubmenuBuilder::new(app, "开发")
                     .text("inspect", "检查元素")
                     .build()
                     .map_err(|err| err.to_string())?;
-                menu_builder = menu_builder.item(&dev_menu);
+                let menu = MenuBuilder::new(app)
+                    .item(&dev_menu)
+                    .build()
+                    .map_err(|err| err.to_string())?;
+                app.set_menu(menu).map_err(|err| err.to_string())?;
             }
-
-            let menu = menu_builder.build().map_err(|err| err.to_string())?;
-            app.set_menu(menu).map_err(|err| err.to_string())?;
 
             #[cfg(debug_assertions)]
             app.on_menu_event(|app, event| {
@@ -238,6 +235,7 @@ fn main() {
             create_category,
             update_category,
             update_category_order,
+            move_category,
             delete_category,
             get_categories,
             get_app_settings,

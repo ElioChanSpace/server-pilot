@@ -1,7 +1,7 @@
 .header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   padding: 4px 0;
   min-width: 0;
   border-radius: 10px;
@@ -29,10 +29,10 @@
 
 .expander {
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-muted);
 }
@@ -122,18 +122,18 @@
 .nodeActions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.18s ease;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
-.header:hover .nodeActions,
-.serverItem:hover .nodeAction,
-.header[data-active="true"] .nodeActions,
-.serverItem[data-active="true"] .nodeAction {
-  opacity: 1;
-  pointer-events: auto;
+.nodeAction {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
 }
 
 .serverItem {
@@ -170,18 +170,6 @@
   margin-top: -14px;
 }
 
-.nodeAction {
-  flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  opacity: 0;
-  pointer-events: none;
-}
-
 .nodeAction:hover {
   background-color: var(--surface-hover);
   color: var(--accent-strong);
@@ -189,7 +177,7 @@
 
 .dragHandle {
   flex-shrink: 0;
-  width: 16px;
+  width: 0;
   height: 22px;
   display: flex;
   align-items: center;
@@ -197,11 +185,13 @@
   cursor: grab;
   color: var(--text-muted);
   opacity: 0;
-  transition: opacity 0.18s ease;
+  overflow: hidden;
+  transition: opacity 0.18s ease, width 0.18s ease;
 }
 
 .header:hover .dragHandle {
   opacity: 1;
+  width: 16px;
 }
 
 .dragHandle:hover {
@@ -216,4 +206,44 @@
   background-color: var(--accent-color);
   opacity: 0.8;
   border-radius: 10px;
+}
+
+/* 拖拽时的插入指示线 */
+.dropLine {
+  height: 2px;
+  background-color: var(--accent-color);
+  border-radius: 1px;
+  margin: 0 8px;
+  animation: dropLinePulse 1s ease-in-out infinite;
+}
+
+@keyframes dropLinePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* 拖拽目标分类高亮（移入） */
+.header[data-drop-inside="true"] {
+  background-color: color-mix(in srgb, var(--accent-color) 15%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--accent-color);
+}
+
+/* 拖拽浮层 */
+.dragOverlay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--surface-active);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 220px;
+}
+
+.dragOverlay .folderIcon {
+  color: var(--accent-color);
 }

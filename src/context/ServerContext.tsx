@@ -40,6 +40,7 @@ interface ServerContextType {
   updateServer: (server: Omit<Server, 'status'>) => Promise<Server>;
   addCategory: (name: string, parentId?: string) => Promise<void>;
   updateCategoryOrder: (items: Array<{ id: string; order: number }>) => Promise<void>;
+  moveCategoryToParent: (id: string, newParentId: string | undefined, newOrder: number) => Promise<void>;
   connectToServer: (id: string) => Promise<ConnectServerResult>;
   disconnectServer: (id: string) => Promise<void>;
   closeTerminalSession: (sessionId: string) => Promise<void>;
@@ -110,6 +111,16 @@ export const ServerProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const moveCategoryToParent = async (id: string, newParentId: string | undefined, newOrder: number) => {
+    try {
+      await invoke('move_category', { id, newParentId, newOrder });
+      await refreshCategories();
+    } catch (error) {
+      console.error("Invoke 'move_category' FAILED:", error);
+      throw error;
+    }
+  };
+
   const connectToServer = async (id: string) => {
     try {
       return await invoke<ConnectServerResult>('connect_server', { id });
@@ -152,7 +163,7 @@ export const ServerProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <ServerContext.Provider value={{ servers, categories, refreshServers, refreshCategories, addServer, updateServer, addCategory, updateCategoryOrder, connectToServer, disconnectServer, closeTerminalSession }}>
+    <ServerContext.Provider value={{ servers, categories, refreshServers, refreshCategories, addServer, updateServer, addCategory, updateCategoryOrder, moveCategoryToParent, connectToServer, disconnectServer, closeTerminalSession }}>
       {children}
     </ServerContext.Provider>
   );

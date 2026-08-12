@@ -14,7 +14,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({
   onDismiss,
 }) => {
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}>
       <div className={styles.content}>
         <div className={styles.welcomeIcon}>
           <FaServer size={28} />

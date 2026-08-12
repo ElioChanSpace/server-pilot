@@ -2,6 +2,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use log::{error, info, warn};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::{Read, Write};
 
@@ -178,10 +179,18 @@ pub fn run_ssh_command(
     timeout: Duration,
     action_label: &str,
 ) -> Result<String, String> {
+    info!(
+        "[SSH] Executing command: host={}, port={}, user={}, action={:?}, timeout={:?}",
+        host, port, username, action_label, timeout
+    );
+
     let pty_system = NativePtySystem::default();
     let pair = pty_system
         .openpty(PtySize::default())
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| {
+            error!("[SSH] Failed to create PTY: {}", err);
+            err.to_string()
+        })?;
 
     let mut cmd = CommandBuilder::new("ssh");
     cmd.arg("-p");
@@ -199,10 +208,14 @@ pub fn run_ssh_command(
     cmd.arg(format!("{}@{}", username, host));
     cmd.arg(format!("sh -lc {}", shell_quote(remote_command)));
 
+    info!("[SSH] Spawning SSH command...");
     let mut child = pair
         .slave
         .spawn_command(cmd)
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| {
+            error!("[SSH] Failed to spawn SSH command: {}", err);
+            err.to_string()
+        })?;
     let reader = pair
         .master
         .try_clone_reader()
@@ -241,7 +254,12 @@ pub fn run_ssh_command(
 
     loop {
         if Instant::now() > deadline {
+            let elapsed = timeout;
             let _ = child.kill();
+            error!(
+                "[SSH] Timed out after {:?} while trying to {} (host={}, port={}, user={})",
+                elapsed, action_label, host, port, username
+            );
             return Err(format!("Timed out while trying to {}", action_label));
         }
 
@@ -271,6 +289,7 @@ pub fn run_ssh_command(
                 if !password_sent {
                     if let Some(password) = password.filter(|value| !value.is_empty()) {
                         if should_auto_fill_ssh_password(&prompt_buffer) {
+                            info!("[SSH] Password prompt detected, auto-filling credential");
                             writer
                                 .write_all(password.as_bytes())
                                 .map_err(|err| err.to_string())?;
@@ -281,10 +300,17 @@ pub fn run_ssh_command(
                     }
                 }
             }
-            Ok(Err(err)) => return Err(err),
+            Ok(Err(err)) => {
+                error!("[SSH] Reader error during {}: {}", action_label, err);
+                return Err(err);
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
                     if !status.success() {
+                        warn!(
+                            "[SSH] Command exited with non-zero status: {} (action={})",
+                            status, action_label
+                        );
                         return Err(command_error_message(
                             action_label,
                             &output,
@@ -294,14 +320,28 @@ pub fn run_ssh_command(
                     break;
                 }
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                warn!("[SSH] Reader channel disconnected during {}", action_label);
+                break;
+            }
         }
     }
 
     let status = child.wait().map_err(|err| err.to_string())?;
     if status.success() {
+        info!(
+            "[SSH] Command completed successfully: action={}, output_len={}",
+            action_label,
+            output.len()
+        );
         Ok(output)
     } else {
+        error!(
+            "[SSH] Command failed: action={}, status={}, output_len={}",
+            action_label,
+            status,
+            output.len()
+        );
         Err(command_error_message(
             action_label,
             &output,

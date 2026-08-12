@@ -143,7 +143,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
   };
 
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.content}>
         <h2 className={styles.title}>{isEditMode ? '编辑服务器' : '新增服务器'}</h2>
         <form onSubmit={handleSubmit}>

@@ -1,5 +1,6 @@
 use crate::servers::application::AppState;
 use crate::servers::domain::OsType;
+use log::{error, info, warn};
 use serde::Serialize;
 use tauri::State;
 
@@ -94,7 +95,12 @@ echo "__SERVER_PILOT_METRICS_END__""#
 }
 
 fn parse_metrics_output(output: &str) -> Result<ServerMetricsSnapshot, String> {
-    let metrics_block = read_between_markers(output, METRICS_OUTPUT_START, METRICS_OUTPUT_END)?;
+    let metrics_block = read_between_markers(output, METRICS_OUTPUT_START, METRICS_OUTPUT_END)
+        .map_err(|e| {
+            error!("[Monitor] Failed to read metrics markers: {}", e);
+            warn!("[Monitor] Raw output (first 500 chars): {}", &output[..output.len().min(500)]);
+            e
+        })?;
 
     let mut cpu_usage = 0.0;
     let mut memory_usage = 0.0;
@@ -227,22 +233,30 @@ pub async fn fetch_server_metrics(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<ServerMetricsSnapshot, String> {
+    info!("[Monitor] Fetching metrics for server: {}", id);
+
     let server = {
         let data = state.data.lock().map_err(|err| err.to_string())?;
         data.servers
             .iter()
             .find(|server| server.id == id)
             .cloned()
-            .ok_or("Server not found")?
+            .ok_or_else(|| {
+                error!("[Monitor] Server not found: {}", id);
+                "Server not found"
+            })?
     };
 
     if !matches!(server.os_type, OsType::Linux) {
+        error!("[Monitor] Unsupported OS type: {:?} for server {}", server.os_type, id);
         return Err("当前版本仅支持 Linux 服务器监控".to_string());
     }
 
     let connection = resolve_transfer_server(&state, &id)?;
+    info!("[Monitor] Connection resolved: host={}, port={}, user={}", connection.host, connection.port, connection.username);
 
     tauri::async_runtime::spawn_blocking(move || {
+        info!("[Monitor] Executing metrics SSH command...");
         let output = run_ssh_command(
             &connection.username,
             &connection.host,
@@ -254,6 +268,20 @@ pub async fn fetch_server_metrics(
             SSH_COMMAND_TIMEOUT,
             "collect server metrics",
         )?;
+        info!("[Monitor] Metrics command output: {} bytes", output.len());
+        match parse_metrics_output(&output) {
+            Ok(ref metrics) => {
+                info!(
+                    "[Monitor] Metrics parsed: cpu={}%, mem={}%, mem_used={}MB, mem_total={}MB, disk={}%",
+                    metrics.cpu_usage, metrics.memory_usage, metrics.memory_used_mb,
+                    metrics.memory_total_mb, metrics.disk_usage
+                );
+            }
+            Err(ref e) => {
+                error!("[Monitor] Failed to parse metrics output: {}", e);
+                warn!("[Monitor] Raw output (first 500 chars): {}", &output[..output.len().min(500)]);
+            }
+        }
         parse_metrics_output(&output)
     })
     .await

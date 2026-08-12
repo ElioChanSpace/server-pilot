@@ -78,7 +78,7 @@ export const SshKeyManager: React.FC<SshKeyManagerProps> = ({ onClose, onKeySele
   };
 
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.content}>
         <div className={styles.header}>
           <h2>

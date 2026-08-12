@@ -39,7 +39,7 @@ export const AddCategoryModal: React.FC<AddCategoryModalProps> = ({ onClose, par
   };
 
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.content}>
         <h2 className={styles.title}>{isEditing ? '编辑分类' : '新增分类'}</h2>
         <form onSubmit={handleSubmit}>

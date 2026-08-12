@@ -68,7 +68,7 @@ export const RemoteLogModal: React.FC<RemoteLogModalProps> = ({ server, onClose 
   }, [logs, isAutoRefresh]);
 
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.container}>
         <div className={styles.header}>
           <div className={styles.headerText}>

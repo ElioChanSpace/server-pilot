@@ -77,7 +77,7 @@ export const BatchCommandModal: React.FC<BatchCommandModalProps> = ({
   };
 
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.content}>
         <h2 className={styles.title}>批量执行命令</h2>
 

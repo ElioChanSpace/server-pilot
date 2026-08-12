@@ -95,7 +95,7 @@ export const ImportSshConfigModal: React.FC<ImportSshConfigModalProps> = ({ onCl
   };
 
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.content}>
         <h2 className={styles.title}>从 SSH Config 导入</h2>
 

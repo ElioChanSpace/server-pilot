@@ -265,6 +265,30 @@ pub fn update_category_order(
 }
 
 #[tauri::command]
+pub fn move_category(
+    state: State<'_, AppState>,
+    id: String,
+    new_parent_id: Option<String>,
+    new_order: u32,
+) -> Result<(), String> {
+    let mut data = state.data.lock().map_err(|e| e.to_string())?;
+
+    // 防止将分类移入自身或自己的子分类（简单检查：不能移入自己）
+    if Some(&id) == new_parent_id.as_ref() {
+        return Err("不能将分类移入自身".to_string());
+    }
+
+    if let Some(category) = data.categories.iter_mut().find(|c| c.id == id) {
+        category.parent_id = new_parent_id;
+        category.order = new_order;
+    }
+
+    drop(data);
+    state.save()?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     Ok(data.settings.clone())

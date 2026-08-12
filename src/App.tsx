@@ -85,7 +85,7 @@ const AppContent: React.FC = () => {
   const [showFullscreenHint, setShowFullscreenHint] = useState(false);
   const confirmOnDisconnectRef = useRef(true);
 
-  const { connectToServer, disconnectServer, closeTerminalSession, servers, categories } = useServer();
+  const { connectToServer, disconnectServer, closeTerminalSession, servers, categories, refreshCategories, refreshServers } = useServer();
 
   // Independent hooks
   const { terminalOutputs, appendTerminalChunk, resetTerminalOutput, removeTerminalOutputs } = useTerminalOutputs(sessionsRef);
@@ -493,9 +493,16 @@ const AppContent: React.FC = () => {
     if (!confirmed) return;
     try {
       await invoke("delete_category", { id: category.id, moveToUncategorized: true });
+      await refreshCategories();
+      await refreshServers();
     } catch (error) {
       console.error("删除分类失败:", error);
     }
+  }, [refreshCategories, refreshServers]);
+
+  const handleEditCategory = useCallback((category: Category) => {
+    setEditingCategory(category);
+    setIsCategoryModalOpen(true);
   }, []);
 
   const handleCategoryContextMenu = useCallback((event: React.MouseEvent, category: Category | null) => {
@@ -650,6 +657,7 @@ const AppContent: React.FC = () => {
           onCategoryContextMenu={handleCategoryContextMenu}
           onCreateServer={handleCreateServerInCategory}
           onCreateSubCategory={handleCreateSubCategory}
+          onEditCategory={handleEditCategory}
           onConnectServer={handleConnectServer}
           onDisconnectServer={handleDisconnectServer}
           onServerContextMenu={handleServerContextMenu}

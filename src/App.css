@@ -537,10 +537,13 @@ select {
 }
 
 /* 主题选择器样式 */
-.themeDropdown {
-  min-width: 200px;
+.dropdown.themeDropdown {
+  min-width: 160px;
+  max-width: calc(100vw - 32px);
   max-height: 400px;
   overflow-y: auto;
+  left: auto;
+  right: 0;
 }
 
 .themeDropdownHeader {
