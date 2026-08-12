@@ -4,7 +4,7 @@
   z-index: 100;
   display: flex;
   flex-direction: column;
-  background: var(--bg-primary, #1e1e2e);
+  background: var(--bg-primary-opaque, var(--bg-primary, #1e1e2e));
 }
 
 .toolbar {
@@ -12,7 +12,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: var(--bg-secondary, #181825);
+  background: var(--bg-secondary-opaque, var(--bg-secondary, #181825));
   border-bottom: 1px solid var(--border-color, #313244);
   flex-shrink: 0;
 }
@@ -87,7 +87,7 @@
   align-items: center;
   gap: 12px;
   padding: 4px 12px;
-  background: var(--bg-secondary, #181825);
+  background: var(--bg-secondary-opaque, var(--bg-secondary, #181825));
   border-top: 1px solid var(--border-color, #313244);
   font-size: 11px;
   color: var(--text-secondary, #a6adc8);
@@ -114,6 +114,7 @@
   flex: 1;
   position: relative;
   overflow: hidden;
+  background: var(--bg-primary-opaque, var(--bg-primary, #1e1e2e));
 }
 
 .lineNumbers {
@@ -128,7 +129,7 @@
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-muted, #585b70);
-  background: var(--bg-primary, #1e1e2e);
+  background: var(--bg-primary-opaque, var(--bg-primary, #1e1e2e));
   border-right: 1px solid var(--border-color, #313244);
   overflow: hidden;
   user-select: none;
