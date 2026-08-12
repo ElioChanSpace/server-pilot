@@ -192,7 +192,12 @@ pub fn run_ssh_command(
             err.to_string()
         })?;
 
-    let mut cmd = CommandBuilder::new("ssh");
+    let ssh_path = if cfg!(target_os = "windows") {
+        "C:\\Windows\\System32\\OpenSSH\\ssh.exe"
+    } else {
+        "ssh"
+    };
+    let mut cmd = CommandBuilder::new(ssh_path);
     cmd.arg("-p");
     cmd.arg(port.to_string());
     cmd.arg("-o");

@@ -335,7 +335,12 @@ fn run_scp_transfer(
             err.to_string()
         })?;
 
-    let mut cmd = CommandBuilder::new("scp");
+    let scp_path = if cfg!(target_os = "windows") {
+        "C:\\Windows\\System32\\OpenSSH\\scp.exe"
+    } else {
+        "scp"
+    };
+    let mut cmd = CommandBuilder::new(scp_path);
     cmd.arg("-P");
     cmd.arg(port.to_string());
     cmd.arg("-o");
@@ -722,7 +727,12 @@ pub async fn upload_directory_to_server(
             .openpty(PtySize::default())
             .map_err(|err| err.to_string())?;
 
-        let mut cmd = CommandBuilder::new("scp");
+        let scp_path = if cfg!(target_os = "windows") {
+            "C:\\Windows\\System32\\OpenSSH\\scp.exe"
+        } else {
+            "scp"
+        };
+        let mut cmd = CommandBuilder::new(scp_path);
         cmd.arg("-r");  // Recursive copy
         cmd.arg("-P");
         cmd.arg(connection.port.to_string());

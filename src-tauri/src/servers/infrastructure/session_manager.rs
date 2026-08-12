@@ -391,7 +391,12 @@ pub fn start_session(
         .map_err(|e| e.to_string())?;
     let session_id = Uuid::new_v4().to_string();
 
-    let mut cmd = CommandBuilder::new("ssh");
+    let ssh_path = if cfg!(target_os = "windows") {
+        "C:\\Windows\\System32\\OpenSSH\\ssh.exe"
+    } else {
+        "ssh"
+    };
+    let mut cmd = CommandBuilder::new(ssh_path);
     cmd.arg(format!("{}@{}", username, host));
     cmd.arg("-p");
     cmd.arg(port.to_string());
