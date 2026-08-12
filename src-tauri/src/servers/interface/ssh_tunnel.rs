@@ -4,6 +4,8 @@ use crate::servers::infrastructure::credential_store;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
@@ -31,14 +33,33 @@ pub struct CreateTunnelRequest {
     pub remote_port: u16,
 }
 
+struct TunnelEntry {
+    child: Child,
+    askpass_path: Option<PathBuf>,
+}
+
 pub struct TunnelManager {
-    tunnels: Mutex<HashMap<String, Child>>,
+    tunnels: Mutex<HashMap<String, TunnelEntry>>,
 }
 
 impl TunnelManager {
     pub fn new() -> Self {
         Self {
             tunnels: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl Drop for TunnelManager {
+    fn drop(&mut self) {
+        if let Ok(mut tunnels) = self.tunnels.lock() {
+            for (_id, mut entry) in tunnels.drain() {
+                let _ = entry.child.kill();
+                let _ = entry.child.wait();
+                if let Some(path) = entry.askpass_path {
+                    let _ = fs::remove_file(&path);
+                }
+            }
         }
     }
 }
@@ -84,6 +105,7 @@ pub fn create_ssh_tunnel(
         get_server_connection_info(&state, &request.server_id)?;
 
     let tunnel_id = uuid::Uuid::new_v4().to_string();
+    let mut askpass_path: Option<PathBuf> = None;
 
     let mut cmd = Command::new("ssh");
 
@@ -134,14 +156,15 @@ pub fn create_ssh_tunnel(
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let askpass_path = std::env::temp_dir().join(format!("server-pilot-askpass-{}", tunnel_id));
-            std::fs::write(&askpass_path, &askpass_script)
+            let path = std::env::temp_dir().join(format!("server-pilot-askpass-{}", tunnel_id));
+            std::fs::write(&path, &askpass_script)
                 .map_err(|e| format!("Failed to create askpass script: {}", e))?;
-            std::fs::set_permissions(&askpass_path, std::fs::Permissions::from_mode(0o700))
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
                 .map_err(|e| format!("Failed to set askpass permissions: {}", e))?;
 
-            cmd.env("SSH_ASKPASS", &askpass_path);
+            cmd.env("SSH_ASKPASS", &path);
             cmd.env("SSH_ASKPASS_REQUIRE", "force");
+            askpass_path = Some(path);
         }
     }
 
@@ -170,7 +193,7 @@ pub fn create_ssh_tunnel(
         .tunnels
         .lock()
         .map_err(|e| e.to_string())?
-        .insert(tunnel_id.clone(), child);
+        .insert(tunnel_id.clone(), TunnelEntry { child, askpass_path });
 
     info!("SSH tunnel created: {} (PID: {})", tunnel_id, pid);
 
@@ -188,9 +211,12 @@ pub fn close_ssh_tunnel(
 ) -> Result<(), String> {
     let mut tunnels = tunnel_manager.tunnels.lock().map_err(|e| e.to_string())?;
 
-    if let Some(mut child) = tunnels.remove(&tunnel_id) {
-        let _ = child.kill();
-        let _ = child.wait();
+    if let Some(mut entry) = tunnels.remove(&tunnel_id) {
+        let _ = entry.child.kill();
+        let _ = entry.child.wait();
+        if let Some(path) = entry.askpass_path {
+            let _ = fs::remove_file(&path);
+        }
         info!("SSH tunnel closed: {}", tunnel_id);
 
         let _ = app.emit(

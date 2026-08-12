@@ -26,6 +26,11 @@
   --bg-primary: rgba(10, 18, 28, 0.68);
   --bg-secondary: rgba(18, 28, 40, 0.72);
   --bg-elevated: rgba(23, 36, 50, 0.82);
+
+  /* 不透明版本的背景色 */
+  --bg-primary-opaque: rgb(10, 18, 28);
+  --bg-secondary-opaque: rgb(18, 28, 40);
+  --bg-elevated-opaque: rgb(23, 36, 50);
   --glass-bg: rgba(14, 24, 35, 0.62);
   --glass-border: rgba(193, 221, 210, 0.14);
   --border-color: rgba(193, 221, 210, 0.14);
@@ -109,6 +114,7 @@ select {
   flex-direction: column;
   height: 100%;
   width: 100%;
+  position: relative;
 }
 
 .content-wrapper {
@@ -174,6 +180,7 @@ select {
 
 .console-shell .xterm {
   min-width: max-content;
+  height: 100%;
 }
 
 .terminal-drop-overlay {

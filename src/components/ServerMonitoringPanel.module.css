@@ -45,13 +45,14 @@
 .processTable {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .infoTable th,
 .infoTable td,
 .processTable th,
 .processTable td {
-  padding: 12px 10px;
+  padding: 8px 6px;
   border-bottom: 1px solid var(--sidebar-border);
   text-align: left;
   vertical-align: top;
@@ -66,21 +67,23 @@
 .infoTable th,
 .processTable th {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--sidebar-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .infoTable th {
-  width: 120px;
+  width: 35%;
+  min-width: 80px;
 }
 
 .infoTable td,
 .processTable td {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-primary);
   word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .chartContainer {

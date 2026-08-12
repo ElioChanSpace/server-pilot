@@ -1,0 +1,227 @@
+.editorOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary, #1e1e2e);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary, #181825);
+  border-bottom: 1px solid var(--border-color, #313244);
+  flex-shrink: 0;
+}
+
+.toolbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fileName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #cdd6f4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.langBadge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, #313244);
+  color: var(--text-secondary, #a6adc8);
+  white-space: nowrap;
+}
+
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbarButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color, #313244);
+  border-radius: 4px;
+  background: var(--bg-tertiary, #313244);
+  color: var(--text-primary, #cdd6f4);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toolbarButton:hover {
+  background: var(--bg-hover, #45475a);
+}
+
+.toolbarButton.primary {
+  background: var(--accent-color, #89b4fa);
+  color: #11111b;
+  border-color: transparent;
+}
+
+.toolbarButton.primary:hover {
+  opacity: 0.9;
+}
+
+.toolbarButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 12px;
+  background: var(--bg-secondary, #181825);
+  border-top: 1px solid var(--border-color, #313244);
+  font-size: 11px;
+  color: var(--text-secondary, #a6adc8);
+  flex-shrink: 0;
+}
+
+.statusItem {
+  white-space: nowrap;
+}
+
+.statusModified {
+  color: var(--warning-color, #f9e2af);
+}
+
+.statusSaved {
+  color: var(--success-color, #a6e3a1);
+}
+
+.statusError {
+  color: var(--error-color, #f38ba8);
+}
+
+.editorBody {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.lineNumbers {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 52px;
+  padding: 12px 8px 12px 0;
+  text-align: right;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted, #585b70);
+  background: var(--bg-primary, #1e1e2e);
+  border-right: 1px solid var(--border-color, #313244);
+  overflow: hidden;
+  user-select: none;
+  z-index: 1;
+}
+
+.lineNumber {
+  display: block;
+}
+
+.editorContent {
+  position: absolute;
+  left: 52px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.highlightLayer {
+  position: absolute;
+  inset: 0;
+  padding: 12px;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--text-primary, #cdd6f4);
+}
+
+.textareaLayer {
+  position: absolute;
+  inset: 0;
+  padding: 12px;
+  margin: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  z-index: 0;
+  background: transparent;
+  color: var(--text-primary, #cdd6f4);
+  caret-color: var(--text-primary, #cdd6f4);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.textareaLayer::selection {
+  background: rgba(137, 180, 250, 0.3);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary, #a6adc8);
+  font-size: 14px;
+}
+
+.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  color: var(--error-color, #f38ba8);
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.errorRetry {
+  padding: 6px 16px;
+  border: 1px solid var(--border-color, #313244);
+  border-radius: 4px;
+  background: var(--bg-tertiary, #313244);
+  color: var(--text-primary, #cdd6f4);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Syntect theme overrides for base16-ocean.dark */
+.editorContent :global(.editor-code) {
+  margin: 0;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  background: transparent;
+}

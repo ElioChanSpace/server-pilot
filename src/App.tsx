@@ -510,8 +510,14 @@ const AppContent: React.FC = () => {
   const handleDismissError = useCallback(() => setConnectionError(null), []);
   const handleCloseLogViewer = useCallback(() => setIsLogViewerOpen(false), []);
   const toggleLeftSidebar = useCallback(() => { setIsLeftSidebarOpen(prev => !prev); }, []);
-  const toggleRightSidebar = useCallback(() => { setIsRightSidebarOpen(prev => !prev); }, []);
-  const toggleTransferTray = useCallback(() => { setIsTransferTrayOpen(prev => !prev); }, []);
+  const toggleRightSidebar = useCallback(() => {
+    setIsRightSidebarOpen(prev => !prev);
+    setIsTransferTrayOpen(false);
+  }, []);
+  const toggleTransferTray = useCallback(() => {
+    setIsTransferTrayOpen(prev => !prev);
+    setIsRightSidebarOpen(false);
+  }, []);
 
   // Context menu outside click
   useEffect(() => {
@@ -614,7 +620,7 @@ const AppContent: React.FC = () => {
           )}
         </div>
       </div>
-      <FileTransferTray isOpen={isTransferTrayOpen} server={transferTargetServer} />
+      <FileTransferTray isOpen={isTransferTrayOpen} server={transferTargetServer} onClose={toggleTransferTray} />
       <BottomBar
         isLeftSidebarOpen={isLeftSidebarOpen}
         isRightSidebarOpen={isRightSidebarOpen}

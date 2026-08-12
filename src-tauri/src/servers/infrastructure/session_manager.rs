@@ -41,6 +41,7 @@ pub struct Session {
 pub struct SessionManagerState(pub Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>);
 
 const PASSWORD_PROMPT_BUFFER_LIMIT: usize = 2048;
+const PENDING_CWD_BUFFER_LIMIT: usize = 16384;
 const SESSION_MONITOR_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Serialize)]
@@ -278,11 +279,25 @@ fn should_mark_session_connected(output_tail: &str) -> bool {
         || normalized.starts_with("welcome to ")
 }
 
+fn trim_pending_cwd_buffer(buffer: &mut String) {
+    if buffer.len() <= PENDING_CWD_BUFFER_LIMIT {
+        return;
+    }
+    let target = buffer.len().saturating_sub(PENDING_CWD_BUFFER_LIMIT);
+    let keep_from = buffer
+        .char_indices()
+        .find(|(index, _)| *index >= target)
+        .map(|(index, _)| index)
+        .unwrap_or(buffer.len());
+    buffer.drain(..keep_from);
+}
+
 fn process_pending_cwd_output(
     pending_request: &mut PendingCwdRequest,
     chunk: &str,
 ) -> (String, Option<Result<String, String>>) {
     pending_request.buffer.push_str(chunk);
+    trim_pending_cwd_buffer(&mut pending_request.buffer);
 
     let mut display = String::new();
 
@@ -435,10 +450,29 @@ pub fn start_session(
         let mut password_sent = false;
         let mut connected_emitted = false;
         let mut host_key_confirmed = false;
+        let mut remainder: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
                 Ok(n) if n > 0 => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    // Build the full byte slice, prepending any incomplete UTF-8 bytes from last read
+                    let combined;
+                    let raw: &[u8] = if remainder.is_empty() {
+                        &buf[..n]
+                    } else {
+                        combined = [remainder.as_slice(), &buf[..n]].concat();
+                        remainder.clear();
+                        &combined
+                    };
+                    // Find the last valid UTF-8 boundary
+                    let valid_up_to = match std::str::from_utf8(raw) {
+                        Ok(_) => raw.len(),
+                        Err(e) => e.valid_up_to(),
+                    };
+                    let mut data = String::from_utf8_lossy(&raw[..valid_up_to]).to_string();
+                    // Save any remaining incomplete bytes for next read
+                    if valid_up_to < raw.len() {
+                        remainder.extend_from_slice(&raw[valid_up_to..]);
+                    }
                     append_session_output(&reader_session, &data);
                     password_prompt_buffer.push_str(&data);
                     trim_prompt_buffer(&mut password_prompt_buffer);
@@ -568,7 +602,7 @@ pub fn start_session(
                             if let Some(pending_request) = session_guard.pending_cwd_request.as_mut() {
                                 process_pending_cwd_output(pending_request, &data)
                             } else {
-                                (data.clone(), None)
+                                (std::mem::take(&mut data), None)
                             }
                         }
                         Err(err) => {
@@ -576,7 +610,7 @@ pub fn start_session(
                                 "Failed to lock session {} while processing PTY output: {}",
                                 reader_session_id, err
                             );
-                            (data.clone(), None)
+                            (std::mem::take(&mut data), None)
                         }
                     };
 

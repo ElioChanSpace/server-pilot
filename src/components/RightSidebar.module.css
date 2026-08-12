@@ -3,11 +3,12 @@
   min-width: 320px;
   max-width: min(62vw, 840px);
   flex-shrink: 0;
-  background-color: var(--glass-bg);
+  background-color: var(--bg-secondary-opaque, var(--bg-secondary));
   border-left: 1px solid var(--glass-border);
   padding: 18px;
-  overflow: hidden;
-  z-index: 1; /* Match the left sidebar's stacking context */
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 1;
 }
 
 .rightSidebar[data-closed="true"] {
@@ -162,13 +163,13 @@
   display: block;
   font-size: 11px;
   color: var(--text-secondary);
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .summaryValue {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 
 .listSection {

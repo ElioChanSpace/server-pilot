@@ -9,6 +9,20 @@ export const MIN_RIGHT_SIDEBAR_WIDTH = 320;
 export const MAX_RIGHT_SIDEBAR_WIDTH = 840;
 
 /**
+ * 将 rgba 颜色转换为不透明的 rgb 颜色
+ * 例如: rgba(18, 28, 40, 0.72) -> rgb(18, 28, 40)
+ */
+const toOpaque = (color: string): string => {
+  // 匹配 rgba(r, g, b, a) 格式
+  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)/);
+  if (match) {
+    return `rgb(${match[1]}, ${match[2]}, ${match[3]})`;
+  }
+  // 如果已经是 rgb 或其他格式，直接返回
+  return color;
+};
+
+/**
  * 获取初始主题 ID
  */
 export const getInitialThemeId = (): string => {
@@ -66,6 +80,11 @@ export const applyTheme = (theme: AppTheme): void => {
   root.style.setProperty('--bg-elevated', colors.bgElevated);
   root.style.setProperty('--glass-bg', colors.glassBg);
   root.style.setProperty('--glass-border', colors.glassBorder);
+
+  // 生成不透明版本的背景色
+  root.style.setProperty('--bg-primary-opaque', toOpaque(colors.bgPrimary));
+  root.style.setProperty('--bg-secondary-opaque', toOpaque(colors.bgSecondary));
+  root.style.setProperty('--bg-elevated-opaque', toOpaque(colors.bgElevated));
   root.style.setProperty('--border-color', colors.borderColor);
   root.style.setProperty('--shadow-color', colors.shadowColor);
 

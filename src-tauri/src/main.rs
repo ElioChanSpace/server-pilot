@@ -12,11 +12,12 @@ use crate::servers::interface::commands::{
     connect_server, create_category, create_remote_directory, create_server, create_ssh_tunnel,
     delete_category, delete_remote_path, delete_server, disconnect_server,
     download_file_from_server, export_app_data, fetch_server_metrics, generate_ssh_key,
-    get_app_settings, get_categories, get_default_ssh_key_path, get_servers,
-    get_terminal_session_directory, import_app_data, list_remote_directory, list_ssh_keys,
-    list_ssh_tunnels, parse_ssh_config, pty_resize, pty_write, read_app_logs, read_remote_log,
-    rename_remote_path, test_server_connection, update_app_settings, update_category,
-    update_category_order, update_server, upload_directory_to_server, upload_file_to_server,
+    get_app_settings, get_categories, get_default_ssh_key_path, get_file_content, get_servers,
+    get_terminal_session_directory, highlight_code, import_app_data, list_remote_directory,
+    list_ssh_keys, list_ssh_tunnels, parse_ssh_config, pty_resize, pty_write, read_app_logs,
+    read_remote_log, rename_remote_path, save_remote_file, test_server_connection,
+    update_app_settings, update_category, update_category_order, update_server,
+    upload_directory_to_server, upload_file_to_server,
 };
 use crate::servers::infrastructure::session_manager;
 use log::LevelFilter;
@@ -268,7 +269,10 @@ fn main() {
             create_ssh_tunnel,
             close_ssh_tunnel,
             list_ssh_tunnels,
-            check_port_available
+            check_port_available,
+            get_file_content,
+            highlight_code,
+            save_remote_file
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

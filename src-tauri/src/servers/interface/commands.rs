@@ -10,3 +10,4 @@ pub use super::ssh_keys::*;
 pub use super::ssh_tunnel::*;
 pub use super::logs::*;
 pub use super::data::*;
+pub use super::editor::*;

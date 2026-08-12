@@ -15,7 +15,7 @@ use super::util::{
     shell_quote, shell_double_quote, trim_prompt_buffer, should_auto_fill_ssh_password,
     build_remote_scp_argument, command_error_message, join_remote_path,
     read_between_markers, run_ssh_command,
-    SSH_COMMAND_TIMEOUT, FILE_TRANSFER_TIMEOUT,
+    SSH_COMMAND_TIMEOUT, FILE_TRANSFER_TIMEOUT, SSH_OUTPUT_LIMIT,
     DIRECTORY_OUTPUT_START, DIRECTORY_OUTPUT_END,
 };
 
@@ -389,7 +389,14 @@ fn run_scp_transfer(
                 }
 
                 let text = String::from_utf8_lossy(&chunk).to_string();
-                output.push_str(&text);
+                if output.len() < SSH_OUTPUT_LIMIT {
+                    let remaining = SSH_OUTPUT_LIMIT.saturating_sub(output.len());
+                    let mut boundary = remaining.min(text.len());
+                    while boundary > 0 && !text.is_char_boundary(boundary) {
+                        boundary -= 1;
+                    }
+                    output.push_str(&text[..boundary]);
+                }
                 prompt_buffer.push_str(&text);
                 trim_prompt_buffer(&mut prompt_buffer);
 
@@ -738,7 +745,14 @@ pub async fn upload_directory_to_server(
                     }
 
                     let text = String::from_utf8_lossy(&chunk).to_string();
-                    output.push_str(&text);
+                    if output.len() < SSH_OUTPUT_LIMIT {
+                        let remaining = SSH_OUTPUT_LIMIT.saturating_sub(output.len());
+                        let mut boundary = remaining.min(text.len());
+                        while boundary > 0 && !text.is_char_boundary(boundary) {
+                            boundary -= 1;
+                        }
+                        output.push_str(&text[..boundary]);
+                    }
                     prompt_buffer.push_str(&text);
                     trim_prompt_buffer(&mut prompt_buffer);
 

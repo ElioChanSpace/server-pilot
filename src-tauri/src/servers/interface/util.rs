@@ -11,6 +11,8 @@ pub const DIRECTORY_OUTPUT_START: &str = "__SERVER_PILOT_DIRECTORY_START__";
 pub const DIRECTORY_OUTPUT_END: &str = "__SERVER_PILOT_DIRECTORY_END__";
 pub const SSH_COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
 pub const FILE_TRANSFER_TIMEOUT: Duration = Duration::from_secs(120);
+/// Maximum bytes kept from SSH/SCP command stdout to prevent OOM on large output.
+pub const SSH_OUTPUT_LIMIT: usize = 1024 * 1024; // 1 MiB
 
 pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
@@ -250,7 +252,19 @@ pub fn run_ssh_command(
                 }
 
                 let text = String::from_utf8_lossy(&chunk).to_string();
-                output.push_str(&text);
+                if output.len() < SSH_OUTPUT_LIMIT {
+                    let remaining = SSH_OUTPUT_LIMIT.saturating_sub(output.len());
+                    if text.len() <= remaining {
+                        output.push_str(&text);
+                    } else {
+                        // Find a valid char boundary and truncate
+                        let mut boundary = remaining;
+                        while boundary > 0 && !text.is_char_boundary(boundary) {
+                            boundary -= 1;
+                        }
+                        output.push_str(&text[..boundary]);
+                    }
+                }
                 prompt_buffer.push_str(&text);
                 trim_prompt_buffer(&mut prompt_buffer);
 

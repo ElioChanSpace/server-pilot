@@ -9,3 +9,4 @@ pub mod ssh_keys;
 pub mod ssh_tunnel;
 pub mod logs;
 pub mod data;
+pub mod editor;

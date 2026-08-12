@@ -1,22 +1,28 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { open, save, ask } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
-  FaDownload,
+  FaEdit,
   FaFileAlt,
   FaFolder,
   FaFolderPlus,
-  FaRedo,
+  FaSyncAlt,
+  FaTimes,
   FaTrash,
   FaUpload,
+  FaDownload,
 } from "react-icons/fa";
 import { Server } from "../context/ServerContext";
+import { RemoteFileEditor } from "./RemoteFileEditor";
 import styles from "./FileTransferTray.module.css";
+
+/* ── Types ── */
 
 interface FileTransferTrayProps {
   isOpen: boolean;
   server: Server | null;
+  onClose?: () => void;
 }
 
 interface FileTransferResult {
@@ -39,12 +45,6 @@ interface RemoteDirectoryListing {
   entries: RemoteDirectoryEntry[];
 }
 
-interface NormalizedRemoteDirectoryListing {
-  currentPath: string;
-  parentPath: string | null;
-  entries: RemoteDirectoryEntry[];
-}
-
 interface FileTransferProgressEvent {
   transferId: string;
   direction: string;
@@ -59,809 +59,611 @@ interface FileTransferProgressEvent {
   message?: string | null;
 }
 
-interface TransferRecord {
-  transferId: string;
-  fileName: string;
-  direction: "upload" | "download";
-  status: "preparing" | "progress" | "completed" | "failed";
-  progressPercent: number;
-  message: string;
+interface ContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  entry: RemoteDirectoryEntry | null;
 }
 
-const getBaseName = (filePath: string) => {
-  const segments = filePath.split(/[\\/]/).filter(Boolean);
-  return segments[segments.length - 1] ?? "file";
-};
+/* ── Helpers ── */
 
-const joinRemotePath = (basePath: string, name: string) => {
-  if (basePath === "/") {
-    return `/${name}`;
-  }
-
-  return `${basePath.replace(/\/+$/, "")}/${name}`;
-};
+const joinRemotePath = (base: string, name: string) =>
+  base === "/" ? `/${name}` : `${base.replace(/\/+$/, "")}/${name}`;
 
 const formatFileSize = (size: number) => {
-  if (!Number.isFinite(size) || size <= 0) {
-    return "-";
-  }
-
-  const units = ["字节", "KB", "MB", "GB"];
-  let value = size;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+  if (!Number.isFinite(size) || size <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let v = size, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v >= 10 || i === 0 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
 };
 
-const getErrorMessage = (error: unknown) => {
-  if (typeof error === "string") {
-    return error;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "文件传输失败，请稍后重试。";
-};
-
-const buildBreadcrumbs = (path: string) => {
-  if (path === "/") {
-    return [{ label: "/", path: "/" }];
-  }
-
-  const segments = path.split("/").filter(Boolean);
-  return [
-    { label: "/", path: "/" },
-    ...segments.map((segment, index) => ({
-      label: segment,
-      path: `/${segments.slice(0, index + 1).join("/")}`,
-    })),
-  ];
-};
+const getErrorMessage = (error: unknown) =>
+  typeof error === "string" ? error : error instanceof Error ? error.message : "操作失败，请稍后重试。";
 
 const normalizeRemotePath = (path: string) => {
-  if (!path.trim()) {
-    return "/";
-  }
-
-  const normalized = path.replace(/\/+/g, "/");
-  return normalized.length > 1 ? normalized.replace(/\/$/, "") : normalized;
+  if (!path.trim()) return "/";
+  const n = path.replace(/\/+/g, "/");
+  return n.length > 1 ? n.replace(/\/$/, "") : n;
 };
 
-const normalizeDirectoryListing = (listing: RemoteDirectoryListing): NormalizedRemoteDirectoryListing => ({
-  currentPath: normalizeRemotePath(listing.currentPath),
-  parentPath: listing.parentPath ? normalizeRemotePath(listing.parentPath) : null,
-  entries: listing.entries.map(entry => ({
-    ...entry,
-    path: normalizeRemotePath(entry.path),
-  })),
-});
+/* ── Component ── */
 
-const createTransferId = () =>
-  `tray-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, server, onClose }) => {
+  /* ── State ── */
+  const [currentPath, setCurrentPath] = useState("/");
+  const [parentPath, setParentPath] = useState<string | null>(null);
+  const [entries, setEntries] = useState<RemoteDirectoryEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
 
-export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, server }) => {
-  const [uploadRemotePath, setUploadRemotePath] = useState("");
-  const [downloadRemotePath, setDownloadRemotePath] = useState("");
-  const [transferStatus, setTransferStatus] = useState<string | null>(null);
-  const [transferError, setTransferError] = useState<string | null>(null);
-  const [activeTransfer, setActiveTransfer] = useState<"upload" | "download" | null>(null);
-  const [transfers, setTransfers] = useState<TransferRecord[]>([]);
-  const [remoteBrowserPath, setRemoteBrowserPath] = useState("");
-  const [remoteBrowserParentPath, setRemoteBrowserParentPath] = useState<string | null>(null);
-  const [remoteEntries, setRemoteEntries] = useState<RemoteDirectoryEntry[]>([]);
-  const [remoteBrowserError, setRemoteBrowserError] = useState<string | null>(null);
-  const [isLoadingRemoteEntries, setIsLoadingRemoteEntries] = useState(false);
-  const [isCreatingDirectory, setIsCreatingDirectory] = useState(false);
-  const [newDirectoryName, setNewDirectoryName] = useState("");
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, entry: null });
+
+  // Inline forms
+  const [showNewDir, setShowNewDir] = useState(false);
+  const [newDirName, setNewDirName] = useState("");
   const [renamingEntry, setRenamingEntry] = useState<RemoteDirectoryEntry | null>(null);
   const [renameInput, setRenameInput] = useState("");
-  const activeDirectoryRequestRef = useRef(0);
 
-  const isLinux = server?.osType === "linux";
-  const hasSavedPassword = Boolean(server?.hasPassword);
-  const usesKeyAuth = server?.authMethod === "key";
-  const canTransferFiles = Boolean(server) && isLinux && (hasSavedPassword || usesKeyAuth);
-  const transferHint = !server
-    ? "先在左侧或会话区域选中一台服务器，再使用底部文件传输模块。"
-    : !isLinux
-      ? "当前仅支持 Linux 服务器传输文件。"
-      : !hasSavedPassword && !usesKeyAuth
-        ? "请先为当前服务器保存 SSH 密码或密钥，再执行上传或下载。"
-        : "支持本地与服务器之间的多文件上传、下载，并可按目录层级浏览远程文件。";
+  // Editor
+  const [editingFile, setEditingFile] = useState<{ serverId: string; path: string } | null>(null);
 
-  const updateTransfer = (transferId: string, patch: Partial<TransferRecord>) => {
-    setTransfers(prev => prev.map(record => (
-      record.transferId === transferId ? { ...record, ...patch } : record
-    )));
+  // Resize
+  const [panelWidth, setPanelWidth] = useState(420);
+  const [columnWidths, setColumnWidths] = useState({ name: 200, size: 70, actions: 120 });
+
+  // Transfer tracking
+  const [transfers, setTransfers] = useState<Map<string, { name: string; status: string; percent: number }>>(new Map());
+
+  const requestRef = useRef(0);
+  const contextRef = useRef<HTMLDivElement>(null);
+  const pathInputRef = useRef<HTMLInputElement>(null);
+  const newDirRef = useRef<HTMLInputElement>(null);
+  const renameRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const canOperate = Boolean(server) && server?.osType === "linux" && (server?.hasPassword || server?.authMethod === "key");
+
+  /* ── Resize handler ── */
+  const handleResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const delta = startX - moveEvent.clientX;
+      const newWidth = Math.min(Math.max(320, startWidth + delta), 840);
+      setPanelWidth(newWidth);
+    };
+
+    const handleUp = () => {
+      document.removeEventListener("pointermove", handleMove);
+      document.removeEventListener("pointerup", handleUp);
+    };
+
+    document.addEventListener("pointermove", handleMove);
+    document.addEventListener("pointerup", handleUp);
+  }, [panelWidth]);
+
+  /* ── Column resize handler ── */
+  const handleColumnResizeStart = useCallback((e: React.PointerEvent, column: "name" | "size" | "actions") => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidths = { ...columnWidths };
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const delta = moveEvent.clientX - startX;
+      setColumnWidths(prev => {
+        const newWidths = { ...prev };
+        if (column === "name") {
+          newWidths.name = Math.min(Math.max(100, startWidths.name + delta), panelWidth - prev.size - prev.actions - 40);
+        } else if (column === "size") {
+          newWidths.size = Math.min(Math.max(50, startWidths.size + delta), 150);
+        } else if (column === "actions") {
+          newWidths.actions = Math.min(Math.max(90, startWidths.actions + delta), 200);
+        }
+        return newWidths;
+      });
+    };
+
+    const handleUp = () => {
+      document.removeEventListener("pointermove", handleMove);
+      document.removeEventListener("pointerup", handleUp);
+    };
+
+    document.addEventListener("pointermove", handleMove);
+    document.addEventListener("pointerup", handleUp);
+  }, [columnWidths, panelWidth]);
+
+  /* ── Fetch directory ── */
+  const loadDirectory = async (path: string) => {
+    if (!server || !canOperate) return;
+    const reqId = ++requestRef.current;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const listing = await invoke<RemoteDirectoryListing>("list_remote_directory", { id: server.id, path });
+      if (reqId !== requestRef.current) return;
+      const norm = normalizeRemotePath(listing.currentPath);
+      setCurrentPath(norm);
+      setParentPath(listing.parentPath ? normalizeRemotePath(listing.parentPath) : null);
+      const sorted = [...listing.entries].sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      setEntries(sorted);
+      setSelected(null);
+    } catch (err) {
+      if (reqId === requestRef.current) setError(getErrorMessage(err));
+    } finally {
+      if (reqId === requestRef.current) setIsLoading(false);
+    }
   };
 
-  const loadRemoteDirectory = React.useCallback(async (
-    path: string,
-    options?: { activate?: boolean }
-  ) => {
-    if (!server || !canTransferFiles) {
-      return;
-    }
-
-    const activate = options?.activate ?? true;
-    const requestedPath = path.trim() ? normalizeRemotePath(path) : "";
-    const requestId = activate ? activeDirectoryRequestRef.current + 1 : activeDirectoryRequestRef.current;
-
-    if (activate) {
-      activeDirectoryRequestRef.current = requestId;
-      setIsLoadingRemoteEntries(true);
-      setRemoteBrowserError(null);
-      setRemoteBrowserPath(requestedPath);
-    }
-
-    try {
-      const listing = await invoke<RemoteDirectoryListing>("list_remote_directory", {
-        id: server.id,
-        path: requestedPath,
-      });
-
-      if (activate && requestId !== activeDirectoryRequestRef.current) {
-        return;
-      }
-
-      const normalizedListing = normalizeDirectoryListing(listing);
-      const { currentPath, parentPath, entries } = normalizedListing;
-
-      if (activate) {
-        setRemoteBrowserPath(currentPath);
-        setRemoteBrowserParentPath(parentPath);
-        setRemoteEntries(entries);
-      }
-    } catch (error) {
-      if (activate) {
-        setRemoteBrowserError(getErrorMessage(error));
-      }
-    } finally {
-      if (activate && requestId === activeDirectoryRequestRef.current) {
-        setIsLoadingRemoteEntries(false);
-      }
-    }
-  }, [canTransferFiles, server]);
-
   useEffect(() => {
-    activeDirectoryRequestRef.current += 1;
-    setUploadRemotePath("");
-    setDownloadRemotePath("");
-    setTransferStatus(null);
-    setTransferError(null);
-    setActiveTransfer(null);
-    setRemoteBrowserPath("");
-    setRemoteBrowserParentPath(null);
-    setRemoteEntries([]);
-    setRemoteBrowserError(null);
-    setIsLoadingRemoteEntries(false);
-    setIsCreatingDirectory(false);
-    setNewDirectoryName("");
-    setRenamingEntry(null);
-
-    if (server && canTransferFiles && isOpen) {
-      void loadRemoteDirectory("");
+    if (isOpen && server && canOperate) {
+      loadDirectory("/");
+    } else {
+      setEntries([]);
+      setCurrentPath("/");
+      setError(null);
     }
-  }, [canTransferFiles, isOpen, loadRemoteDirectory, server]);
+  }, [isOpen, server?.id, canOperate]);
 
+  /* ── Progress events ── */
   useEffect(() => {
-    if (!isOpen || !server) {
-      return;
-    }
-
+    if (!isOpen || !server) return;
     let mounted = true;
-    const unlistenPromise = listen<FileTransferProgressEvent>("file-transfer-progress", event => {
-      if (!mounted) {
-        return;
-      }
-      const payload = event.payload;
-      updateTransfer(payload.transferId, {
-        status: payload.status,
-        progressPercent: payload.progressPercent,
-        message: payload.message ?? undefined,
+    const unlisten = listen<FileTransferProgressEvent>("file-transfer-progress", (event) => {
+      if (!mounted) return;
+      const p = event.payload;
+      setTransfers(prev => {
+        const next = new Map(prev);
+        next.set(p.transferId, {
+          name: p.remotePath.split("/").pop() || p.remotePath,
+          status: p.status,
+          percent: p.progressPercent,
+        });
+        if (p.status === "completed" || p.status === "failed") {
+          setTimeout(() => {
+            setTransfers(cur => { const n = new Map(cur); n.delete(p.transferId); return n; });
+          }, 3000);
+        }
+        return next;
       });
     });
-
-    return () => {
-      mounted = false;
-      void unlistenPromise.then(unlisten => unlisten());
-    };
+    return () => { mounted = false; void unlisten.then(fn => fn()); };
   }, [isOpen, server]);
 
-  if (!isOpen) {
-    return null;
-  }
+  /* ── Context menu dismiss ── */
+  useEffect(() => {
+    if (!contextMenu.visible) return;
+    const handler = (e: MouseEvent) => {
+      if (contextRef.current && !contextRef.current.contains(e.target as Node)) {
+        setContextMenu({ visible: false, x: 0, y: 0, entry: null });
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [contextMenu.visible]);
 
-  const breadcrumbs = buildBreadcrumbs(remoteBrowserPath);
+  /* ── Focus inline inputs ── */
+  useEffect(() => { if (showNewDir) newDirRef.current?.focus(); }, [showNewDir]);
+  useEffect(() => { if (renamingEntry) renameRef.current?.focus(); }, [renamingEntry]);
 
-  const handleSelectDirectory = async (path: string) => {
-    setDownloadRemotePath("");
-    setTransferError(null);
-    setRenamingEntry(null);
-    await loadRemoteDirectory(path, { activate: true });
+  /* ── Keyboard ── */
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!isOpen) return;
+      if (e.key === "Escape") {
+        if (contextMenu.visible) setContextMenu({ visible: false, x: 0, y: 0, entry: null });
+        else if (showNewDir) setShowNewDir(false);
+        else if (renamingEntry) setRenamingEntry(null);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [isOpen, contextMenu.visible, showNewDir, renamingEntry]);
+
+  /* ── Navigation ── */
+  const navigateTo = (path: string) => loadDirectory(path);
+  const goUp = () => { if (parentPath) navigateTo(parentPath); };
+  const handlePathKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      const val = (e.target as HTMLInputElement).value.trim();
+      if (val) navigateTo(val.startsWith("/") ? val : `/${val}`);
+    }
   };
 
-  const handleUpload = async () => {
-    if (!server || !canTransferFiles) {
-      setTransferError(transferHint);
-      return;
-    }
-
-    const selected = await open({
-      directory: false,
-      multiple: true,
-      title: "选择要上传的本地文件",
-    });
-
-    if (!selected) {
-      return;
-    }
-
+  /* ── File operations ── */
+  const handleUploadFile = async () => {
+    if (!server || !canOperate) return;
+    const selected = await open({ directory: false, multiple: true, title: "选择要上传的文件" });
+    if (!selected) return;
     const paths = Array.isArray(selected) ? selected : [selected];
-    if (paths.length === 0) {
-      return;
-    }
-
-    setTransferStatus(null);
-    setTransferError(null);
-    setActiveTransfer("upload");
-
     for (const localPath of paths) {
-      const fileName = getBaseName(localPath);
-      const remotePath = uploadRemotePath.trim() || joinRemotePath(remoteBrowserPath || "/tmp", fileName);
-      const transferId = createTransferId();
-
-      setTransfers(prev => [
-        ...prev,
-        {
-          transferId,
-          fileName,
-          direction: "upload",
-          status: "preparing",
-          progressPercent: 0,
-          message: "准备上传",
-        },
-      ]);
-
+      const fileName = localPath.split(/[\\/]/).pop() || "file";
+      const remotePath = joinRemotePath(currentPath, fileName);
+      const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       try {
-        await invoke<FileTransferResult>("upload_file_to_server", {
-          id: server.id,
-          localPath,
-          remotePath,
-          transferId,
-        });
-        updateTransfer(transferId, { status: "completed", progressPercent: 100, message: "上传完成" });
-      } catch (error) {
-        updateTransfer(transferId, { status: "failed", message: getErrorMessage(error) });
-      }
+        await invoke<FileTransferResult>("upload_file_to_server", { id: server.id, localPath, remotePath, transferId });
+      } catch { /* tracked via events */ }
     }
-
-    setActiveTransfer(null);
+    loadDirectory(currentPath);
   };
 
   const handleUploadDirectory = async () => {
-    if (!server || !canTransferFiles) {
-      setTransferError(transferHint);
-      return;
-    }
-
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "选择要上传的本地文件夹",
-    });
-
-    if (!selected || typeof selected !== "string") {
-      return;
-    }
-
-    const dirName = getBaseName(selected);
-    const remotePath = uploadRemotePath.trim() || joinRemotePath(remoteBrowserPath || "/tmp", dirName);
-    const transferId = createTransferId();
-
-    setTransferStatus(null);
-    setTransferError(null);
-    setActiveTransfer("upload");
-
-    setTransfers(prev => [
-      ...prev,
-      {
-        transferId,
-        fileName: dirName,
-        direction: "upload",
-        status: "preparing",
-        progressPercent: 0,
-        message: "准备上传目录",
-      },
-    ]);
-
+    if (!server || !canOperate) return;
+    const selected = await open({ directory: true, multiple: false, title: "选择要上传的目录" });
+    if (!selected || typeof selected !== "string") return;
+    const dirName = selected.split(/[\\/]/).pop() || "dir";
+    const remotePath = joinRemotePath(currentPath, dirName);
+    const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      const result = await invoke<FileTransferResult>("upload_directory_to_server", {
-        id: server.id,
-        localPath: selected,
-        remotePath,
-        transferId,
-      });
-      updateTransfer(transferId, { status: "completed", progressPercent: 100, message: "目录上传完成" });
-      setTransferStatus(result.message);
-    } catch (error) {
-      updateTransfer(transferId, { status: "failed", message: getErrorMessage(error) });
-      setTransferError(getErrorMessage(error));
-    } finally {
-      setActiveTransfer(null);
-    }
+      await invoke<FileTransferResult>("upload_directory_to_server", { id: server.id, localPath: selected, remotePath, transferId });
+    } catch { /* tracked via events */ }
+    loadDirectory(currentPath);
   };
 
-  const handleDownload = async () => {
-    if (!server || !canTransferFiles) {
-      setTransferError(transferHint);
-      return;
-    }
-
-    const remotePath = downloadRemotePath.trim();
-    if (!remotePath) {
-      setTransferError("请先在下方目录中选择远程文件。");
-      return;
-    }
-
-    const selected = await save({
-      title: "选择保存位置",
-      defaultPath: getBaseName(remotePath),
-    });
-
-    if (typeof selected !== "string") {
-      return;
-    }
-
-    setTransferStatus(null);
-    setTransferError(null);
-    setActiveTransfer("download");
-
-    const transferId = createTransferId();
-    const fileName = getBaseName(remotePath);
-
-    setTransfers(prev => [
-      ...prev,
-      {
-        transferId,
-        fileName,
-        direction: "download",
-        status: "preparing",
-        progressPercent: 0,
-        message: "准备下载",
-      },
-    ]);
-
+  const handleDownload = async (entry: RemoteDirectoryEntry) => {
+    if (!server || !canOperate || entry.isDir) return;
+    const savePath = await save({ title: "选择保存位置", defaultPath: entry.name });
+    if (typeof savePath !== "string") return;
+    const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      const result = await invoke<FileTransferResult>("download_file_from_server", {
-        id: server.id,
-        remotePath,
-        localPath: selected,
-        transferId,
-      });
-      updateTransfer(transferId, { status: "completed", progressPercent: 100, message: "下载完成" });
-      setTransferStatus(result.message);
-    } catch (error) {
-      updateTransfer(transferId, { status: "failed", message: getErrorMessage(error) });
-      setTransferError(getErrorMessage(error));
-    } finally {
-      setActiveTransfer(null);
-    }
+      await invoke<FileTransferResult>("download_file_from_server", { id: server.id, remotePath: entry.path, localPath: savePath, transferId });
+    } catch { /* tracked via events */ }
   };
 
-  const handleCreateDirectory = async () => {
-    const name = newDirectoryName.trim();
-    if (!server || !name) {
-      return;
-    }
-
+  const handleCreateDir = async () => {
+    const name = newDirName.trim();
+    if (!server || !name) return;
     try {
-      await invoke("create_remote_directory", {
-        id: server.id,
-        path: joinRemotePath(remoteBrowserPath, name),
-      });
-      setIsCreatingDirectory(false);
-      setNewDirectoryName("");
-      await loadRemoteDirectory(remoteBrowserPath);
-    } catch (error) {
-      setRemoteBrowserError(getErrorMessage(error));
+      await invoke("create_remote_directory", { id: server.id, path: joinRemotePath(currentPath, name) });
+      setShowNewDir(false);
+      setNewDirName("");
+      loadDirectory(currentPath);
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   };
 
   const handleRename = async () => {
     const name = renameInput.trim();
-    if (!server || !renamingEntry || !name) {
+    if (!server || !renamingEntry || !name || name === renamingEntry.name) {
+      setRenamingEntry(null);
       return;
     }
-
     try {
-      await invoke("rename_remote_path", {
-        id: server.id,
-        path: renamingEntry.path,
-        newPath: joinRemotePath(remoteBrowserPath, name),
-      });
+      await invoke("rename_remote_path", { id: server.id, path: renamingEntry.path, newPath: joinRemotePath(currentPath, name) });
       setRenamingEntry(null);
-      setRenameInput("");
-      await loadRemoteDirectory(remoteBrowserPath);
-    } catch (error) {
-      setRemoteBrowserError(getErrorMessage(error));
+      loadDirectory(currentPath);
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   };
 
   const handleDelete = async (entry: RemoteDirectoryEntry) => {
-    if (!server) {
-      return;
-    }
-
-    const confirmed = await ask(
-      `确定要删除远程路径 ${entry.path} 吗？${entry.isDir ? "目录会连同内容一并删除。" : ""}`,
-      "删除确认",
-    );
-    if (!confirmed) {
-      return;
-    }
-
+    if (!server) return;
+    const confirmed = await ask(`确定要删除 ${entry.path} 吗？${entry.isDir ? "目录内容将一并删除。" : ""}`, { title: "删除确认", kind: "warning" });
+    if (!confirmed) return;
     try {
-      await invoke("delete_remote_path", {
-        id: server.id,
-        path: entry.path,
-        isDir: entry.isDir,
-      });
-      if (downloadRemotePath === entry.path) {
-        setDownloadRemotePath("");
-      }
-      await loadRemoteDirectory(remoteBrowserPath);
-    } catch (error) {
-      setRemoteBrowserError(getErrorMessage(error));
+      await invoke("delete_remote_path", { id: server.id, path: entry.path, isDir: entry.isDir });
+      if (selected === entry.path) setSelected(null);
+      loadDirectory(currentPath);
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   };
 
-  const clearFinishedTransfers = () => {
-    setTransfers(prev => prev.filter(record => (
-      record.status !== "completed" && record.status !== "failed"
-    )));
+  const handleEdit = (entry: RemoteDirectoryEntry) => {
+    if (server) setEditingFile({ serverId: server.id, path: entry.path });
   };
+
+  /* ── Context menu ── */
+  const openContextMenu = (e: React.MouseEvent, entry: RemoteDirectoryEntry) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelected(entry.path);
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, entry });
+  };
+
+  /* ── Row interaction ── */
+  const handleRowClick = (entry: RemoteDirectoryEntry) => {
+    setSelected(entry.path);
+    if (entry.isDir) navigateTo(entry.path);
+  };
+
+  const handleRowDoubleClick = (entry: RemoteDirectoryEntry) => {
+    if (!entry.isDir) handleEdit(entry);
+  };
+
+  /* ── Editor overlay ── */
+  if (editingFile) {
+    return (
+      <RemoteFileEditor
+        serverId={editingFile.serverId}
+        filePath={editingFile.path}
+        onClose={() => setEditingFile(null)}
+        onSaved={() => loadDirectory(currentPath)}
+      />
+    );
+  }
+
+  const totalSize = entries.reduce((sum, e) => sum + (e.isDir ? 0 : e.size), 0);
+  const activeTransfers = Array.from(transfers.values()).filter(t => t.status === "progress" || t.status === "preparing");
 
   return (
-    <div className={styles.tray}>
+    <div
+      ref={panelRef}
+      className={styles.panel}
+      data-closed={!isOpen}
+      data-slot="file-transfer"
+      style={{ width: isOpen ? panelWidth : 0 }}
+    >
+      {/* Resize handle */}
+      {isOpen && (
+        <div
+          className={styles.resizeHandle}
+          onPointerDown={handleResizeStart}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整文件面板宽度"
+        />
+      )}
+
+      {/* ── Header ── */}
       <div className={styles.header}>
-        <div>
-          <h3>文件传输</h3>
-          <p className={styles.headerMeta}>
-            {server ? `${server.name} · ${server.username}@${server.host}:${server.port}` : "未选择服务器"}
-          </p>
-        </div>
-        <span className={styles.headerTag}>文件传输</span>
+        <span className={styles.headerTitle}>文件传输</span>
+        {onClose && (
+          <button className={styles.headerClose} onClick={onClose} title="关闭">
+            <FaTimes size={12} />
+          </button>
+        )}
       </div>
 
-      {transfers.length > 0 && (
-        <div className={styles.transferList}>
-          <div className={styles.transfersHeader}>
-            <span>传输记录（{transfers.filter(t => t.status === "progress" || t.status === "preparing").length} 个进行中）</span>
-            <button
-              type="button"
-              className={styles.clearTransfersButton}
-              onClick={clearFinishedTransfers}
-            >
-              清除已完成
-            </button>
-          </div>
-          {transfers.map(record => (
-            <div key={record.transferId} className={styles.transferItem} data-status={record.status}>
-              <div className={styles.transferItemTop}>
-                <span className={styles.transferItemName}>
-                  {record.direction === "upload" ? <FaUpload size={11} /> : <FaDownload size={11} />}
-                  {record.fileName}
-                </span>
-                <span className={styles.transferItemStatus}>
-                  {record.status === "completed" ? "完成" : record.status === "failed" ? "失败" : `${record.progressPercent}%`}
-                </span>
-              </div>
-              {record.status === "progress" && (
-                <div className={styles.transferItemBar}>
-                  <div style={{ width: `${record.progressPercent}%` }} />
-                </div>
-              )}
-              <div className={styles.transferItemMessage}>{record.message}</div>
+      {/* ── Path bar ── */}
+      <div className={styles.pathBar}>
+        <button className={styles.pathButton} onClick={goUp} disabled={!parentPath} title="返回上级">
+          ←
+        </button>
+        <input
+          ref={pathInputRef}
+          className={styles.pathInput}
+          value={currentPath}
+          onChange={(e) => setCurrentPath(e.target.value)}
+          onKeyDown={handlePathKeyDown}
+          placeholder="输入路径并回车跳转"
+        />
+      </div>
+
+      {/* ── Toolbar ── */}
+      <div className={styles.toolbar}>
+        <button className={styles.toolButton} onClick={handleUploadFile} disabled={!canOperate} title="上传文件">
+          <FaUpload size={12} /> <span>上传文件</span>
+        </button>
+        <button className={styles.toolButton} onClick={handleUploadDirectory} disabled={!canOperate} title="上传目录">
+          <FaFolderPlus size={12} /> <span>上传目录</span>
+        </button>
+        <button className={styles.toolButton} onClick={() => setShowNewDir(true)} disabled={!canOperate} title="新建文件夹">
+          <FaFolderPlus size={12} />
+        </button>
+        <div className={styles.toolSpacer} />
+        <button className={styles.toolButton} onClick={() => loadDirectory(currentPath)} disabled={isLoading || !canOperate} title="刷新">
+          <FaSyncAlt size={12} />
+        </button>
+      </div>
+
+      {/* ── New directory form ── */}
+      {showNewDir && (
+        <div className={styles.inlineForm}>
+          <input
+            ref={newDirRef}
+            className={styles.inlineInput}
+            placeholder="文件夹名称"
+            value={newDirName}
+            onChange={(e) => setNewDirName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCreateDir();
+              if (e.key === "Escape") setShowNewDir(false);
+            }}
+          />
+          <button className={styles.inlineButton} onClick={handleCreateDir}>创建</button>
+          <button className={styles.inlineCancelButton} onClick={() => setShowNewDir(false)}>取消</button>
+        </div>
+      )}
+
+      {/* ── Active transfers ── */}
+      {activeTransfers.length > 0 && (
+        <div className={styles.transferBar}>
+          {activeTransfers.map((t, i) => (
+            <div key={i} className={styles.transferItem}>
+              <FaDownload size={10} />
+              <span className={styles.transferName}>{t.name}</span>
+              <span>{t.percent}%</span>
             </div>
           ))}
         </div>
       )}
 
-      <div className={styles.controlBar}>
-        <div className={styles.infoPill}>
-          <span className={styles.infoLabel}>目标服务器</span>
-          <strong>{server ? server.name : "未选择"}</strong>
+      {/* ── Error ── */}
+      {error && (
+        <div className={styles.errorBanner}>
+          <span className={styles.errorMessage}>{error}</span>
+          <button className={styles.errorDismiss} onClick={() => setError(null)}>×</button>
         </div>
-        <div className={styles.infoPill}>
-          <span className={styles.infoLabel}>当前目录</span>
-          <strong>{remoteBrowserPath}</strong>
+      )}
+
+      {/* ── File table ── */}
+      <div className={styles.fileTable}>
+        <div className={styles.tableHeader}>
+          <span style={{ width: columnWidths.name }} className={styles.colName}>
+            名称
+            <div
+              className={styles.colResizeHandle}
+              onPointerDown={(e) => handleColumnResizeStart(e, "name")}
+            />
+          </span>
+          <span style={{ width: columnWidths.size }} className={styles.colSize}>
+            大小
+            <div
+              className={styles.colResizeHandle}
+              onPointerDown={(e) => handleColumnResizeStart(e, "size")}
+            />
+          </span>
+          <span style={{ width: columnWidths.actions }} className={styles.colActions}>
+            操作
+          </span>
         </div>
-        <div className={styles.infoPill}>
-          <span className={styles.infoLabel}>已选文件</span>
-          <strong>{downloadRemotePath || "未选择"}</strong>
-        </div>
-      </div>
-
-      <div className={styles.browserCard}>
-        <div className={styles.browserTopBar}>
-          <p className={styles.transferHint}>{transferHint}</p>
-
-          <div className={styles.actionGrid}>
-            <label className={styles.fieldBlock}>
-              <span>上传目标</span>
-              <input
-                type="text"
-                value={uploadRemotePath}
-                onChange={event => setUploadRemotePath(event.target.value)}
-                placeholder="留空时自动使用当前目录/文件名"
-                disabled={!server}
-              />
-            </label>
-
-            <label className={styles.fieldBlock}>
-              <span>已选文件</span>
-              <input
-                type="text"
-                value={downloadRemotePath}
-                readOnly
-                placeholder="请在下方目录中选择远程文件"
-                disabled={!server}
-              />
-            </label>
-
-            <div className={styles.transferActions}>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={() => {
-                  void handleUpload();
-                }}
-                disabled={activeTransfer !== null || !canTransferFiles}
-              >
-                <FaUpload />
-                <span>{activeTransfer === "upload" ? "上传中..." : "上传文件"}</span>
-              </button>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={() => {
-                  void handleUploadDirectory();
-                }}
-                disabled={activeTransfer !== null || !canTransferFiles}
-              >
-                <FaFolder />
-                <span>{activeTransfer === "upload" ? "上传中..." : "上传目录"}</span>
-              </button>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={() => {
-                  void handleDownload();
-                }}
-                disabled={activeTransfer !== null || !canTransferFiles}
-              >
-                <FaDownload />
-                <span>{activeTransfer === "download" ? "下载中..." : "下载选中文件"}</span>
-              </button>
+        <div className={styles.tableBody}>
+          {!canOperate ? (
+            <div className={styles.emptyState}>
+              {!server ? "请先选择一台服务器" : server.osType !== "linux" ? "仅支持 Linux 服务器" : "请先保存 SSH 密码或密钥"}
             </div>
-          </div>
-      </div>
-        <div className={styles.browserToolbar}>
-          <button
-            type="button"
-            className={styles.browserButton}
-            onClick={() => {
-              if (remoteBrowserParentPath) {
-                void loadRemoteDirectory(remoteBrowserParentPath);
-              }
-            }}
-            disabled={!remoteBrowserParentPath || isLoadingRemoteEntries || !canTransferFiles}
-          >
-            返回上级
-          </button>
-          <button
-            type="button"
-            className={styles.browserButton}
-            onClick={() => {
-              void loadRemoteDirectory(remoteBrowserPath);
-            }}
-            disabled={isLoadingRemoteEntries || !canTransferFiles}
-          >
-            <FaRedo />
-            <span>刷新</span>
-          </button>
-          <button
-            type="button"
-            className={styles.browserButton}
-            onClick={() => {
-              setIsCreatingDirectory(true);
-              setNewDirectoryName("");
-            }}
-            disabled={!canTransferFiles}
-          >
-            <FaFolderPlus />
-            <span>新建目录</span>
-          </button>
-        </div>
-
-        {isCreatingDirectory && (
-          <div className={styles.inlineForm}>
-            <input
-              type="text"
-              value={newDirectoryName}
-              onChange={event => setNewDirectoryName(event.target.value)}
-              placeholder="目录名称"
-              autoFocus
-              onKeyDown={event => {
-                if (event.key === "Enter") {
-                  void handleCreateDirectory();
-                } else if (event.key === "Escape") {
-                  setIsCreatingDirectory(false);
-                }
-              }}
-            />
-            <button
-              type="button"
-              className={styles.browserButton}
-              onClick={() => void handleCreateDirectory()}
-              disabled={!newDirectoryName.trim()}
-            >
-              创建
-            </button>
-            <button
-              type="button"
-              className={styles.browserButton}
-              onClick={() => setIsCreatingDirectory(false)}
-            >
-              取消
-            </button>
-          </div>
-        )}
-
-        {renamingEntry && (
-          <div className={styles.inlineForm}>
-            <input
-              type="text"
-              value={renameInput}
-              onChange={event => setRenameInput(event.target.value)}
-              placeholder="新名称"
-              autoFocus
-              onKeyDown={event => {
-                if (event.key === "Enter") {
-                  void handleRename();
-                } else if (event.key === "Escape") {
-                  setRenamingEntry(null);
-                }
-              }}
-            />
-            <button
-              type="button"
-              className={styles.browserButton}
-              onClick={() => void handleRename()}
-              disabled={!renameInput.trim()}
-            >
-              重命名
-            </button>
-            <button
-              type="button"
-              className={styles.browserButton}
-              onClick={() => setRenamingEntry(null)}
-            >
-              取消
-            </button>
-          </div>
-        )}
-
-        <div className={styles.breadcrumbs}>
-          {breadcrumbs.map(item => (
-            <button
-              key={item.path}
-              type="button"
-              className={styles.breadcrumbButton}
-              data-active={item.path === remoteBrowserPath}
-              onClick={() => {
-                void handleSelectDirectory(item.path);
-              }}
-              disabled={!canTransferFiles}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        {remoteBrowserError && (
-          <div className={styles.feedback} data-tone="error">
-            {remoteBrowserError}
-          </div>
-        )}
-
-        <div className={styles.browserContent}>
-          <div className={styles.listPanel}>
-            <div className={styles.panelHeader}>当前目录内容</div>
-            <div className={styles.directoryTable}>
-              <div className={styles.tableTitle}>{remoteBrowserPath}</div>
-              {isLoadingRemoteEntries ? (
-                <div className={styles.browserEmpty}>正在加载远程目录...</div>
-              ) : remoteEntries.length === 0 ? (
-                <div className={styles.browserEmpty}>当前目录为空。</div>
-              ) : (
-                <div className={styles.browserList}>
-                  {remoteEntries.map(entry => (
-                    <div
-                      key={entry.path}
-                      className={styles.browserEntry}
-                      data-selected={!entry.isDir && downloadRemotePath === entry.path}
-                      onClick={() => {
-                        if (entry.isDir) {
-                          void handleSelectDirectory(entry.path);
-                          return;
-                        }
-
-                        setDownloadRemotePath(entry.path);
-                        setTransferError(null);
-                      }}
+          ) : isLoading && entries.length === 0 ? (
+            <div className={styles.emptyState}>正在加载...</div>
+          ) : entries.length === 0 ? (
+            <div className={styles.emptyState}>此目录为空</div>
+          ) : (
+            entries.map((entry) => {
+              const isRenaming = renamingEntry?.path === entry.path;
+              return (
+                <div
+                  key={entry.path}
+                  className={styles.fileRow}
+                  data-selected={selected === entry.path}
+                  data-type={entry.isDir ? "dir" : "file"}
+                  onClick={() => handleRowClick(entry)}
+                  onDoubleClick={() => handleRowDoubleClick(entry)}
+                  onContextMenu={(e) => openContextMenu(e, entry)}
+                >
+                  <div className={styles.fileName} style={{ width: columnWidths.name }}>
+                    {entry.isDir ? (
+                      <FaFolder className={styles.fileIcon} data-type="dir" />
+                    ) : (
+                      <FaFileAlt className={styles.fileIcon} data-type="file" />
+                    )}
+                    {isRenaming ? (
+                      <input
+                        ref={renameRef}
+                        className={styles.inlineInput}
+                        value={renameInput}
+                        onChange={(e) => setRenameInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleRename();
+                          if (e.key === "Escape") setRenamingEntry(null);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ padding: "2px 6px", fontSize: 12 }}
+                      />
+                    ) : (
+                      <span className={styles.fileNametext} title={entry.name}>{entry.name}</span>
+                    )}
+                  </div>
+                  <span className={styles.fileSize} style={{ width: columnWidths.size }}>
+                    {entry.isDir ? "—" : formatFileSize(entry.size)}
+                  </span>
+                  <div className={styles.fileActions} style={{ width: columnWidths.actions }}>
+                    {!entry.isDir && (
+                      <button
+                        className={styles.fileActionBtn}
+                        data-action="edit"
+                        title="编辑"
+                        onClick={(e) => { e.stopPropagation(); handleEdit(entry); }}
+                      >
+                        <FaEdit size={12} />
+                      </button>
+                    )}
+                    {!entry.isDir && (
+                      <button
+                        className={styles.fileActionBtn}
+                        data-action="download"
+                        title="下载"
+                        onClick={(e) => { e.stopPropagation(); handleDownload(entry); }}
+                      >
+                        <FaDownload size={12} />
+                      </button>
+                    )}
+                    <button
+                      className={styles.fileActionBtn}
+                      data-action="delete"
+                      title="删除"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}
                     >
-                      <div className={styles.browserEntryMain}>
-                        {entry.isDir ? (
-                          <FaFolder className={styles.browserEntryIcon} />
-                        ) : (
-                          <FaFileAlt className={styles.browserEntryIcon} />
-                        )}
-                        <span className={styles.browserEntryName}>{entry.name}</span>
-                      </div>
-                      <span className={styles.browserEntryMeta}>
-                        {entry.isDir ? "目录" : formatFileSize(entry.size)}
-                      </span>
-                      <div className={styles.browserEntryActions}>
-                        <button
-                          type="button"
-                          className={styles.browserEntryAction}
-                          title="重命名"
-                          onClick={event => {
-                            event.stopPropagation();
-                            setRenamingEntry(entry);
-                            setRenameInput(entry.name);
-                          }}
-                        >
-                          重命名
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.browserEntryAction}
-                          title="删除"
-                          onClick={event => {
-                            event.stopPropagation();
-                            void handleDelete(entry);
-                          }}
-                        >
-                          <FaTrash size={11} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                      <FaTrash size={12} />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {transferStatus && (
-        <div className={styles.feedback} data-tone="success">
-          {transferStatus}
+      {/* ── Status bar ── */}
+      <div className={styles.statusBar}>
+        <div className={styles.statusLeft}>
+          <span>{entries.length} 项</span>
+          <span>{formatFileSize(totalSize)}</span>
         </div>
-      )}
-      {transferError && (
-        <div className={styles.feedback} data-tone="error">
-          {transferError}
+        <div className={styles.statusRight}>
+          <span className={styles.statusServer}>{server?.name || "未选择服务器"}</span>
+        </div>
+      </div>
+
+      {/* ── Context menu ── */}
+      {contextMenu.visible && contextMenu.entry && (
+        <div
+          ref={contextRef}
+          className={styles.contextMenu}
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {contextMenu.entry.isDir && (
+            <button
+              className={styles.contextItem}
+              onClick={() => { navigateTo(contextMenu.entry!.path); setContextMenu({ visible: false, x: 0, y: 0, entry: null }); }}
+            >
+              打开
+            </button>
+          )}
+          {!contextMenu.entry.isDir && (
+            <>
+              <button
+                className={styles.contextItem}
+                onClick={() => { handleEdit(contextMenu.entry!); setContextMenu({ visible: false, x: 0, y: 0, entry: null }); }}
+              >
+                <FaEdit size={11} /> 编辑
+              </button>
+              <button
+                className={styles.contextItem}
+                onClick={() => { handleDownload(contextMenu.entry!); setContextMenu({ visible: false, x: 0, y: 0, entry: null }); }}
+              >
+                <FaDownload size={11} /> 下载
+              </button>
+            </>
+          )}
+          <div className={styles.contextDivider} />
+          <button
+            className={styles.contextItem}
+            onClick={() => {
+              setRenamingEntry(contextMenu.entry);
+              setRenameInput(contextMenu.entry!.name);
+              setContextMenu({ visible: false, x: 0, y: 0, entry: null });
+            }}
+          >
+            重命名
+          </button>
+          <div className={styles.contextDivider} />
+          <button
+            className={styles.contextItem}
+            data-danger="true"
+            onClick={() => { handleDelete(contextMenu.entry!); setContextMenu({ visible: false, x: 0, y: 0, entry: null }); }}
+          >
+            <FaTrash size={11} /> 删除
+          </button>
         </div>
       )}
     </div>

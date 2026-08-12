@@ -130,7 +130,7 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       addon.fit();
       fitFrameRef.current = null;
     });
-  };
+  };;
 
   useEffect(() => {
     if (termRef.current && !termInstance.current) {
