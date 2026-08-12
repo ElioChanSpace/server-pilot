@@ -28,10 +28,13 @@
         "fullscreen": false,
         "resizable": true,
         "title": "Server Pilot",
-        "width": 1200,
-        "height": 800,
-        "transparent": true,
+        "minWidth": 900,
+        "minHeight": 600,
+        "width": 1400,
+        "height": 900,
+        "transparent": false,
         "decorations": true,
+        "center": true,
         "useHttpsScheme": true
       }
     ],

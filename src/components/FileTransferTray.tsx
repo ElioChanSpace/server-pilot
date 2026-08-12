@@ -202,7 +202,8 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
 
   useEffect(() => {
     if (isOpen && server && canOperate) {
-      loadDirectory("/");
+      // Load home directory instead of root
+      loadDirectory("");
     } else {
       setEntries([]);
       setCurrentPath("/");
@@ -385,7 +386,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
       height: 700,
       minWidth: 600,
       minHeight: 400,
-      decorations: true,
+      decorations: false,
       resizable: true,
       center: true,
     });

@@ -16,8 +16,6 @@
   max-height: calc(100vh - 48px);
   overflow-y: auto;
   background-color: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-md);
 }
@@ -60,8 +58,8 @@
   margin-top: var(--space-2);
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(217, 108, 108, 0.28);
-  background: rgba(217, 108, 108, 0.12);
+  border: 1px solid var(--danger-color);
+  background: var(--danger-soft);
   color: var(--danger-color);
   font-size: 13px;
   line-height: 1.5;
@@ -197,8 +195,8 @@
   margin-top: var(--space-2);
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(61, 166, 107, 0.28);
-  background: rgba(61, 166, 107, 0.12);
+  border: 1px solid var(--success-color);
+  background: #1a2a20;
   color: var(--success-color);
   font-size: 13px;
   line-height: 1.5;

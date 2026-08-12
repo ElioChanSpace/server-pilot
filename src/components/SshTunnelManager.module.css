@@ -1,7 +1,7 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: #0a0e14;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16,7 +16,7 @@
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px var(--shadow-color);
 }
 
 .header {
@@ -80,7 +80,7 @@
 }
 
 .error {
-  background: rgba(220, 53, 69, 0.1);
+  background: var(--danger-soft);
   color: var(--danger-color);
   padding: 10px 14px;
   border-radius: 6px;
@@ -261,12 +261,12 @@
 }
 
 .tunnelStatus[data-status="active"] {
-  background: rgba(40, 167, 69, 0.1);
+  background: #1a2a20;
   color: var(--success-color);
 }
 
 .tunnelStatus[data-status="inactive"] {
-  background: rgba(108, 117, 125, 0.1);
+  background: var(--surface-hover);
   color: var(--text-secondary);
 }
 

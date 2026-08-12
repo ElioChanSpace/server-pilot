@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { FaKey, FaDownload, FaUpload } from "react-icons/fa";
+import { FaKey, FaDownload, FaUpload, FaCheck, FaCode } from "react-icons/fa";
 import { useServer } from "../context/ServerContext";
 import type { AppSettings } from "../types/settings";
 import { TERMINAL_THEMES, DEFAULT_TERMINAL_THEME } from "../utils/terminal-themes";
@@ -9,6 +9,32 @@ import { APP_THEMES, DEFAULT_THEME } from "../utils/app-themes";
 import { exportTheme, importTheme } from "../utils/theme-helpers";
 import { SshKeyManager } from "./SshKeyManager";
 import styles from "./Settings.module.css";
+
+interface SyntaxPlugin {
+  id: string;
+  name: string;
+  description: string;
+  extensions: string[];
+  enabled: boolean;
+  builtin: boolean;
+}
+
+const DEFAULT_SYNTAX_PLUGINS: SyntaxPlugin[] = [
+  { id: "python", name: "Python", description: "Python 语法高亮支持", extensions: [".py", ".pyw", ".pyi"], enabled: true, builtin: true },
+  { id: "rust", name: "Rust", description: "Rust 语法高亮支持", extensions: [".rs"], enabled: true, builtin: true },
+  { id: "java", name: "Java", description: "Java 语法高亮支持", extensions: [".java", ".class"], enabled: true, builtin: true },
+  { id: "shell", name: "Shell/Bash", description: "Shell 脚本语法高亮支持", extensions: [".sh", ".bash", ".zsh"], enabled: true, builtin: true },
+  { id: "markdown", name: "Markdown", description: "Markdown 语法高亮支持", extensions: [".md", ".markdown"], enabled: true, builtin: true },
+  { id: "javascript", name: "JavaScript", description: "JavaScript 语法高亮支持", extensions: [".js", ".jsx", ".mjs"], enabled: true, builtin: true },
+  { id: "typescript", name: "TypeScript", description: "TypeScript 语法高亮支持", extensions: [".ts", ".tsx"], enabled: true, builtin: true },
+  { id: "go", name: "Go", description: "Go 语法高亮支持", extensions: [".go"], enabled: true, builtin: true },
+  { id: "css", name: "CSS", description: "CSS 语法高亮支持", extensions: [".css", ".scss", ".less"], enabled: true, builtin: true },
+  { id: "html", name: "HTML", description: "HTML 语法高亮支持", extensions: [".html", ".htm"], enabled: true, builtin: true },
+  { id: "json", name: "JSON", description: "JSON 语法高亮支持", extensions: [".json"], enabled: true, builtin: true },
+  { id: "yaml", name: "YAML", description: "YAML 语法高亮支持", extensions: [".yaml", ".yml"], enabled: true, builtin: true },
+  { id: "sql", name: "SQL", description: "SQL 语法高亮支持", extensions: [".sql"], enabled: true, builtin: true },
+  { id: "dockerfile", name: "Dockerfile", description: "Dockerfile 语法高亮支持", extensions: ["Dockerfile"], enabled: true, builtin: true },
+];
 
 const defaultSettings: AppSettings = {
   terminalIdleDisconnectEnabled: true,
@@ -30,6 +56,7 @@ export const Settings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showSshKeyManager, setShowSshKeyManager] = useState(false);
+  const [syntaxPlugins] = useState<SyntaxPlugin[]>(DEFAULT_SYNTAX_PLUGINS);
 
   useEffect(() => {
     void invoke<AppSettings>("get_app_settings")
@@ -363,6 +390,37 @@ export const Settings: React.FC = () => {
               />
               <span className={styles.fieldLabel}>断开连接前确认</span>
             </label>
+
+            <div className={styles.backupSection}>
+              <span className={styles.fieldLabel}>插件管理</span>
+              <div className={styles.pluginList}>
+                {syntaxPlugins.map(plugin => (
+                  <div key={plugin.id} className={styles.pluginItem}>
+                    <div className={styles.pluginInfo}>
+                      <div className={styles.pluginHeader}>
+                        <FaCode size={14} className={styles.pluginIcon} />
+                        <span className={styles.pluginName}>{plugin.name}</span>
+                        {plugin.builtin && (
+                          <span className={styles.pluginBadge}>内置</span>
+                        )}
+                      </div>
+                      <span className={styles.pluginDesc}>{plugin.description}</span>
+                      <span className={styles.pluginExts}>
+                        {plugin.extensions.join(", ")}
+                      </span>
+                    </div>
+                    <div className={styles.pluginStatus}>
+                      {plugin.enabled ? (
+                        <FaCheck size={14} className={styles.pluginEnabled} />
+                      ) : (
+                        <span className={styles.pluginDisabled}>已禁用</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <span className={styles.helper}>语法高亮插件由 Syntect 引擎提供支持，所有语言均已内置启用。</span>
+            </div>
 
             <div className={styles.backupSection}>
               <span className={styles.fieldLabel}>SSH 密钥管理</span>

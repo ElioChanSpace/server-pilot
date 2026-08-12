@@ -11,10 +11,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 12px;
   background: var(--bg-secondary-opaque, var(--bg-secondary, #181825));
   border-bottom: 1px solid var(--border-color, #313244);
   flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .toolbarLeft {
@@ -38,7 +40,7 @@
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 4px;
-  background: var(--surface-active, rgba(106, 168, 143, 0.18));
+  background: var(--surface-active, #1e3040);
   color: var(--text-secondary, #a6adc8);
   white-space: nowrap;
 }
@@ -54,9 +56,9 @@
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  border: 1px solid var(--border-color, rgba(193, 221, 210, 0.14));
+  border: 1px solid var(--border-color, #1e3040);
   border-radius: 4px;
-  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
+  background: var(--surface-hover, #1a2838);
   color: var(--text-primary, #eff7f2);
   font-size: 12px;
   cursor: pointer;
@@ -64,7 +66,7 @@
 }
 
 .toolbarButton:hover {
-  background: var(--surface-active, rgba(106, 168, 143, 0.18));
+  background: var(--surface-active, #1e3040);
 }
 
 .toolbarButton.primary {
@@ -80,6 +82,30 @@
 .toolbarButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.separator {
+  width: 1px;
+  height: 16px;
+  background: var(--border-color, #313244);
+  margin: 0 2px;
+}
+
+.closeButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: #ff5f57;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.closeButton:hover {
+  background: #ff3b30;
 }
 
 .statusBar {
@@ -235,7 +261,7 @@
 }
 
 .editorContent[data-readonly="false"] .textareaLayer::selection {
-  background: rgba(137, 180, 250, 0.3);
+  background: #2a3f55;
 }
 
 .loading {
@@ -262,19 +288,19 @@
 
 .errorRetry {
   padding: 6px 16px;
-  border: 1px solid var(--border-color, rgba(193, 221, 210, 0.14));
+  border: 1px solid var(--border-color, #1e3040);
   border-radius: 4px;
-  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
+  background: var(--surface-hover, #1a2838);
   color: var(--text-primary, #eff7f2);
   font-size: 12px;
   cursor: pointer;
 }
 
 .errorRetry:hover {
-  background: var(--surface-active, rgba(106, 168, 143, 0.18));
+  background: var(--surface-active, #1e3040);
 }
 
-/* Syntect theme overrides for base16-ocean.dark */
+/* Syntect theme overrides */
 .editorContent :global(.editor-code) {
   margin: 0;
   font-family: inherit;

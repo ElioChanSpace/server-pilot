@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import { FaSave, FaSpinner, FaUndo, FaEdit } from "react-icons/fa";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { FaSave, FaSpinner, FaUndo, FaEdit, FaTimes } from "react-icons/fa";
+import { getInitialThemeId, getThemeMode } from "../utils/theme-helpers";
 import styles from "./RemoteFileEditor.module.css";
 
 interface RemoteFileEditorProps {
@@ -46,6 +48,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
+  const themeMode = getThemeMode(getInitialThemeId());
   const [isReadOnly, setIsReadOnly] = useState(true);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -63,6 +66,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       const result = await invoke<FileContent>("get_file_content", {
         serverId,
         path: filePath,
+        themeMode: themeMode,
       });
 
       setContent(result.raw);
@@ -76,7 +80,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [serverId, filePath]);
+  }, [serverId, filePath, themeMode]);
 
   useEffect(() => {
     void loadFile();
@@ -94,6 +98,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
           const result = await invoke<HighlightedCode>("highlight_code", {
             code,
             language: lang,
+            themeMode: themeMode,
           });
           setHighlightedHtml(result.html);
         } catch {
@@ -101,7 +106,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
         }
       }, 300);
     },
-    [],
+    [themeMode],
   );
 
   // Cleanup timer on unmount
@@ -217,6 +222,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
       if (event.key === "Escape") {
         event.preventDefault();
+        console.log("[Editor] ESC pressed, calling onClose");
         void onClose();
       }
     };
@@ -287,9 +293,26 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
     }
   };
 
+  // Handle title bar drag
+  const handleTitleBarMouseDown = useCallback(async (e: React.MouseEvent) => {
+    // Don't start drag if clicking on a button
+    if (e.target instanceof HTMLButtonElement || e.target instanceof SVGElement) {
+      return;
+    }
+    try {
+      await getCurrentWindow().startDragging();
+    } catch (err) {
+      console.error("Failed to start dragging:", err);
+    }
+  }, []);
+
   return (
     <div className={styles.editorOverlay}>
-      <div className={styles.toolbar}>
+      <div
+        className={styles.toolbar}
+        data-tauri-drag-region
+        onMouseDown={(e) => void handleTitleBarMouseDown(e)}
+      >
         <div className={styles.toolbarLeft}>
           <span className={styles.fileName}>{getBaseName(filePath)}</span>
           {language && <span className={styles.langBadge}>{language}</span>}
@@ -326,6 +349,19 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
               </button>
             </>
           )}
+          <div className={styles.separator} />
+          <button
+            type="button"
+            className={styles.closeButton}
+            onClick={() => {
+              console.log("[Editor] Close button clicked, calling onClose");
+              void onClose();
+            }}
+            title="关闭 (ESC)"
+          >
+            <FaTimes />
+            <span>关闭</span>
+          </button>
         </div>
       </div>
 
@@ -344,7 +380,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
             <div className={styles.lineNumbers} ref={lineNumbersRef}>
               {renderLineNumbers()}
             </div>
-            <div className={styles.editorContent} data-readonly={isReadOnly}>
+            <div className={styles.editorContent} data-readonly={isReadOnly} data-theme={themeMode}>
               <pre
                 ref={highlightRef}
                 className={styles.highlightLayer}

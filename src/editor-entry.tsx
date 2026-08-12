@@ -48,10 +48,15 @@ function EditorApp() {
   }, []);
 
   const handleClose = async () => {
+    console.log("[Editor] handleClose called");
     try {
-      await getCurrentWindow().destroy();
+      const win = getCurrentWindow();
+      console.log("[Editor] Window object:", win);
+      console.log("[Editor] Window label:", win.label);
+      await win.close();
+      console.log("[Editor] Window closed successfully");
     } catch (e) {
-      console.error("关闭窗口失败:", e);
+      console.error("[Editor] 关闭窗口失败:", e);
     }
   };
 

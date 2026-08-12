@@ -501,8 +501,8 @@
   padding: 8px 12px;
   margin: 6px 12px;
   border-radius: 8px;
-  background: rgba(217, 108, 108, 0.12);
-  border: 1px solid rgba(217, 108, 108, 0.28);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-color);
   flex-shrink: 0;
 }
 
@@ -563,7 +563,7 @@
   border-radius: 8px;
   background: var(--bg-secondary-opaque, var(--bg-secondary));
   border: 1px solid var(--sidebar-border);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px var(--shadow-color);
 }
 
 .contextItem {
@@ -590,7 +590,7 @@
 }
 
 .contextItem[data-danger="true"]:hover {
-  background: rgba(217, 108, 108, 0.12);
+  background: var(--danger-soft);
 }
 
 .contextDivider {

@@ -95,8 +95,8 @@
   margin: var(--space-3) var(--space-4) 0;
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(217, 108, 108, 0.28);
-  background: rgba(217, 108, 108, 0.12);
+  border: 1px solid var(--danger-color);
+  background: var(--danger-soft);
   color: var(--danger-color);
   font-size: 13px;
 }
@@ -112,7 +112,7 @@
 
 .logLine {
   padding: 3px 0;
-  border-bottom: 1px solid rgba(127, 127, 127, 0.08);
+  border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-all;

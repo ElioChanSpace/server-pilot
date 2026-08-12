@@ -121,16 +121,19 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
     };
   };
 
-  const scheduleFit = (addon: FitAddon) => {
+  const scheduleFit = (addon: FitAddon, terminal?: Terminal) => {
     if (fitFrameRef.current !== null) {
       cancelAnimationFrame(fitFrameRef.current);
     }
 
     fitFrameRef.current = requestAnimationFrame(() => {
       addon.fit();
+      if (terminal) {
+        terminal.refresh(0, terminal.rows - 1);
+      }
       fitFrameRef.current = null;
     });
-  };;
+  };
 
   useEffect(() => {
     if (termRef.current && !termInstance.current) {
@@ -228,12 +231,12 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       });
 
       const resizeObserver = new ResizeObserver(() => {
-        scheduleFit(addon);
+        scheduleFit(addon, terminal);
       });
       resizeObserver.observe(termRef.current);
 
       setTimeout(() => {
-        scheduleFit(addon);
+        scheduleFit(addon, terminal);
         focusTerminal();
       }, 50);
 
@@ -261,7 +264,7 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       terminal.options.fontSize = fontSize;
       const addon = fitAddonRef.current;
       if (addon) {
-        scheduleFit(addon);
+        scheduleFit(addon, terminal);
       }
     }
 
@@ -454,7 +457,7 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       <div
         ref={termRef}
         className="xterm-host"
-        style={{ width: 'max-content', minWidth: '100%', height: '100%', overflow: 'hidden' }}
+        style={{ width: '100%', height: '100%', overflow: 'hidden' }}
         onMouseDown={() => {
           focusTerminal();
         }}

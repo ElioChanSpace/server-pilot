@@ -36,8 +36,8 @@
   gap: 12px;
   padding: 12px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(217, 108, 108, 0.28);
-  background: rgba(217, 108, 108, 0.12);
+  border: 1px solid var(--danger-color);
+  background: var(--danger-soft);
 }
 
 .errorTitle {
@@ -58,14 +58,14 @@
 
 .errorClose {
   background: transparent;
-  border: 1px solid rgba(217, 108, 108, 0.28);
+  border: 1px solid var(--danger-color);
   color: var(--danger-color);
   box-shadow: none;
   transform: none;
 }
 
 .errorClose:hover {
-  background: rgba(217, 108, 108, 0.12);
+  background: var(--danger-soft);
 }
 
 .placeholder {
@@ -155,7 +155,7 @@
 .summaryCard {
   padding: 12px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--sidebar-item-bg);
   border: 1px solid var(--sidebar-border);
 }
 
@@ -196,7 +196,7 @@
   min-width: 0;
   padding: 12px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--sidebar-item-bg);
   border: 1px solid var(--sidebar-border);
 }
 

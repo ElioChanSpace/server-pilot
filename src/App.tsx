@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, memo, Suspense, lazy }
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { confirm } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ServerProvider, useServer } from "./context/ServerContext";
 import type { Server, Category } from "./context/ServerContext";
 import { AddServerModal } from "./components/AddServerModal";
@@ -80,6 +81,8 @@ const AppContent: React.FC = () => {
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPromptEvent | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showFullscreenHint, setShowFullscreenHint] = useState(false);
   const confirmOnDisconnectRef = useRef(true);
 
   const { connectToServer, disconnectServer, closeTerminalSession, servers, categories } = useServer();
@@ -98,6 +101,69 @@ const AppContent: React.FC = () => {
     const currentTheme = APP_THEMES[themeId] ?? APP_THEMES[DEFAULT_THEME];
     applyTheme(currentTheme);
   }, [themeId]);
+
+  // Fullscreen detection - use multiple methods
+  useEffect(() => {
+    const win = getCurrentWindow();
+    let mounted = true;
+
+    const checkFullscreen = async () => {
+      try {
+        // Try Tauri API first
+        const fs = await win.isFullscreen();
+
+        // Also check if window occupies full screen (macOS native fullscreen)
+        const isNativeFullscreen = window.screenX === 0 && window.screenY === 0 &&
+          window.outerWidth >= window.screen.availWidth &&
+          window.outerHeight >= window.screen.availHeight;
+
+        const isFs = fs || isNativeFullscreen;
+        if (mounted) {
+          setIsFullscreen(isFs);
+          if (isFs) {
+            setShowFullscreenHint(true);
+            setTimeout(() => setShowFullscreenHint(false), 3000);
+          }
+        }
+      } catch { /* ignore */ }
+    };
+
+    void checkFullscreen();
+
+    // Listen for window events
+    const unlistenResize = win.onResized(() => void checkFullscreen());
+    const unlistenMove = win.onMoved(() => void checkFullscreen());
+
+    // Also listen for web fullscreen API
+    const handleFullscreenChange = () => {
+      void checkFullscreen();
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+    // Poll as fallback
+    const interval = setInterval(() => void checkFullscreen(), 200);
+
+    return () => {
+      mounted = false;
+      void unlistenResize.then(fn => fn());
+      void unlistenMove.then(fn => fn());
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // ESC key to exit fullscreen
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && isFullscreen) {
+        event.preventDefault();
+        void getCurrentWindow().setFullscreen(false).then(() => setIsFullscreen(false));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
 
   // Welcome dismissal
   useEffect(() => {
@@ -496,6 +562,21 @@ const AppContent: React.FC = () => {
     });
   }, []);
 
+  const handleToggleFullscreen = useCallback(async () => {
+    try {
+      const win = getCurrentWindow();
+      // Use current state instead of querying
+      await win.setFullscreen(!isFullscreen);
+      setIsFullscreen(!isFullscreen);
+      if (!isFullscreen) {
+        setShowFullscreenHint(true);
+        setTimeout(() => setShowFullscreenHint(false), 3000);
+      }
+    } catch (e) {
+      console.error("切换全屏失败:", e);
+    }
+  }, [isFullscreen]);
+
   const handleTerminalFontSizeChange = useCallback((delta: number) => {
     setAppSettings(prev => {
       if (!prev) return prev;
@@ -550,7 +631,14 @@ const AppContent: React.FC = () => {
         themeId={themeId}
         onToggleTheme={handleToggleTheme}
         onChangeTheme={handleChangeTheme}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={handleToggleFullscreen}
       />
+      {isFullscreen && showFullscreenHint && (
+        <div className="fullscreen-hint">
+          按 ESC 退出全屏
+        </div>
+      )}
       <div className="content-wrapper">
         <LeftSidebar
           isOpen={isLeftSidebarOpen}

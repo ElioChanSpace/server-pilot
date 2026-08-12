@@ -14,7 +14,9 @@ export const MenuBar: React.FC<{
   themeId: string;
   onToggleTheme: () => void;
   onChangeTheme: (themeId: string) => void;
-}> = ({ onNewCategory, onNewServer, onImportSshConfig, onBatchCommand, onViewLogs, onOpenSettings, theme, themeId, onToggleTheme, onChangeTheme }) => {
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+}> = ({ onNewCategory, onNewServer, onImportSshConfig, onBatchCommand, onViewLogs, onOpenSettings, theme, themeId, onToggleTheme, onChangeTheme, isFullscreen, onToggleFullscreen }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -86,6 +88,14 @@ export const MenuBar: React.FC<{
             <button className="dropdownItem" onClick={() => handleItemClick(onOpenSettings)}>设置</button>
             <button className="dropdownItem" onClick={() => handleItemClick(onBatchCommand)}>批量执行命令...</button>
             <button className="dropdownItem" onClick={() => handleItemClick(onViewLogs)}>查看日志</button>
+            {onToggleFullscreen && (
+              <>
+                <div className="separator" />
+                <button className="dropdownItem" onClick={() => handleItemClick(onToggleFullscreen)}>
+                  {isFullscreen ? "退出全屏" : "全屏"}
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

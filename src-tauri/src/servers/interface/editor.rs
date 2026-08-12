@@ -98,7 +98,7 @@ fn detect_language(path: &str) -> &'static str {
     }
 }
 
-fn highlight_to_html(code: &str, syntax_name: &str) -> Result<String, String> {
+fn highlight_to_html(code: &str, syntax_name: &str, theme_mode: &str) -> Result<String, String> {
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
 
@@ -107,7 +107,12 @@ fn highlight_to_html(code: &str, syntax_name: &str) -> Result<String, String> {
         .or_else(|| ss.find_syntax_by_extension(syntax_name))
         .unwrap_or_else(|| ss.find_syntax_plain_text());
 
-    let theme = &ts.themes["InspiredGitHub"];
+    let theme_name = if theme_mode == "light" {
+        "base16-ocean.light"
+    } else {
+        "base16-ocean.dark"
+    };
+    let theme = &ts.themes[theme_name];
     let mut highlighter = HighlightLines::new(syntax, theme);
 
     let mut html = String::new();
@@ -133,6 +138,7 @@ pub async fn get_file_content(
     state: State<'_, AppState>,
     server_id: String,
     path: String,
+    theme_mode: Option<String>,
 ) -> Result<FileContent, String> {
     let path = path.trim().to_string();
     if path.is_empty() {
@@ -140,6 +146,7 @@ pub async fn get_file_content(
     }
 
     let connection = resolve_transfer_server(&state, &server_id)?;
+    let theme_mode = theme_mode.unwrap_or_else(|| "dark".to_string());
 
     tauri::async_runtime::spawn_blocking(move || {
         // First check file size
@@ -184,7 +191,7 @@ pub async fn get_file_content(
         let language = detect_language(&path);
         let line_count = raw.lines().count();
         let file_size = raw.len();
-        let html = highlight_to_html(&raw, language)?;
+        let html = highlight_to_html(&raw, language, &theme_mode)?;
 
         Ok(FileContent {
             raw,
@@ -202,9 +209,11 @@ pub async fn get_file_content(
 pub async fn highlight_code(
     code: String,
     language: String,
+    theme_mode: Option<String>,
 ) -> Result<HighlightedCode, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let html = highlight_to_html(&code, &language)?;
+        let theme_mode = theme_mode.unwrap_or_else(|| "dark".to_string());
+        let html = highlight_to_html(&code, &language, &theme_mode)?;
         Ok(HighlightedCode { html })
     })
     .await
