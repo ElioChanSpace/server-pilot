@@ -21,7 +21,7 @@
   position: absolute;
   top: 47px;
   right: 0;
-  bottom: 32px;
+  bottom: 44px;
   min-width: 320px;
   max-width: 840px;
   background-color: var(--bg-secondary-opaque, var(--bg-secondary));
