@@ -107,7 +107,7 @@ fn highlight_to_html(code: &str, syntax_name: &str) -> Result<String, String> {
         .or_else(|| ss.find_syntax_by_extension(syntax_name))
         .unwrap_or_else(|| ss.find_syntax_plain_text());
 
-    let theme = &ts.themes["base16-ocean.dark"];
+    let theme = &ts.themes["InspiredGitHub"];
     let mut highlighter = HighlightLines::new(syntax, theme);
 
     let mut html = String::new();

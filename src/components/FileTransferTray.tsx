@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { open, save, ask } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   FaEdit,
   FaFileAlt,
@@ -14,7 +15,6 @@ import {
   FaDownload,
 } from "react-icons/fa";
 import { Server } from "../context/ServerContext";
-import { RemoteFileEditor } from "./RemoteFileEditor";
 import styles from "./FileTransferTray.module.css";
 
 /* ── Types ── */
@@ -106,9 +106,6 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const [newDirName, setNewDirName] = useState("");
   const [renamingEntry, setRenamingEntry] = useState<RemoteDirectoryEntry | null>(null);
   const [renameInput, setRenameInput] = useState("");
-
-  // Editor
-  const [editingFile, setEditingFile] = useState<{ serverId: string; path: string } | null>(null);
 
   // Resize
   const [panelWidth, setPanelWidth] = useState(420);
@@ -213,11 +210,11 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     }
   }, [isOpen, server?.id, canOperate]);
 
-  /* ── Progress events ── */
+  /* ── Progress events + editor save events ── */
   useEffect(() => {
     if (!isOpen || !server) return;
     let mounted = true;
-    const unlisten = listen<FileTransferProgressEvent>("file-transfer-progress", (event) => {
+    const unlistenProgress = listen<FileTransferProgressEvent>("file-transfer-progress", (event) => {
       if (!mounted) return;
       const p = event.payload;
       setTransfers(prev => {
@@ -235,8 +232,18 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
         return next;
       });
     });
-    return () => { mounted = false; void unlisten.then(fn => fn()); };
-  }, [isOpen, server]);
+    const unlistenEditorSave = listen<{ serverId: string; filePath: string }>("editor-file-saved", (event) => {
+      if (!mounted) return;
+      if (event.payload.serverId === server.id) {
+        void loadDirectory(currentPath);
+      }
+    });
+    return () => {
+      mounted = false;
+      void unlistenProgress.then(fn => fn());
+      void unlistenEditorSave.then(fn => fn());
+    };
+  }, [isOpen, server, currentPath]);
 
   /* ── Context menu dismiss ── */
   useEffect(() => {
@@ -359,8 +366,29 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     }
   };
 
-  const handleEdit = (entry: RemoteDirectoryEntry) => {
-    if (server) setEditingFile({ serverId: server.id, path: entry.path });
+  const handleEdit = async (entry: RemoteDirectoryEntry) => {
+    if (!server) return;
+    const label = `editor-${server.id}-${entry.path.replace(/[^a-zA-Z0-9]/g, "_")}`;
+    const url = `/editor.html?serverId=${encodeURIComponent(server.id)}&filePath=${encodeURIComponent(entry.path)}`;
+
+    // Check if window already exists
+    const existing = await WebviewWindow.getByLabel(label);
+    if (existing) {
+      await existing.setFocus();
+      return;
+    }
+
+    new WebviewWindow(label, {
+      url,
+      title: `编辑 - ${entry.name}`,
+      width: 900,
+      height: 700,
+      minWidth: 600,
+      minHeight: 400,
+      decorations: true,
+      resizable: true,
+      center: true,
+    });
   };
 
   /* ── Context menu ── */
@@ -378,20 +406,8 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   };
 
   const handleRowDoubleClick = (entry: RemoteDirectoryEntry) => {
-    if (!entry.isDir) handleEdit(entry);
+    if (!entry.isDir) void handleEdit(entry);
   };
-
-  /* ── Editor overlay ── */
-  if (editingFile) {
-    return (
-      <RemoteFileEditor
-        serverId={editingFile.serverId}
-        filePath={editingFile.path}
-        onClose={() => setEditingFile(null)}
-        onSaved={() => loadDirectory(currentPath)}
-      />
-    );
-  }
 
   const totalSize = entries.reduce((sum, e) => sum + (e.isDir ? 0 : e.size), 0);
   const activeTransfers = Array.from(transfers.values()).filter(t => t.status === "progress" || t.status === "preparing");
@@ -572,7 +588,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
                         className={styles.fileActionBtn}
                         data-action="edit"
                         title="编辑"
-                        onClick={(e) => { e.stopPropagation(); handleEdit(entry); }}
+                        onClick={(e) => { e.stopPropagation(); void handleEdit(entry); }}
                       >
                         <FaEdit size={12} />
                       </button>
@@ -633,7 +649,7 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
             <>
               <button
                 className={styles.contextItem}
-                onClick={() => { handleEdit(contextMenu.entry!); setContextMenu({ visible: false, x: 0, y: 0, entry: null }); }}
+                onClick={() => { void handleEdit(contextMenu.entry!); setContextMenu({ visible: false, x: 0, y: 0, entry: null }); }}
               >
                 <FaEdit size={11} /> 编辑
               </button>

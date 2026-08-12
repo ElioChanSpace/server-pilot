@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FaSave, FaTimes, FaSpinner } from "react-icons/fa";
+import { emit } from "@tauri-apps/api/event";
+import { FaSave, FaSpinner, FaUndo, FaEdit } from "react-icons/fa";
 import styles from "./RemoteFileEditor.module.css";
 
 interface RemoteFileEditorProps {
   serverId: string;
   filePath: string;
-  onClose: () => void;
+  onClose: () => void | Promise<void>;
   onSaved?: () => void;
 }
 
@@ -45,6 +46,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
+  const [isReadOnly, setIsReadOnly] = useState(true);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
@@ -163,6 +165,8 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       setIsDirty(false);
       setSaveStatus("saved");
       onSaved?.();
+      // Notify main window to refresh file list
+      void emit("editor-file-saved", { serverId, filePath });
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err) {
       setSaveStatus("error");
@@ -170,6 +174,33 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       setTimeout(() => setSaveStatus("idle"), 3000);
     }
   }, [serverId, filePath, content, onSaved]);
+
+  // Reset to original content
+  const handleReset = useCallback(() => {
+    const original = originalContentRef.current;
+    setContent(original);
+    setIsDirty(false);
+    setLineCount(original.split("\n").length);
+    scheduleHighlight(original, language);
+  }, [language, scheduleHighlight]);
+
+  // Toggle edit mode
+  const handleToggleEdit = useCallback(() => {
+    setIsReadOnly(prev => {
+      const next = !prev;
+      if (!next) {
+        // Switching to edit mode: focus textarea and move cursor to top
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (textarea) {
+            textarea.focus();
+            textarea.setSelectionRange(0, 0);
+          }
+        });
+      }
+      return next;
+    });
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -186,10 +217,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
       if (event.key === "Escape") {
         event.preventDefault();
-        if (isDirty) {
-          // Could add confirmation dialog here
-        }
-        onClose();
+        void onClose();
       }
     };
 
@@ -269,21 +297,39 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
         <div className={styles.toolbarRight}>
           <button
             type="button"
-            className={`${styles.toolbarButton} ${styles.primary}`}
-            onClick={() => void handleSave()}
-            disabled={!isDirty || saveStatus === "saving"}
+            className={`${styles.toolbarButton} ${isReadOnly ? styles.primary : ""}`}
+            onClick={handleToggleEdit}
           >
-            {saveStatus === "saving" ? <FaSpinner /> : <FaSave />}
-            <span>保存</span>
+            <FaEdit />
+            <span>{isReadOnly ? "编辑" : "只读"}</span>
           </button>
-          <button type="button" className={styles.toolbarButton} onClick={onClose}>
-            <FaTimes />
-            <span>关闭</span>
-          </button>
+          {!isReadOnly && (
+            <>
+              <button
+                type="button"
+                className={styles.toolbarButton}
+                onClick={handleReset}
+                disabled={!isDirty}
+                title="重置为原始内容"
+              >
+                <FaUndo />
+                <span>重置</span>
+              </button>
+              <button
+                type="button"
+                className={`${styles.toolbarButton} ${styles.primary}`}
+                onClick={() => void handleSave()}
+                disabled={!isDirty || saveStatus === "saving"}
+              >
+                {saveStatus === "saving" ? <FaSpinner /> : <FaSave />}
+                <span>保存</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      <div className={styles.editorBody}>
+      <div className={styles.editorBody} data-readonly={isReadOnly}>
         {isLoading ? (
           <div className={styles.loading}>正在加载文件...</div>
         ) : error ? (
@@ -298,7 +344,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
             <div className={styles.lineNumbers} ref={lineNumbersRef}>
               {renderLineNumbers()}
             </div>
-            <div className={styles.editorContent}>
+            <div className={styles.editorContent} data-readonly={isReadOnly}>
               <pre
                 ref={highlightRef}
                 className={styles.highlightLayer}
@@ -308,6 +354,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
                 ref={textareaRef}
                 className={styles.textareaLayer}
                 value={content}
+                readOnly={isReadOnly}
                 onChange={handleInput}
                 onScroll={handleScroll}
                 onSelect={handleSelect}
@@ -323,9 +370,11 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       </div>
 
       <div className={styles.statusBar}>
-        <span className={styles.statusItem}>
-          行 {cursorLine}, 列 {cursorCol}
-        </span>
+        {!isReadOnly && (
+          <span className={styles.statusItem}>
+            行 {cursorLine}, 列 {cursorCol}
+          </span>
+        )}
         <span className={styles.statusItem}>{lineCount} 行</span>
         {getStatusText() && (
           <span className={`${styles.statusItem} ${getStatusClass()}`}>
