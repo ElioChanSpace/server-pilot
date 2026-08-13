@@ -357,3 +357,23 @@ pub fn save_custom_app_themes(
     drop(data);
     state.save()
 }
+
+/// Get local app stats (memory and CPU usage)
+#[tauri::command]
+pub fn get_app_stats() -> Result<serde_json::Value, String> {
+    use sysinfo::System;
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let pid = sysinfo::get_current_pid().map_err(|e| e.to_string())?;
+    let process = sys.process(pid).ok_or("Failed to get current process")?;
+
+    // sysinfo returns memory in bytes, convert to MB
+    let memory_mb = process.memory() / 1024 / 1024;
+    let cpu_percent = process.cpu_usage() as f64;
+
+    Ok(serde_json::json!({
+        "memoryMb": memory_mb,
+        "cpuPercent": cpu_percent,
+    }))
+}

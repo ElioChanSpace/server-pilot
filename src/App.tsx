@@ -38,6 +38,7 @@ import { useRightSidebarResize } from "./hooks/useRightSidebarResize";
 import { useGlobalClipboard } from "./hooks/useGlobalClipboard";
 import { useNotifications } from "./hooks/useNotifications";
 import { useFileUpload } from "./hooks/useFileUpload";
+import { useAppStats } from "./hooks/useAppStats";
 import "./App.css";
 
 const LogViewer = lazy(() => import("./components/LogViewer"));
@@ -93,6 +94,7 @@ const AppContent: React.FC = () => {
   const { notify, notificationsEnabledRef } = useNotifications();
   const { uploadProgressOverlay, setUploadProgressOverlay, handleTerminalFilesDropped, removeSessionCurrentDirectories } = useFileUpload(servers, sessions, notify);
   const { setIsResizingRightSidebar } = useRightSidebarResize();
+  const appStats = useAppStats();
 
   useWindowPersistence();
   useGlobalClipboard();
@@ -360,7 +362,7 @@ const AppContent: React.FC = () => {
       const result = await connectToServer(server.id);
       setSessions(prev => reindexSessions([
         ...prev,
-        { id: result.sessionId, serverId: server.id, terminalIndex: 0, status: "connecting" },
+        { id: result.sessionId, serverId: server.id, terminalIndex: 0, status: "connecting", createdAt: Date.now() },
       ]));
       setCurrentSessionId(result.sessionId);
       resetTerminalOutput(result.sessionId, [`[信息] 正在连接 ${server.username}@${server.host}:${server.port} ...\r\n`]);
@@ -713,6 +715,9 @@ const AppContent: React.FC = () => {
         toggleLeftSidebar={toggleLeftSidebar}
         toggleRightSidebar={toggleRightSidebar}
         toggleTransferTray={toggleTransferTray}
+        terminalCount={sessions.length}
+        serverCount={servers.length}
+        appStats={appStats}
       />
       {uploadProgressOverlay && <UploadProgressToast overlay={uploadProgressOverlay} />}
       {isSettingsOpen && (

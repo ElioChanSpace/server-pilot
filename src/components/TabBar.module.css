@@ -67,6 +67,18 @@
   text-overflow: ellipsis;
 }
 
+.tabTime {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.7;
+  white-space: nowrap;
+  margin-left: 2px;
+}
+
+.tab[data-active="true"] .tabTime {
+  opacity: 0.9;
+}
+
 .statusIcon {
   flex-shrink: 0;
   opacity: 0.7;

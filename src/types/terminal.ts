@@ -8,6 +8,7 @@ export interface TerminalSession {
   serverId: string;
   terminalIndex: number;
   status: TerminalSessionStatus;
+  createdAt: number; // Unix timestamp in milliseconds
 }
 
 export interface ConnectServerResult {

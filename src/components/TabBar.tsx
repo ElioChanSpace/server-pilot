@@ -75,6 +75,12 @@ const TabBarComponent: React.FC<TabBarProps> = ({
     return null; // 如果没有会话，则不渲染任何内容
   }
 
+  // Format time as HH:MM
+  const formatTime = (timestamp: number): string => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
   const targetSession = contextMenu
     ? sessions.find(session => session.id === contextMenu.sessionId) ?? null
     : null;
@@ -149,8 +155,8 @@ const TabBarComponent: React.FC<TabBarProps> = ({
       <div className={styles.tabBar}>
         {sessions.map(session => {
           const server = servers.find(item => item.id === session.serverId);
-          const titleBase = server?.name ?? '终端';
-          const title = session.terminalIndex > 1 ? `${titleBase} (${session.terminalIndex})` : titleBase;
+          const serverName = server?.name ?? '终端';
+          const timeStr = session.createdAt ? formatTime(session.createdAt) : '';
           const statusMeta = getServerStatusMeta(session.status);
           const StatusIcon = statusMeta.icon;
 
@@ -172,7 +178,8 @@ const TabBarComponent: React.FC<TabBarProps> = ({
                   className={`${styles.statusIcon} ${statusMeta.spinning ? styles.statusSpinning : ''}`.trim()}
                   style={{ color: statusMeta.color }}
                 />
-                <span className={styles.tabTitleText}>{title}</span>
+                <span className={styles.tabTitleText}>{serverName}</span>
+                {timeStr && <span className={styles.tabTime}>{timeStr}</span>}
               </span>
               <button
                 className={styles.closeButton}
@@ -180,7 +187,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({
                   e.stopPropagation(); // 防止点击关闭按钮时触发标签页的切换事件
                   onCloseSession(session.id);
                 }}
-                title={`关闭 ${title}`}
+                title={`关闭 ${serverName}`}
               >
                 <FaTimes />
               </button>

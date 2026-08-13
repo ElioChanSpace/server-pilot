@@ -47,3 +47,8 @@ export interface HostKeyPromptEvent {
   serverId: string;
   fingerprint: string;
 }
+
+export interface AppStats {
+  memoryMb: number;
+  cpuPercent: number;
+}

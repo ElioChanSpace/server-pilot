@@ -12,7 +12,7 @@ use crate::servers::interface::commands::{
     connect_server, create_category, create_remote_directory, create_server, create_ssh_tunnel,
     delete_category, delete_remote_path, delete_server, disconnect_server,
     download_file_from_server, export_app_data, fetch_server_metrics, generate_ssh_key,
-    get_app_settings, get_categories, get_custom_themes, get_default_ssh_key_path, get_file_content, get_servers,
+    get_app_settings, get_app_stats, get_categories, get_custom_themes, get_default_ssh_key_path, get_file_content, get_servers,
     get_terminal_session_directory, highlight_code, import_app_data, list_remote_directory,
     list_ssh_keys, list_ssh_tunnels, move_category, parse_ssh_config, pty_resize, pty_write, read_app_logs,
     read_remote_log, rename_remote_path, save_custom_app_themes, save_remote_file, test_server_connection, test_ssh_connection,
@@ -271,7 +271,8 @@ fn main() {
             highlight_code,
             save_remote_file,
             get_custom_themes,
-            save_custom_app_themes
+            save_custom_app_themes,
+            get_app_stats
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
