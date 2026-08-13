@@ -4,7 +4,7 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::{self, SeekFrom, Seek};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use super::util::{run_ssh_command, shell_quote, SSH_COMMAND_TIMEOUT};
 use super::file_transfer::resolve_transfer_server;
@@ -23,18 +23,13 @@ pub struct RemoteLogResult {
     pub lines: Vec<String>,
 }
 
-fn resolve_app_log_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let log_dir = app_handle
-        .path()
-        .app_log_dir()
-        .or_else(|_| {
-            app_handle
-                .path()
-                .app_local_data_dir()
-                .map(|path: PathBuf| path.join("logs"))
-        })
-        .map_err(|_| "无法解析应用日志目录".to_string())?;
-
+fn resolve_app_log_path(_app_handle: &AppHandle) -> Result<PathBuf, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|_| "无法获取可执行文件路径".to_string())?;
+    let exe_dir = exe_path
+        .parent()
+        .ok_or_else(|| "无法获取可执行文件目录".to_string())?;
+    let log_dir = exe_dir.join("logs");
     Ok(log_dir.join("app.log"))
 }
 

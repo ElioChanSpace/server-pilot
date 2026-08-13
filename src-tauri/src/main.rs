@@ -35,16 +35,14 @@ use tauri::{
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
 fn resolve_app_log_path<R: tauri::Runtime>(
-    path_resolver: &PathResolver<R>,
+    _path_resolver: &PathResolver<R>,
 ) -> Result<PathBuf, String> {
-    let log_dir = path_resolver
-        .app_log_dir()
-        .or_else(|_| {
-            path_resolver
-                .app_local_data_dir()
-                .map(|path| path.join("logs"))
-        })
-        .map_err(|_| "无法解析应用日志目录".to_string())?;
+    let exe_path = std::env::current_exe()
+        .map_err(|_| "无法获取可执行文件路径".to_string())?;
+    let exe_dir = exe_path
+        .parent()
+        .ok_or_else(|| "无法获取可执行文件目录".to_string())?;
+    let log_dir = exe_dir.join("logs");
     Ok(log_dir.join("app.log"))
 }
 
