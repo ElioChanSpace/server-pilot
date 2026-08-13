@@ -418,6 +418,12 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       return;
     }
 
+    // Re-fit when becoming visible (display:none → visible may need resize)
+    const addon = fitAddonRef.current;
+    if (addon) {
+      scheduleFit(addon, terminal);
+    }
+
     if (outputChunks.length <= renderedChunkCountRef.current) {
       return;
     }
