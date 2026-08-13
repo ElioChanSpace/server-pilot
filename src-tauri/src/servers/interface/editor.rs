@@ -119,7 +119,12 @@ fn highlight_to_html(code: &str, syntax_name: &str, theme_mode: &str) -> Result<
     let mut html = String::new();
     html.push_str("<pre class=\"editor-code\">");
 
-    for line in code.lines() {
+    // Use split('\n') instead of lines() to preserve trailing empty segment,
+    // matching JavaScript's split("\n") behavior for consistent line counts.
+    for (i, line) in code.split('\n').enumerate() {
+        if i > 0 {
+            html.push('\n');
+        }
         let ranges = highlighter
             .highlight_line(line, &ss)
             .map_err(|err| format!("高亮失败: {}", err))?;
@@ -127,7 +132,6 @@ fn highlight_to_html(code: &str, syntax_name: &str, theme_mode: &str) -> Result<
             styled_line_to_highlighted_html(&ranges, IncludeBackground::No)
                 .map_err(|err| format!("HTML 转换失败: {}", err))?;
         html.push_str(&line_html);
-        html.push('\n');
     }
 
     html.push_str("</pre>");
@@ -175,7 +179,8 @@ pub async fn get_file_content(
         let raw = output;
 
         let language = detect_language(&path);
-        let line_count = raw.lines().count();
+        // Match JavaScript split("\n").length — include trailing empty segment
+        let line_count = raw.split('\n').count();
         let file_size = raw.len();
         let html = highlight_to_html(&raw, language, &theme_mode)?;
 

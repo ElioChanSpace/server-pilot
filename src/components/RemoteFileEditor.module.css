@@ -156,6 +156,7 @@
   top: 0;
   width: 52px;
   height: 100%;
+  box-sizing: border-box;
   background: var(--bg-primary-opaque, var(--bg-primary, #1e1e2e));
   border-right: 1px solid var(--border-color, #313244);
   color: var(--text-muted, #585b70);
@@ -177,7 +178,7 @@
   inset: 0;
   padding: 12px;
   margin: 0;
-  overflow: auto;
+  overflow: hidden;
   pointer-events: none;
   z-index: 0;
   white-space: pre;

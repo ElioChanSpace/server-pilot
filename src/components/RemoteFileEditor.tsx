@@ -34,13 +34,16 @@ const getBaseName = (path: string) => {
 
 // Memoized highlight layer — only re-renders when html changes,
 // completely unaffected by isReadOnly, cursor, saveStatus etc.
+// forwardRef is required because React 18 memo does not forward refs.
 const HighlightLayer = React.memo(
-  ({ html, ref: preRef }: { html: string; ref: React.RefObject<HTMLPreElement | null> }) => (
-    <pre
-      ref={preRef as React.Ref<HTMLPreElement>}
-      className={styles.highlightLayer}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+  React.forwardRef<HTMLPreElement, { html: string }>(
+    ({ html }, ref) => (
+      <pre
+        ref={ref}
+        className={styles.highlightLayer}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    ),
   ),
 );
 HighlightLayer.displayName = "HighlightLayer";
@@ -54,6 +57,7 @@ function useCanvasLineNumbers(
 ) {
   const dprRef = useRef(window.devicePixelRatio || 1);
   const lineHeightRef = useRef(20.8); // 13px * 1.6 line-height
+  const paddingTopRef = useRef(12); // matches textarea/highlight padding
   const fillStyleRef = useRef<string>("");
   const fontRef = useRef<string>("");
 
@@ -66,6 +70,7 @@ function useCanvasLineNumbers(
 
     const dpr = dprRef.current;
     const lineHeight = lineHeightRef.current;
+    const paddingTop = paddingTopRef.current;
     const rect = canvas.getBoundingClientRect();
     const w = rect.width;
     const h = rect.height;
@@ -93,15 +98,15 @@ function useCanvasLineNumbers(
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
 
-    const scrollTop = scrollTopRef.current ?? 0;
-    const visibleStart = Math.floor(scrollTop / lineHeight);
+    const scrollTop = Math.max(0, scrollTopRef.current ?? 0);
+    const visibleStart = Math.max(0, Math.floor(scrollTop / lineHeight));
     const visibleEnd = Math.min(lineCount, visibleStart + Math.ceil(h / lineHeight) + 1);
     const padRight = 8;
 
     // Draw only visible lines
     for (let i = visibleStart; i < visibleEnd; i++) {
-      // Calculate y position relative to canvas top edge
-      const y = (i * lineHeight - scrollTop) + lineHeight / 2;
+      // paddingTop offsets line 1 to the same y as textarea text content
+      const y = paddingTop + (i * lineHeight - scrollTop) + lineHeight / 2;
       // Only draw if within canvas bounds
       if (y >= 0 && y <= h) {
         ctx.fillText(String(i + 1), w - padRight, y);
@@ -142,6 +147,8 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
   // Load file content
   const loadFile = useCallback(async () => {
+    console.log("[Editor] loadFile start, path:", filePath);
+    const t0 = performance.now();
     setIsLoading(true);
     setError(null);
 
@@ -151,17 +158,22 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
         path: filePath,
         themeMode: themeMode,
       });
+      console.log("[Editor] get_file_content returned in", (performance.now() - t0).toFixed(1), "ms, lines:", result.lineCount, "size:", result.fileSize);
 
+      const t1 = performance.now();
       setContent(result.raw);
       setHighlightedHtml(result.html);
       setLanguage(result.language);
       setLineCount(result.lineCount);
       originalContentRef.current = result.raw;
       setIsDirty(false);
+      console.log("[Editor] state updates took", (performance.now() - t1).toFixed(1), "ms");
     } catch (err) {
+      console.error("[Editor] loadFile error:", err);
       setError(typeof err === "string" ? err : "加载文件失败");
     } finally {
       setIsLoading(false);
+      console.log("[Editor] loadFile total:", (performance.now() - t0).toFixed(1), "ms");
     }
   }, [serverId, filePath, themeMode]);
 
@@ -171,7 +183,9 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
   // Redraw canvas line numbers when lineCount changes
   useEffect(() => {
+    const t0 = performance.now();
     drawLineNumbers();
+    console.log("[Editor] drawLineNumbers (lineCount:", lineCount, ") took", (performance.now() - t0).toFixed(1), "ms");
   }, [lineCount, drawLineNumbers]);
 
   // Debounced re-highlight
@@ -182,15 +196,17 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       }
 
       highlightTimerRef.current = setTimeout(async () => {
+        const t0 = performance.now();
         try {
           const result = await invoke<HighlightedCode>("highlight_code", {
             code,
             language: lang,
             themeMode: themeMode,
           });
+          console.log("[Editor] highlight_code returned in", (performance.now() - t0).toFixed(1), "ms, htmlLen:", result.html.length);
           setHighlightedHtml(result.html);
-        } catch {
-          // Highlighting failure is non-fatal
+        } catch (err) {
+          console.error("[Editor] highlight_code error:", err, "took", (performance.now() - t0).toFixed(1), "ms");
         }
       }, 300);
     },
@@ -219,21 +235,28 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   );
 
   // Sync scroll between textarea, highlight canvas, and line numbers canvas.
-  // Uses refs only — no state updates, no re-renders.
+  // Uses transform instead of scrollTop for the highlight layer — more reliable
+  // with nested <pre> elements and avoids scrollHeight mismatch issues.
+  const scrollLogThrottleRef = useRef(0);
   const handleScroll = useCallback(() => {
+    const t0 = performance.now();
     const textarea = textareaRef.current;
     const highlight = highlightRef.current;
 
     if (textarea && highlight) {
-      highlight.scrollTop = textarea.scrollTop;
-      highlight.scrollLeft = textarea.scrollLeft;
+      highlight.style.transform = `translate(${-textarea.scrollLeft}px, ${-textarea.scrollTop}px)`;
     }
 
     if (textarea) {
       scrollTopRef.current = textarea.scrollTop;
-      // Use requestAnimationFrame for smooth canvas updates
       requestAnimationFrame(() => {
         drawLineNumbers();
+        const elapsed = performance.now() - t0;
+        // Throttle scroll logs to avoid flooding — log every 500ms or if slow
+        if (elapsed > 8 || performance.now() - scrollLogThrottleRef.current > 500) {
+          scrollLogThrottleRef.current = performance.now();
+          console.log("[Editor] handleScroll took", elapsed.toFixed(1), "ms, scrollTop:", textarea.scrollTop);
+        }
       });
     }
   }, [drawLineNumbers]);
@@ -252,6 +275,8 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
   // Save file
   const handleSave = useCallback(async () => {
+    console.log("[Editor] handleSave start, path:", filePath, "contentLen:", content.length);
+    const t0 = performance.now();
     setSaveStatus("saving");
     try {
       await invoke<string>("save_remote_file", {
@@ -259,14 +284,15 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
         path: filePath,
         content,
       });
+      console.log("[Editor] save_remote_file returned in", (performance.now() - t0).toFixed(1), "ms");
       originalContentRef.current = content;
       setIsDirty(false);
       setSaveStatus("saved");
       onSaved?.();
-      // Notify main window to refresh file list
       void emit("editor-file-saved", { serverId, filePath });
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err) {
+      console.error("[Editor] handleSave error:", err, "took", (performance.now() - t0).toFixed(1), "ms");
       setSaveStatus("error");
       setError(typeof err === "string" ? err : "保存失败");
       setTimeout(() => setSaveStatus("idle"), 3000);
@@ -284,17 +310,25 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
   // Toggle edit mode — only flips isReadOnly, no DOM rebuild
   const handleToggleEdit = useCallback(() => {
+    const t0 = performance.now();
+    console.log("[Editor] handleToggleEdit start");
     setIsReadOnly((prev) => {
       const next = !prev;
+      console.log("[Editor] isReadOnly", prev, "->", next, "state flip took", (performance.now() - t0).toFixed(1), "ms");
       if (!next) {
         // Double rAF: first frame applies style changes, second frame focuses
         // after layout/paint completes. Prevents jank on Windows WebView2.
+        const t1 = performance.now();
         requestAnimationFrame(() => {
+          console.log("[Editor] rAF1 fired, delay:", (performance.now() - t1).toFixed(1), "ms");
+          const t2 = performance.now();
           requestAnimationFrame(() => {
+            console.log("[Editor] rAF2 fired, delay:", (performance.now() - t2).toFixed(1), "ms");
             const textarea = textareaRef.current;
             if (textarea) {
               textarea.focus();
               textarea.setSelectionRange(0, 0);
+              console.log("[Editor] focus+setSelection done at", (performance.now() - t0).toFixed(1), "ms");
             }
           });
         });
@@ -380,10 +414,13 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
     if (e.target instanceof HTMLButtonElement || e.target instanceof SVGElement) {
       return;
     }
+    const t0 = performance.now();
+    console.log("[Editor] startDragging begin");
     try {
       await getCurrentWindow().startDragging();
+      console.log("[Editor] startDragging done in", (performance.now() - t0).toFixed(1), "ms");
     } catch (err) {
-      console.error("Failed to start dragging:", err);
+      console.error("[Editor] startDragging failed after", (performance.now() - t0).toFixed(1), "ms:", err);
     }
   }, []);
 
