@@ -1,10 +1,13 @@
 .tabBar {
   display: flex;
+  align-items: flex-end;
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--glass-border);
   overflow-x: auto;
-  /* Hide scrollbar but allow scrolling */
+  padding: 0 4px;
+  gap: 2px;
   scrollbar-width: none;
+  min-height: 38px;
 }
 
 .tabBar::-webkit-scrollbar {
@@ -15,35 +18,46 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 7px 12px 8px;
   cursor: pointer;
   background-color: transparent;
-  border-right: 1px solid var(--glass-border);
+  border: none;
+  border-radius: 8px 8px 0 0;
   min-width: 120px;
   max-width: 200px;
-  color: var(--text-secondary);
-  font-size: 13px;
+  color: var(--text-muted);
+  font-size: 12px;
   user-select: none;
-  transition: background-color 0.18s ease, color 0.18s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  position: relative;
 }
 
 .tab:hover {
   background-color: var(--surface-hover);
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
 .tab[data-active="true"] {
   background-color: var(--bg-elevated);
-  color: var(--accent-strong);
-  border-bottom: 2px solid var(--accent-color);
+  color: var(--text-primary);
+}
+
+.tab[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--accent-color);
+  border-radius: 2px 2px 0 0;
 }
 
 .tabTitle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
-  margin-right: 8px;
   min-width: 0;
 }
 
@@ -55,6 +69,11 @@
 
 .statusIcon {
   flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.tab[data-active="true"] .statusIcon {
+  opacity: 1;
 }
 
 .statusSpinning {
@@ -74,19 +93,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background-color: transparent;
-  color: var(--text-secondary);
-  font-size: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background-color: var(--surface-active);
+  color: var(--text-primary);
+  font-size: 12px;
   padding: 0;
   margin: 0;
+  margin-left: 4px;
   box-shadow: none;
   transform: none;
+  opacity: 0;
+  transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+.tab:hover .closeButton,
+.tab[data-active="true"] .closeButton {
+  opacity: 1;
 }
 
 .closeButton:hover {
-  background-color: var(--danger-soft);
-  color: var(--danger-color);
+  background-color: var(--danger-color);
+  color: var(--bg-primary);
 }

@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { FaKey, FaDownload, FaUpload, FaCheck, FaCode } from "react-icons/fa";
+import { FaKey, FaDownload, FaUpload, FaCheck, FaCode, FaTimes } from "react-icons/fa";
 import { useServer } from "../context/ServerContext";
 import type { AppSettings } from "../types/settings";
-import { TERMINAL_THEMES, DEFAULT_TERMINAL_THEME } from "../utils/terminal-themes";
 import { APP_THEMES, DEFAULT_THEME } from "../utils/app-themes";
 import { exportTheme, importTheme } from "../utils/theme-helpers";
 import { SshKeyManager } from "./SshKeyManager";
@@ -45,10 +44,13 @@ const defaultSettings: AppSettings = {
   themePreference: DEFAULT_THEME,
   notificationsEnabled: true,
   confirmOnDisconnect: true,
-  terminalTheme: DEFAULT_TERMINAL_THEME,
 };
 
-export const Settings: React.FC = () => {
+interface SettingsProps {
+  onClose: () => void;
+}
+
+export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const { refreshServers, refreshCategories } = useServer();
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,19 +60,29 @@ export const Settings: React.FC = () => {
   const [showSshKeyManager, setShowSshKeyManager] = useState(false);
   const [syntaxPlugins] = useState<SyntaxPlugin[]>(DEFAULT_SYNTAX_PLUGINS);
 
+  // Load settings and custom themes on mount
   useEffect(() => {
-    void invoke<AppSettings>("get_app_settings")
-      .then(data => {
+    void (async () => {
+      try {
+        const [data, customThemes] = await Promise.all([
+          invoke<AppSettings>("get_app_settings"),
+          invoke<{ appThemes: Record<string, unknown> }>("get_custom_themes"),
+        ]);
         setSettings(data);
+        // Merge custom app themes
+        if (customThemes.appThemes && typeof customThemes.appThemes === 'object') {
+          for (const [id, theme] of Object.entries(customThemes.appThemes)) {
+            APP_THEMES[id] = theme as typeof APP_THEMES[string];
+          }
+        }
         setError(null);
-      })
-      .catch(loadError => {
+      } catch (loadError) {
         console.error("加载应用设置失败:", loadError);
         setError("加载设置失败，请稍后重试。");
-      })
-      .finally(() => {
+      } finally {
         setIsLoading(false);
-      });
+      }
+    })();
   }, []);
 
   const handleSave = async () => {
@@ -181,6 +193,16 @@ export const Settings: React.FC = () => {
       // 添加到主题列表
       APP_THEMES[importedTheme.id] = importedTheme;
 
+      // 持久化到后端
+      const customThemes: Record<string, unknown> = {};
+      for (const [id, theme] of Object.entries(APP_THEMES)) {
+        // 只保存非内置主题
+        if (!['dark', 'light', 'midnight', 'eyecare', 'monokai', 'dracula', 'solarized', 'nord'].includes(id)) {
+          customThemes[id] = theme;
+        }
+      }
+      await invoke("save_custom_app_themes", { themes: customThemes });
+
       // 设置为当前主题
       setSettings(prev => ({
         ...prev,
@@ -194,9 +216,14 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
-        <h2 className={styles.title}>设置</h2>
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={styles.page}>
+        <div className={styles.header}>
+          <h2 className={styles.title}>设置</h2>
+          <button type="button" className={styles.closeButton} onClick={onClose} title="关闭">
+            <FaTimes />
+          </button>
+        </div>
         <p className={styles.description}>
           配置终端长时间无操作时的自动断连策略。连接失败时，终端标签会保留，便于查看报错输出。
         </p>
@@ -340,27 +367,6 @@ export const Settings: React.FC = () => {
               <span className={styles.helper}>导出当前主题配置，或从文件导入自定义主题。</span>
             </div>
 
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>终端配色主题</span>
-              <select
-                value={settings.terminalTheme || DEFAULT_TERMINAL_THEME}
-                onChange={(event) => {
-                  setSettings(prev => ({
-                    ...prev,
-                    terminalTheme: event.target.value,
-                  }));
-                }}
-                className="select-css"
-              >
-                {Object.values(TERMINAL_THEMES).map(theme => (
-                  <option key={theme.name} value={theme.name}>
-                    {theme.label}
-                  </option>
-                ))}
-              </select>
-              <span className={styles.helper}>更改后对新打开的终端会话生效。</span>
-            </label>
-
             <label className={styles.fieldRow}>
               <input
                 type="checkbox"
@@ -458,6 +464,13 @@ export const Settings: React.FC = () => {
             )}
 
             <div className={styles.actions}>
+              <button
+                type="button"
+                onClick={onClose}
+                className={styles.cancelButton}
+              >
+                取消
+              </button>
               <button
                 onClick={handleSave}
                 disabled={isSaving}

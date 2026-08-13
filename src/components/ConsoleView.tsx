@@ -16,7 +16,6 @@ interface ConsoleViewProps {
   onReconnect: () => void;
   onFontSizeChange: (delta: number) => void;
   disconnectMessage?: string | null;
-  themeName?: string;
 }
 
 const arePropsEqual = (prev: ConsoleViewProps, next: ConsoleViewProps) =>
@@ -30,7 +29,6 @@ const arePropsEqual = (prev: ConsoleViewProps, next: ConsoleViewProps) =>
   prev.onReconnect === next.onReconnect &&
   prev.onFontSizeChange === next.onFontSizeChange &&
   prev.disconnectMessage === next.disconnectMessage &&
-  prev.themeName === next.themeName &&
   (!prev.isActive || prev.outputChunks === next.outputChunks);
 
 const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
@@ -45,7 +43,6 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
   onReconnect,
   onFontSizeChange,
   disconnectMessage,
-  themeName,
 }) => {
   const handleInput = useCallback((data: string) => {
     void invoke('pty_write', { sessionId, data }).catch(error => {
@@ -79,7 +76,6 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
         fontSize={fontSize}
         scrollback={scrollback}
         onFontSizeChange={onFontSizeChange}
-        themeName={themeName}
       />
       {status === 'disconnected' && (
         <div className="console-reconnect-overlay">

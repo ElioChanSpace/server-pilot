@@ -15,7 +15,6 @@ pub struct UpdateAppSettingsRequest {
     pub theme_preference: Option<String>,
     pub notifications_enabled: Option<bool>,
     pub confirm_on_disconnect: Option<bool>,
-    pub terminal_theme: Option<String>,
 }
 
 #[tauri::command]
@@ -302,11 +301,7 @@ pub fn update_app_settings(
     if payload.terminal_idle_disconnect_enabled && payload.terminal_idle_disconnect_minutes == 0 {
         return Err("空闲断连时间必须大于 0 分钟".to_string());
     }
-    if let Some(preference) = payload.theme_preference.as_deref() {
-        if !matches!(preference, "system" | "light" | "dark") {
-            return Err("无效的主题偏好".to_string());
-        }
-    }
+    // theme_preference accepts any theme ID (built-in or custom)
 
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
     let current = data.settings.clone();
@@ -333,12 +328,32 @@ pub fn update_app_settings(
         confirm_on_disconnect: payload
             .confirm_on_disconnect
             .unwrap_or(current.confirm_on_disconnect),
-        terminal_theme: payload
-            .terminal_theme
-            .unwrap_or(current.terminal_theme),
     };
     let settings = data.settings.clone();
     drop(data);
     state.save()?;
     Ok(settings)
+}
+
+/// Get custom app themes
+#[tauri::command]
+pub fn get_custom_themes(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data = state.data.lock().map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "appThemes": data.custom_themes,
+    }))
+}
+
+/// Save custom app themes (full replacement of the custom_themes field)
+#[tauri::command]
+pub fn save_custom_app_themes(
+    state: State<'_, AppState>,
+    themes: serde_json::Value,
+) -> Result<(), String> {
+    let mut data = state.data.lock().map_err(|e| e.to_string())?;
+    data.custom_themes = themes;
+    drop(data);
+    state.save()
 }

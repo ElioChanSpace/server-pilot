@@ -147,24 +147,25 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
       <div className={styles.content}>
         <h2 className={styles.title}>{isEditMode ? '编辑服务器' : '新增服务器'}</h2>
         <form onSubmit={handleSubmit}>
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>操作系统</label>
-            <select value={osType} onChange={handleOsChange} className="select-css">
-              <option value={OsType.Linux}>Linux</option>
-              <option value={OsType.Windows}>Windows</option>
-            </select>
-          </div>
-
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>名称</label>
-            <input
-              type="text"
-              required
-              autoFocus
-              value={formData.name}
-              onChange={e => handleFieldChange('name', e.target.value)}
-              placeholder="生产服务器"
-            />
+          <div className={styles.formRow}>
+            <div className={`${styles.formGroup} ${styles.grow}`}>
+              <label className={styles.formLabel}>名称</label>
+              <input
+                type="text"
+                required
+                autoFocus
+                value={formData.name}
+                onChange={e => handleFieldChange('name', e.target.value)}
+                placeholder="生产服务器"
+              />
+            </div>
+            <div className={`${styles.formGroup} ${styles.shrink}`}>
+              <label className={styles.formLabel}>操作系统</label>
+              <select value={osType} onChange={handleOsChange} className="select-css">
+                <option value={OsType.Linux}>Linux</option>
+                <option value={OsType.Windows}>Windows</option>
+              </select>
+            </div>
           </div>
 
           <div className={styles.formRow}>
@@ -191,46 +192,56 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
             </div>
           </div>
 
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>用户名</label>
-            <input
-              type="text"
-              required
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              autoComplete="off"
-              value={formData.username}
-              onChange={e => handleFieldChange('username', e.target.value)}
-            />
+          <div className={styles.formRow}>
+            <div className={`${styles.formGroup} ${styles.grow}`}>
+              <label className={styles.formLabel}>用户名</label>
+              <input
+                type="text"
+                required
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                autoComplete="off"
+                value={formData.username}
+                onChange={e => handleFieldChange('username', e.target.value)}
+              />
+            </div>
+            <div className={`${styles.formGroup} ${styles.shrink}`}>
+              <label className={styles.formLabel}>认证方式</label>
+              <select
+                value={formData.authMethod}
+                onChange={e => handleFieldChange('authMethod', e.target.value as 'password' | 'key')}
+                className="select-css"
+              >
+                <option value="password">密码</option>
+                <option value="key">密钥</option>
+              </select>
+            </div>
           </div>
 
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>密码</label>
-            <input
-              type="password"
-              value={formData.password}
-              onChange={e => handleFieldChange('password', e.target.value)}
-              placeholder={
-                isEditMode && existingServer?.hasPassword
-                  ? '已保存密码，留空保持不变'
-                  : osType === OsType.Windows
-                    ? '选填'
-                    : 'SSH 密码（选填）'
-              }
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>认证方式</label>
-            <select
-              value={formData.authMethod}
-              onChange={e => handleFieldChange('authMethod', e.target.value as 'password' | 'key')}
-              className="select-css"
-            >
-              <option value="password">密码</option>
-              <option value="key">SSH 密钥</option>
-            </select>
+          <div className={styles.formRow}>
+            <div className={`${styles.formGroup} ${styles.grow}`}>
+              <label className={styles.formLabel}>密码</label>
+              <input
+                type="password"
+                value={formData.password}
+                onChange={e => handleFieldChange('password', e.target.value)}
+                placeholder={
+                  isEditMode && existingServer?.hasPassword
+                    ? '已保存密码，留空保持不变'
+                    : osType === OsType.Windows
+                      ? '选填'
+                      : 'SSH 密码（选填）'
+                }
+              />
+            </div>
+            <div className={`${styles.formGroup} ${styles.shrink}`}>
+              <label className={styles.formLabel}>分组</label>
+              <select value={formData.categoryId} onChange={e => handleFieldChange('categoryId', e.target.value)} className="select-css">
+                <option value="">未分类</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
           </div>
 
           {formData.authMethod === 'key' && (
@@ -267,14 +278,6 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
               </div>
             </>
           )}
-
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>分组</label>
-            <select value={formData.categoryId} onChange={e => handleFieldChange('categoryId', e.target.value)} className="select-css">
-              <option value="">未分类</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
 
           <div className={styles.formGroup}>
             <label className={styles.formLabel}>跳板机（选填）</label>

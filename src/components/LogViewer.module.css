@@ -1,8 +1,26 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background-color: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-5);
+}
+
 .container {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  width: min(900px, 100%);
+  height: min(640px, 100%);
+  border-radius: 18px;
   background-color: var(--bg-primary);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
   color: var(--text-primary);
 }
 

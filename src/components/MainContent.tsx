@@ -1,16 +1,11 @@
-import React, { Suspense, useCallback, useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import { Server } from "../context/ServerContext";
 import { ConsoleView } from "./ConsoleView";
 import { TabBar } from "./TabBar";
 import type { TerminalSession } from "../types/terminal";
 import styles from "./MainContent.module.css";
 
-const Settings = React.lazy(() =>
-  import("./Settings").then(module => ({ default: module.Settings })),
-);
-
 interface MainContentProps {
-  activeView: "dashboard" | "settings" | "logs";
   sessions: TerminalSession[];
   servers: Server[];
   currentSessionId: string | null;
@@ -28,11 +23,9 @@ interface MainContentProps {
   onTerminalFontSizeChange: (delta: number) => void;
   onReconnectSession: (sessionId: string) => void;
   disconnectMessage?: string | null;
-  terminalTheme?: string;
 }
 
 export const MainContent: React.FC<MainContentProps> = ({
-  activeView,
   sessions,
   servers,
   currentSessionId,
@@ -50,7 +43,6 @@ export const MainContent: React.FC<MainContentProps> = ({
   onTerminalFontSizeChange,
   onReconnectSession,
   disconnectMessage,
-  terminalTheme,
 }) => {
   const serverById = useMemo(() => {
     const map = new Map<string, Server>();
@@ -91,14 +83,6 @@ export const MainContent: React.FC<MainContentProps> = ({
     });
     return map;
   }, [onReconnectSession, sessions]);
-
-  if (activeView === "settings") {
-    return (
-      <Suspense fallback={<div className={styles.lazyFallback}>正在加载设置...</div>}>
-        <Settings />
-      </Suspense>
-    );
-  }
 
   const hasActiveSessions = sessions.length > 0 && currentSessionId;
 
@@ -152,7 +136,6 @@ export const MainContent: React.FC<MainContentProps> = ({
               onReconnect={reconnectBySession.get(session.id)!}
               onFontSizeChange={onTerminalFontSizeChange}
               disconnectMessage={disconnectMessage}
-              themeName={terminalTheme}
             />
           </div>
         ))}

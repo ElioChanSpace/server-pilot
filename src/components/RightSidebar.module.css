@@ -4,7 +4,6 @@
   max-width: min(62vw, 840px);
   flex-shrink: 0;
   background-color: var(--bg-secondary-opaque, var(--bg-secondary));
-  border-left: 1px solid var(--glass-border);
   padding: 18px;
   overflow-y: auto;
   overflow-x: hidden;

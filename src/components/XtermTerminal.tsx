@@ -5,7 +5,6 @@ import { FitAddon } from 'xterm-addon-fit';
 import { SearchAddon } from 'xterm-addon-search';
 import { FaChevronDown, FaChevronUp, FaCopy, FaPaste, FaSearch, FaTimes } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
-import { TERMINAL_THEMES, DEFAULT_TERMINAL_THEME } from '../utils/terminal-themes';
 import 'xterm/css/xterm.css';
 
 interface XtermTerminalProps {
@@ -18,7 +17,6 @@ interface XtermTerminalProps {
   fontSize: number;
   scrollback: number;
   onFontSizeChange: (delta: number) => void;
-  themeName?: string;
 }
 
 const arePropsEqual = (prev: XtermTerminalProps, next: XtermTerminalProps) =>
@@ -30,7 +28,6 @@ const arePropsEqual = (prev: XtermTerminalProps, next: XtermTerminalProps) =>
   prev.fontSize === next.fontSize &&
   prev.scrollback === next.scrollback &&
   prev.onFontSizeChange === next.onFontSizeChange &&
-  prev.themeName === next.themeName &&
   // 非活动会话的累积输出只在激活时一次性补写，因此跳过重渲染。
   (!prev.isActive || prev.outputChunks === next.outputChunks);
 
@@ -44,7 +41,6 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   fontSize,
   scrollback,
   onFontSizeChange,
-  themeName = DEFAULT_TERMINAL_THEME,
 }) => {
   const termRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
@@ -96,28 +92,29 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   const closeContextMenu = () => setContextMenuPosition(null);
 
   const applyTerminalTheme = (terminal: Terminal) => {
-    const theme = TERMINAL_THEMES[themeName] || TERMINAL_THEMES[DEFAULT_TERMINAL_THEME];
+    const style = getComputedStyle(document.documentElement);
+    const get = (name: string) => style.getPropertyValue(name).trim();
     terminal.options.theme = {
-      background: theme.colors.background,
-      foreground: theme.colors.foreground,
-      cursor: theme.colors.cursor,
-      selectionBackground: theme.colors.selectionBackground,
-      black: theme.colors.black,
-      red: theme.colors.red,
-      green: theme.colors.green,
-      yellow: theme.colors.yellow,
-      blue: theme.colors.blue,
-      magenta: theme.colors.magenta,
-      cyan: theme.colors.cyan,
-      white: theme.colors.white,
-      brightBlack: theme.colors.brightBlack,
-      brightRed: theme.colors.brightRed,
-      brightGreen: theme.colors.brightGreen,
-      brightYellow: theme.colors.brightYellow,
-      brightBlue: theme.colors.brightBlue,
-      brightMagenta: theme.colors.brightMagenta,
-      brightCyan: theme.colors.brightCyan,
-      brightWhite: theme.colors.brightWhite,
+      background: get('--terminal-bg'),
+      foreground: get('--terminal-fg'),
+      cursor: get('--terminal-cursor'),
+      selectionBackground: get('--terminal-selection'),
+      black: get('--terminal-black'),
+      red: get('--terminal-red'),
+      green: get('--terminal-green'),
+      yellow: get('--terminal-yellow'),
+      blue: get('--terminal-blue'),
+      magenta: get('--terminal-magenta'),
+      cyan: get('--terminal-cyan'),
+      white: get('--terminal-white'),
+      brightBlack: get('--terminal-bright-black'),
+      brightRed: get('--terminal-bright-red'),
+      brightGreen: get('--terminal-bright-green'),
+      brightYellow: get('--terminal-bright-yellow'),
+      brightBlue: get('--terminal-bright-blue'),
+      brightMagenta: get('--terminal-bright-magenta'),
+      brightCyan: get('--terminal-bright-cyan'),
+      brightWhite: get('--terminal-bright-white'),
     };
   };
 
@@ -240,7 +237,17 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
         focusTerminal();
       }, 50);
 
+      // 监听主题变化
+      const themeObserver = new MutationObserver(() => {
+        applyTerminalTheme(terminal);
+      });
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme', 'data-theme-id'],
+      });
+
       return () => {
+        themeObserver.disconnect();
         resizeObserver.disconnect();
         if (fitFrameRef.current !== null) {
           cancelAnimationFrame(fitFrameRef.current);
@@ -373,26 +380,6 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       }
     };
   }, [isActive, onFilesDropped]);
-
-  useEffect(() => {
-    const terminal = termInstance.current;
-    if (!terminal) {
-      return;
-    }
-
-    applyTerminalTheme(terminal);
-
-    const observer = new MutationObserver(() => {
-      applyTerminalTheme(terminal);
-    });
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    });
-
-    return () => observer.disconnect();
-  }, [themeName]);
 
   useEffect(() => {
     const terminal = termInstance.current;

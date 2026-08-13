@@ -132,10 +132,6 @@ fn default_confirm_on_disconnect() -> bool {
     true
 }
 
-fn default_terminal_theme() -> String {
-    "default".to_string()
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -155,8 +151,6 @@ pub struct AppSettings {
     pub notifications_enabled: bool,
     #[serde(default = "default_confirm_on_disconnect")]
     pub confirm_on_disconnect: bool,
-    #[serde(default = "default_terminal_theme")]
-    pub terminal_theme: String,
 }
 
 impl Default for AppSettings {
@@ -170,7 +164,6 @@ impl Default for AppSettings {
             theme_preference: default_theme_preference(),
             notifications_enabled: default_notifications_enabled(),
             confirm_on_disconnect: default_confirm_on_disconnect(),
-            terminal_theme: default_terminal_theme(),
         }
     }
 }
@@ -184,6 +177,8 @@ pub struct AppData {
     pub categories: Vec<Category>,
     #[serde(default)]
     pub settings: AppSettings,
+    #[serde(default)]
+    pub custom_themes: serde_json::Value,
 }
 
 fn default_schema_version() -> u32 {

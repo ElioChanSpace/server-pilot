@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -32,6 +32,81 @@ const getBaseName = (path: string) => {
   return segments[segments.length - 1] ?? path;
 };
 
+// Memoized highlight layer — only re-renders when html changes,
+// completely unaffected by isReadOnly, cursor, saveStatus etc.
+const HighlightLayer = React.memo(
+  ({ html, ref: preRef }: { html: string; ref: React.RefObject<HTMLPreElement | null> }) => (
+    <pre
+      ref={preRef as React.Ref<HTMLPreElement>}
+      className={styles.highlightLayer}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  ),
+);
+HighlightLayer.displayName = "HighlightLayer";
+
+// Canvas-based line numbers — zero DOM nodes per line,
+// redraws only on scroll/lineCount change.
+function useCanvasLineNumbers(
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
+  lineCount: number,
+  scrollTopRef: React.RefObject<number | null>,
+) {
+  const dprRef = useRef(window.devicePixelRatio || 1);
+  const lineHeightRef = useRef(20.8); // 13px * 1.6 line-height
+  const fillStyleRef = useRef<string>("");
+  const fontRef = useRef<string>("");
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = dprRef.current;
+    const lineHeight = lineHeightRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+
+    // Set canvas resolution to match display
+    const targetW = Math.round(w * dpr);
+    const targetH = Math.round(h * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    // Cache font and fillStyle — avoid repeated style resolution per frame
+    if (!fontRef.current) {
+      fontRef.current = `13px 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace`;
+    }
+    if (!fillStyleRef.current) {
+      fillStyleRef.current = getComputedStyle(canvas).getPropertyValue("color").trim() || "#585b70";
+    }
+    ctx.font = fontRef.current;
+    ctx.fillStyle = fillStyleRef.current;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+
+    const scrollTop = scrollTopRef.current ?? 0;
+    const visibleStart = Math.floor(scrollTop / lineHeight);
+    const visibleEnd = Math.min(lineCount, Math.ceil((scrollTop + h) / lineHeight));
+    const padRight = 8;
+
+    for (let i = visibleStart; i < visibleEnd; i++) {
+      const y = i * lineHeight - scrollTop + lineHeight / 2;
+      ctx.fillText(String(i + 1), w - padRight, y);
+    }
+  }, [canvasRef, lineCount, scrollTopRef]);
+
+  return draw;
+}
+
 export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   serverId,
   filePath,
@@ -48,14 +123,17 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
-  const themeMode = getThemeMode(getInitialThemeId());
+  const themeMode = useMemo(() => getThemeMode(getInitialThemeId()), []);
   const [isReadOnly, setIsReadOnly] = useState(true);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
-  const lineNumbersRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scrollTopRef = useRef<number>(0);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originalContentRef = useRef<string>("");
+
+  const drawLineNumbers = useCanvasLineNumbers(canvasRef, lineCount, scrollTopRef);
 
   // Load file content
   const loadFile = useCallback(async () => {
@@ -85,6 +163,11 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   useEffect(() => {
     void loadFile();
   }, [loadFile]);
+
+  // Redraw canvas line numbers when lineCount changes
+  useEffect(() => {
+    drawLineNumbers();
+  }, [lineCount, drawLineNumbers]);
 
   // Debounced re-highlight
   const scheduleHighlight = useCallback(
@@ -130,20 +213,22 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
     [language, scheduleHighlight],
   );
 
-  // Sync scroll between textarea, highlight, and line numbers
+  // Sync scroll between textarea, highlight canvas, and line numbers canvas.
+  // Uses refs only — no state updates, no re-renders.
   const handleScroll = useCallback(() => {
     const textarea = textareaRef.current;
     const highlight = highlightRef.current;
-    const lineNumbers = lineNumbersRef.current;
 
     if (textarea && highlight) {
       highlight.scrollTop = textarea.scrollTop;
       highlight.scrollLeft = textarea.scrollLeft;
     }
-    if (textarea && lineNumbers) {
-      lineNumbers.scrollTop = textarea.scrollTop;
+
+    if (textarea) {
+      scrollTopRef.current = textarea.scrollTop;
+      drawLineNumbers();
     }
-  }, []);
+  }, [drawLineNumbers]);
 
   // Track cursor position
   const handleSelect = useCallback(() => {
@@ -189,18 +274,21 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
     scheduleHighlight(original, language);
   }, [language, scheduleHighlight]);
 
-  // Toggle edit mode
+  // Toggle edit mode — only flips isReadOnly, no DOM rebuild
   const handleToggleEdit = useCallback(() => {
-    setIsReadOnly(prev => {
+    setIsReadOnly((prev) => {
       const next = !prev;
       if (!next) {
-        // Switching to edit mode: focus textarea and move cursor to top
+        // Double rAF: first frame applies style changes, second frame focuses
+        // after layout/paint completes. Prevents jank on Windows WebView2.
         requestAnimationFrame(() => {
-          const textarea = textareaRef.current;
-          if (textarea) {
-            textarea.focus();
-            textarea.setSelectionRange(0, 0);
-          }
+          requestAnimationFrame(() => {
+            const textarea = textareaRef.current;
+            if (textarea) {
+              textarea.focus();
+              textarea.setSelectionRange(0, 0);
+            }
+          });
         });
       }
       return next;
@@ -222,7 +310,6 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
       if (event.key === "Escape") {
         event.preventDefault();
-        console.log("[Editor] ESC pressed, calling onClose");
         void onClose();
       }
     };
@@ -245,7 +332,6 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
         setIsDirty(newValue !== originalContentRef.current);
         scheduleHighlight(newValue, language);
 
-        // Restore cursor position after React re-render
         requestAnimationFrame(() => {
           textarea.selectionStart = start + 1;
           textarea.selectionEnd = start + 1;
@@ -254,18 +340,6 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
     },
     [language, scheduleHighlight],
   );
-
-  const renderLineNumbers = () => {
-    const lines = [];
-    for (let i = 1; i <= lineCount; i++) {
-      lines.push(
-        <span key={i} className={styles.lineNumber}>
-          {i}
-        </span>,
-      );
-    }
-    return lines;
-  };
 
   const getStatusText = () => {
     switch (saveStatus) {
@@ -295,7 +369,6 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
   // Handle title bar drag
   const handleTitleBarMouseDown = useCallback(async (e: React.MouseEvent) => {
-    // Don't start drag if clicking on a button
     if (e.target instanceof HTMLButtonElement || e.target instanceof SVGElement) {
       return;
     }
@@ -353,10 +426,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
           <button
             type="button"
             className={styles.closeButton}
-            onClick={() => {
-              console.log("[Editor] Close button clicked, calling onClose");
-              void onClose();
-            }}
+            onClick={() => void onClose()}
             title="关闭 (ESC)"
           >
             <FaTimes />
@@ -377,15 +447,12 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
           </div>
         ) : (
           <>
-            <div className={styles.lineNumbers} ref={lineNumbersRef}>
-              {renderLineNumbers()}
-            </div>
+            <canvas
+              ref={canvasRef}
+              className={styles.lineNumbersCanvas}
+            />
             <div className={styles.editorContent} data-readonly={isReadOnly} data-theme={themeMode}>
-              <pre
-                ref={highlightRef}
-                className={styles.highlightLayer}
-                dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-              />
+              <HighlightLayer html={highlightedHtml} ref={highlightRef} />
               <textarea
                 ref={textareaRef}
                 className={styles.textareaLayer}

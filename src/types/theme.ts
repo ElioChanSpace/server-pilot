@@ -40,11 +40,27 @@ export interface AppThemeColors {
   debug: string;
   dangerSoft: string;
 
-  // 终端色（可选覆盖）
-  terminalBg?: string;
-  terminalFg?: string;
-  terminalCursor?: string;
-  terminalSelection?: string;
+  // 终端色
+  terminalBg: string;
+  terminalFg: string;
+  terminalCursor: string;
+  terminalSelection: string;
+  terminalBlack: string;
+  terminalRed: string;
+  terminalGreen: string;
+  terminalYellow: string;
+  terminalBlue: string;
+  terminalMagenta: string;
+  terminalCyan: string;
+  terminalWhite: string;
+  terminalBrightBlack: string;
+  terminalBrightRed: string;
+  terminalBrightGreen: string;
+  terminalBrightYellow: string;
+  terminalBrightBlue: string;
+  terminalBrightMagenta: string;
+  terminalBrightCyan: string;
+  terminalBrightWhite: string;
 
   // 背景渐变
   bodyGradient: string;

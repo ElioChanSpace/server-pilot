@@ -138,6 +138,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ onClose }) => {
   const topPadding = startIndex * ROW_HEIGHT;
 
   return (
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
     <div className={styles.container}>
       <div className={styles.header}>
         <h3>应用日志</h3>
@@ -207,6 +208,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ onClose }) => {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 };

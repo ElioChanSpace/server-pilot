@@ -97,18 +97,27 @@ export const applyTheme = (theme: AppTheme): void => {
   root.style.setProperty('--debug-color', colors.debug);
   root.style.setProperty('--danger-soft', colors.dangerSoft);
 
-  if (colors.terminalBg) {
-    root.style.setProperty('--terminal-bg', colors.terminalBg);
-  }
-  if (colors.terminalFg) {
-    root.style.setProperty('--terminal-fg', colors.terminalFg);
-  }
-  if (colors.terminalCursor) {
-    root.style.setProperty('--terminal-cursor', colors.terminalCursor);
-  }
-  if (colors.terminalSelection) {
-    root.style.setProperty('--terminal-selection', colors.terminalSelection);
-  }
+  // 终端颜色
+  root.style.setProperty('--terminal-bg', colors.terminalBg);
+  root.style.setProperty('--terminal-fg', colors.terminalFg);
+  root.style.setProperty('--terminal-cursor', colors.terminalCursor);
+  root.style.setProperty('--terminal-selection', colors.terminalSelection);
+  root.style.setProperty('--terminal-black', colors.terminalBlack);
+  root.style.setProperty('--terminal-red', colors.terminalRed);
+  root.style.setProperty('--terminal-green', colors.terminalGreen);
+  root.style.setProperty('--terminal-yellow', colors.terminalYellow);
+  root.style.setProperty('--terminal-blue', colors.terminalBlue);
+  root.style.setProperty('--terminal-magenta', colors.terminalMagenta);
+  root.style.setProperty('--terminal-cyan', colors.terminalCyan);
+  root.style.setProperty('--terminal-white', colors.terminalWhite);
+  root.style.setProperty('--terminal-bright-black', colors.terminalBrightBlack);
+  root.style.setProperty('--terminal-bright-red', colors.terminalBrightRed);
+  root.style.setProperty('--terminal-bright-green', colors.terminalBrightGreen);
+  root.style.setProperty('--terminal-bright-yellow', colors.terminalBrightYellow);
+  root.style.setProperty('--terminal-bright-blue', colors.terminalBrightBlue);
+  root.style.setProperty('--terminal-bright-magenta', colors.terminalBrightMagenta);
+  root.style.setProperty('--terminal-bright-cyan', colors.terminalBrightCyan);
+  root.style.setProperty('--terminal-bright-white', colors.terminalBrightWhite);
 
   root.style.setProperty('--body-gradient', colors.bodyGradient);
 

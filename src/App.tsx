@@ -10,6 +10,7 @@ import { AddCategoryModal } from "./components/AddCategoryModal";
 import { ImportSshConfigModal } from "./components/ImportSshConfigModal";
 import { BatchCommandModal } from "./components/BatchCommandModal";
 import { RemoteLogModal } from "./components/RemoteLogModal";
+import { Settings } from "./components/Settings";
 import { WelcomeModal } from "./components/WelcomeModal";
 import { CommandPalette } from "./components/CommandPalette";
 import { LeftSidebar } from "./components/LeftSidebar";
@@ -54,7 +55,7 @@ const AppContent: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [isUncategorizedSelected, setIsUncategorizedSelected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"dashboard" | "settings" | "logs">("dashboard");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [isSshImportOpen, setIsSshImportOpen] = useState(false);
   const [isBatchCommandOpen, setIsBatchCommandOpen] = useState(false);
@@ -354,7 +355,6 @@ const AppContent: React.FC = () => {
   const handleConnectServer = useCallback(async (server: Server) => {
     clearSelection();
     setActiveServer(server);
-    setActiveView("dashboard");
 
     try {
       const result = await connectToServer(server.id);
@@ -383,7 +383,6 @@ const AppContent: React.FC = () => {
     clearSelection();
     if (selectedServer) setActiveServer(selectedServer);
     setCurrentSessionId(sessionId);
-    setActiveView("dashboard");
   }, [clearSelection, servers, sessions]);
 
   const handleDuplicateSession = useCallback((sessionId: string) => {
@@ -439,7 +438,6 @@ const AppContent: React.FC = () => {
     clearSelection();
     setActiveCategory(category);
     setIsUncategorizedSelected(category === null);
-    setActiveView("dashboard");
   }, [clearSelection]);
 
   const handleDisconnectServer = useCallback(async (server: Server) => {
@@ -541,7 +539,7 @@ const AppContent: React.FC = () => {
   const handleOpenBatchCommand = useCallback(() => setIsBatchCommandOpen(true), []);
   const handleOpenRemoteLog = useCallback((server: Server) => setRemoteLogServer(server), []);
   const dismissWelcome = useCallback(() => { window.localStorage.setItem("server-pilot-welcomed", "1"); setIsWelcomeOpen(false); }, []);
-  const handleOpenSettings = useCallback(() => { setIsLogViewerOpen(false); clearSelection(); setCurrentSessionId(null); setActiveView("settings"); }, [clearSelection]);
+  const handleOpenSettings = useCallback(() => { setIsLogViewerOpen(false); setIsSettingsOpen(true); }, []);
   const handleOpenLogViewer = useCallback(() => setIsLogViewerOpen(true), []);
   const handleCreateServerInCategory = useCallback((category: Category | null) => { setEditingServer(undefined); setInitialCategoryId(category?.id); setIsServerModalOpen(true); }, []);
   const handleCreateSubCategory = useCallback((category: Category | null) => { setEditingCategory(undefined); setInitialParentId(category?.id); setIsCategoryModalOpen(true); }, []);
@@ -664,7 +662,6 @@ const AppContent: React.FC = () => {
         />
         <div className="workspace-shell">
           <MainContent
-            activeView={activeView}
             sessions={sessions}
             servers={servers}
             currentSessionId={currentSessionId}
@@ -682,7 +679,6 @@ const AppContent: React.FC = () => {
             onTerminalFontSizeChange={handleTerminalFontSizeChange}
             onReconnectSession={handleReconnectSession}
             disconnectMessage={connectionError}
-            terminalTheme={appSettings?.terminalTheme}
           />
           {!isLogViewerOpen && isRightSidebarOpen && (
             <div className="right-sidebar-overlay">
@@ -707,13 +703,6 @@ const AppContent: React.FC = () => {
               />
             </div>
           )}
-          {isLogViewerOpen && (
-            <div className="log-viewer-overlay">
-              <Suspense fallback={<div className="lazy-fallback">正在加载日志...</div>}>
-                <LogViewer onClose={handleCloseLogViewer} />
-              </Suspense>
-            </div>
-          )}
         </div>
       </div>
       <FileTransferTray isOpen={isTransferTrayOpen} server={transferTargetServer} onClose={toggleTransferTray} />
@@ -726,6 +715,14 @@ const AppContent: React.FC = () => {
         toggleTransferTray={toggleTransferTray}
       />
       {uploadProgressOverlay && <UploadProgressToast overlay={uploadProgressOverlay} />}
+      {isSettingsOpen && (
+        <Settings onClose={() => setIsSettingsOpen(false)} />
+      )}
+      {isLogViewerOpen && (
+        <Suspense fallback={null}>
+          <LogViewer onClose={handleCloseLogViewer} />
+        </Suspense>
+      )}
       {isServerModalOpen && (
         <AddServerModal
           onClose={() => { setIsServerModalOpen(false); setEditingServer(undefined); }}

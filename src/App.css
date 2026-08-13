@@ -141,7 +141,7 @@ select {
   cursor: col-resize;
   position: relative;
   z-index: 1;
-  background: transparent;
+  background: var(--bg-secondary-opaque, var(--bg-secondary));
 }
 
 .right-sidebar-resizer::before {
@@ -348,13 +348,6 @@ select {
   border-radius: inherit;
   background: linear-gradient(90deg, var(--accent-color), var(--accent-hover));
   transition: width 0.18s ease;
-}
-
-.log-viewer-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  background: var(--bg-primary);
 }
 
 .lazy-fallback {

@@ -55,6 +55,7 @@ pub struct RemoteDirectoryListing {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TransferConnection {
     pub username: String,
     pub host: String,
