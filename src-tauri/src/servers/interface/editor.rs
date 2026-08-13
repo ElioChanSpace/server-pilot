@@ -8,7 +8,8 @@ use syntect::parsing::SyntaxSet;
 use tauri::State;
 
 use super::file_transfer::resolve_transfer_server;
-use super::util::{run_ssh_command, shell_quote, SSH_COMMAND_TIMEOUT};
+use super::ssh_client;
+use super::util::shell_quote;
 
 /// Maximum file size for inline editing (512 KiB).
 const EDITOR_FILE_SIZE_LIMIT: usize = 512 * 1024;
@@ -151,15 +152,9 @@ pub async fn get_file_content(
     tauri::async_runtime::spawn_blocking(move || {
         // First check file size
         let size_cmd = format!("stat -c %s -- {} 2>/dev/null || stat -f %z -- {} 2>/dev/null", shell_quote(&path), shell_quote(&path));
-        let size_output = run_ssh_command(
-            &connection.username,
-            &connection.host,
-            connection.port,
-            connection.password.as_deref(),
-            connection.key_path.as_deref(),
-            connection.proxy_jump.as_deref(),
+        let size_output = ssh_client::run_ssh_exec_blocking(
+            &connection,
             &size_cmd,
-            SSH_COMMAND_TIMEOUT,
             "check file size",
         );
 
@@ -176,15 +171,9 @@ pub async fn get_file_content(
 
         // Download file content via cat
         let cat_cmd = format!("cat -- {}", shell_quote(&path));
-        let raw = run_ssh_command(
-            &connection.username,
-            &connection.host,
-            connection.port,
-            connection.password.as_deref(),
-            connection.key_path.as_deref(),
-            connection.proxy_jump.as_deref(),
+        let raw = ssh_client::run_ssh_exec_blocking(
+            &connection,
             &cat_cmd,
-            SSH_COMMAND_TIMEOUT,
             "read file content",
         )?;
 
@@ -244,15 +233,9 @@ pub async fn save_remote_file(
             shell_quote(&path)
         );
 
-        run_ssh_command(
-            &connection.username,
-            &connection.host,
-            connection.port,
-            connection.password.as_deref(),
-            connection.key_path.as_deref(),
-            connection.proxy_jump.as_deref(),
+        ssh_client::run_ssh_exec_blocking(
+            &connection,
             &write_cmd,
-            SSH_COMMAND_TIMEOUT,
             "save file",
         )?;
 

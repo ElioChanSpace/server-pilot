@@ -5,10 +5,11 @@ use serde::Serialize;
 use tauri::State;
 
 use super::util::{
-    run_ssh_command, read_between_markers, SSH_COMMAND_TIMEOUT,
+    read_between_markers,
     METRICS_OUTPUT_START, METRICS_OUTPUT_END,
 };
 use super::file_transfer::resolve_transfer_server;
+use super::ssh_client;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -257,15 +258,9 @@ pub async fn fetch_server_metrics(
 
     tauri::async_runtime::spawn_blocking(move || {
         info!("[Monitor] Executing metrics SSH command...");
-        let output = run_ssh_command(
-            &connection.username,
-            &connection.host,
-            connection.port,
-            connection.password.as_deref(),
-            connection.key_path.as_deref(),
-            connection.proxy_jump.as_deref(),
-            build_metrics_command(),
-            SSH_COMMAND_TIMEOUT,
+        let output = ssh_client::run_ssh_exec_blocking(
+            &connection,
+            &build_metrics_command(),
             "collect server metrics",
         )?;
         info!("[Monitor] Metrics command output: {} bytes", output.len());

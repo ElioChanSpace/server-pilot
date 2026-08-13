@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 
 use super::file_transfer::TransferConnection;
+use super::util::SSH_COMMAND_TIMEOUT;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(15);
@@ -189,4 +190,76 @@ pub(crate) async fn create_sftp_session(
 
     info!("[SshClient] SFTP session established successfully");
     Ok(sftp)
+}
+
+/// Run a command via SSH exec and return stdout.
+/// Drop-in replacement for util::run_ssh_command using russh.
+pub(crate) async fn run_ssh_exec(
+    conn: &TransferConnection,
+    command: &str,
+    action_label: &str,
+) -> Result<String, String> {
+    let timeout = SSH_COMMAND_TIMEOUT;
+    info!(
+        "[SshClient] Executing command: action={:?}, timeout={:?}, cmd={}",
+        action_label, timeout, command
+    );
+
+    let session = tokio::time::timeout(timeout, create_ssh_session(conn))
+        .await
+        .map_err(|_| {
+            error!("[SshClient] SSH connection timed out for action: {}", action_label);
+            format!("Timed out after {:?} while trying to {}", timeout, action_label)
+        })??;
+
+    let mut channel = session
+        .channel_open_session()
+        .await
+        .map_err(|e| format!("Failed to open channel for {}: {}", action_label, e))?;
+
+    channel
+        .exec(true, command)
+        .await
+        .map_err(|e| format!("Failed to execute command for {}: {}", action_label, e))?;
+
+    let mut output = Vec::new();
+    let mut exit_code: Option<u32> = None;
+
+    while let Some(msg) = channel.wait().await {
+        match msg {
+            russh::ChannelMsg::Data { data } => output.extend_from_slice(&data),
+            russh::ChannelMsg::ExtendedData { data, .. } => output.extend_from_slice(&data),
+            russh::ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
+            _ => {}
+        }
+    }
+
+    let output_str = String::from_utf8_lossy(&output).to_string();
+    info!(
+        "[SshClient] Command completed: action={:?}, exit_code={:?}, output={} bytes",
+        action_label,
+        exit_code,
+        output_str.len()
+    );
+
+    match exit_code {
+        Some(0) | None => Ok(output_str),
+        Some(code) => Err(format!(
+            "Command exited with status {} during {}: {}",
+            code, action_label, output_str
+        )),
+    }
+}
+
+/// Synchronous wrapper for run_ssh_exec, for use in spawn_blocking contexts.
+pub(crate) fn run_ssh_exec_blocking(
+    conn: &TransferConnection,
+    command: &str,
+    action_label: &str,
+) -> Result<String, String> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
+    rt.block_on(run_ssh_exec(conn, command, action_label))
 }

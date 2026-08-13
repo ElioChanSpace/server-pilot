@@ -6,7 +6,8 @@ use std::io::{self, SeekFrom, Seek};
 use std::path::PathBuf;
 use tauri::AppHandle;
 
-use super::util::{run_ssh_command, shell_quote, SSH_COMMAND_TIMEOUT};
+use super::util::shell_quote;
+use super::ssh_client;
 use super::file_transfer::resolve_transfer_server;
 
 #[derive(Debug, Serialize)]
@@ -161,15 +162,9 @@ pub async fn read_remote_log(
     let command = format!("tail -n {} -- {}", count, shell_quote(&path));
 
     tauri::async_runtime::spawn_blocking(move || {
-        let output = run_ssh_command(
-            &connection.username,
-            &connection.host,
-            connection.port,
-            connection.password.as_deref(),
-            connection.key_path.as_deref(),
-            connection.proxy_jump.as_deref(),
+        let output = ssh_client::run_ssh_exec_blocking(
+            &connection,
             &command,
-            SSH_COMMAND_TIMEOUT,
             "read remote log",
         )?;
         Ok(RemoteLogResult {
