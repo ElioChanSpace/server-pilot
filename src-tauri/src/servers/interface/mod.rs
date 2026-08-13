@@ -4,6 +4,7 @@ pub mod crud;
 pub mod session;
 pub mod monitoring;
 pub mod file_transfer;
+pub mod ssh_client;
 pub mod ssh_config;
 pub mod ssh_keys;
 pub mod ssh_tunnel;
