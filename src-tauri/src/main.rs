@@ -15,7 +15,7 @@ use crate::servers::interface::commands::{
     get_app_settings, get_categories, get_default_ssh_key_path, get_file_content, get_servers,
     get_terminal_session_directory, highlight_code, import_app_data, list_remote_directory,
     list_ssh_keys, list_ssh_tunnels, move_category, parse_ssh_config, pty_resize, pty_write, read_app_logs,
-    read_remote_log, rename_remote_path, save_remote_file, test_server_connection,
+    read_remote_log, rename_remote_path, save_remote_file, test_server_connection, test_ssh_connection,
     update_app_settings, update_category, update_category_order, update_server,
     upload_directory_to_server, upload_file_to_server,
 };
@@ -261,6 +261,7 @@ fn main() {
             export_app_data,
             import_app_data,
             test_server_connection,
+            test_ssh_connection,
             generate_ssh_key,
             list_ssh_keys,
             get_default_ssh_key_path,

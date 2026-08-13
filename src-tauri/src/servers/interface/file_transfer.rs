@@ -941,3 +941,165 @@ pub async fn create_remote_directory(
     .await
     .map_err(|err| err.to_string())?
 }
+
+// ============================================================
+// test_ssh_connection — diagnostic command
+// ============================================================
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConnectionTestResult {
+    pub tcp_connect: bool,
+    pub ssh_handshake: bool,
+    pub authentication: bool,
+    pub sftp_session: bool,
+    pub error_detail: Option<String>,
+    pub elapsed_ms: u64,
+}
+
+#[tauri::command]
+pub async fn test_ssh_connection(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<SshConnectionTestResult, String> {
+    info!("[Transfer] Testing SSH connection: server_id={}", id);
+    let connection = resolve_transfer_server(&state, &id)?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let rt = create_async_runtime();
+        rt.block_on(async {
+            use russh::client;
+            use russh_sftp::client::SftpSession;
+            use ssh_client::SshClientHandler;
+            use std::sync::Arc;
+            use std::time::{Duration, Instant};
+            let start = Instant::now();
+            let mut result = SshConnectionTestResult {
+                tcp_connect: false,
+                ssh_handshake: false,
+                authentication: false,
+                sftp_session: false,
+                error_detail: None,
+                elapsed_ms: 0,
+            };
+
+            // Step 1: TCP connect
+            let addr = (connection.host.as_str(), connection.port);
+            info!("[Test] Step 1: TCP connect to {}:{}", connection.host, connection.port);
+            let socket = match tokio::time::timeout(
+                Duration::from_secs(10),
+                tokio::net::TcpStream::connect(addr),
+            )
+            .await
+            {
+                Ok(Ok(s)) => {
+                    result.tcp_connect = true;
+                    info!("[Test] TCP connect OK");
+                    s
+                }
+                Ok(Err(e)) => {
+                    result.error_detail = Some(format!("TCP 连接失败: {}", e));
+                    result.elapsed_ms = start.elapsed().as_millis() as u64;
+                    return Ok(result);
+                }
+                Err(_) => {
+                    result.error_detail = Some(format!(
+                        "TCP 连接超时 (10s)，无法连接到 {}:{}",
+                        connection.host, connection.port
+                    ));
+                    result.elapsed_ms = start.elapsed().as_millis() as u64;
+                    return Ok(result);
+                }
+            };
+
+            // Step 2: SSH handshake
+            info!("[Test] Step 2: SSH handshake");
+            let mut config = client::Config::default();
+            config.inactivity_timeout = Some(Duration::from_secs(15));
+            let session = match client::connect_stream(Arc::new(config), socket, SshClientHandler).await {
+                Ok(s) => {
+                    result.ssh_handshake = true;
+                    info!("[Test] SSH handshake OK");
+                    s
+                }
+                Err(e) => {
+                    result.error_detail = Some(format!("SSH 握手失败: {}", e));
+                    result.elapsed_ms = start.elapsed().as_millis() as u64;
+                    return Ok(result);
+                }
+            };
+
+            // Step 3: Authentication
+            info!("[Test] Step 3: Authentication");
+            let mut session = session;
+            let auth_ok = if let Some(password) = connection.password.as_deref() {
+                if !password.is_empty() {
+                    match session.authenticate_password(&connection.username, password).await {
+                        Ok(true) => {
+                            info!("[Test] Password auth OK");
+                            true
+                        }
+                        Ok(false) => {
+                            result.error_detail = Some("密码认证被拒绝".to_string());
+                            result.elapsed_ms = start.elapsed().as_millis() as u64;
+                            return Ok(result);
+                        }
+                        Err(e) => {
+                            result.error_detail = Some(format!("密码认证错误: {}", e));
+                            result.elapsed_ms = start.elapsed().as_millis() as u64;
+                            return Ok(result);
+                        }
+                    }
+                } else {
+                    result.error_detail = Some("没有配置密码".to_string());
+                    result.elapsed_ms = start.elapsed().as_millis() as u64;
+                    return Ok(result);
+                }
+            } else {
+                result.error_detail = Some("没有配置密码".to_string());
+                result.elapsed_ms = start.elapsed().as_millis() as u64;
+                return Ok(result);
+            };
+
+            if auth_ok {
+                result.authentication = true;
+            }
+
+            // Step 4: SFTP subsystem
+            info!("[Test] Step 4: SFTP subsystem");
+            let channel = match session.channel_open_session().await {
+                Ok(c) => c,
+                Err(e) => {
+                    result.error_detail = Some(format!("打开通道失败: {}", e));
+                    result.elapsed_ms = start.elapsed().as_millis() as u64;
+                    return Ok(result);
+                }
+            };
+
+            if let Err(e) = channel.request_subsystem(true, "sftp").await {
+                result.error_detail = Some(format!("请求 SFTP 子系统失败: {}", e));
+                result.elapsed_ms = start.elapsed().as_millis() as u64;
+                return Ok(result);
+            }
+
+            match SftpSession::new(channel.into_stream()).await {
+                Ok(sftp) => {
+                    result.sftp_session = true;
+                    info!("[Test] SFTP session OK");
+                    let _ = sftp.close().await;
+                }
+                Err(e) => {
+                    result.error_detail = Some(format!("SFTP 会话创建失败: {}", e));
+                    result.elapsed_ms = start.elapsed().as_millis() as u64;
+                    return Ok(result);
+                }
+            }
+
+            result.elapsed_ms = start.elapsed().as_millis() as u64;
+            info!("[Test] All steps passed in {}ms", result.elapsed_ms);
+            Ok(result)
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
