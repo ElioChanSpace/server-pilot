@@ -150,32 +150,29 @@ pub async fn get_file_content(
     let theme_mode = theme_mode.unwrap_or_else(|| "dark".to_string());
 
     tauri::async_runtime::spawn_blocking(move || {
-        // First check file size
-        let size_cmd = format!("stat -c %s -- {} 2>/dev/null || stat -f %z -- {} 2>/dev/null", shell_quote(&path), shell_quote(&path));
-        let size_output = ssh_client::run_ssh_exec_blocking(
-            &connection,
-            &size_cmd,
-            "check file size",
+        // Single SSH command: check size, then cat if within limit
+        let cmd = format!(
+            "SIZE=$(stat -c %s -- {p} 2>/dev/null || stat -f %z -- {p} 2>/dev/null); \
+             if [ \"$SIZE\" -gt {limit} ] 2>/dev/null; then echo \"__TOO_LARGE__$SIZE\"; else cat -- {p}; fi",
+            p = shell_quote(&path),
+            limit = EDITOR_FILE_SIZE_LIMIT,
         );
-
-        if let Ok(size_str) = size_output {
-            if let Ok(size) = size_str.trim().parse::<usize>() {
-                if size > EDITOR_FILE_SIZE_LIMIT {
-                    return Err(format!(
-                        "文件过大（{}），超过内嵌编辑器上限（512KB）。请使用外部编辑器打开。",
-                        format_file_size(size)
-                    ));
-                }
-            }
-        }
-
-        // Download file content via cat
-        let cat_cmd = format!("cat -- {}", shell_quote(&path));
-        let raw = ssh_client::run_ssh_exec_blocking(
+        let output = ssh_client::run_ssh_exec_blocking(
             &connection,
-            &cat_cmd,
+            &cmd,
             "read file content",
         )?;
+
+        // Check if file was too large
+        if let Some(size_str) = output.strip_prefix("__TOO_LARGE__") {
+            let size = size_str.trim().parse::<usize>().unwrap_or(0);
+            return Err(format!(
+                "文件过大（{}），超过内嵌编辑器上限（512KB）。请使用外部编辑器打开。",
+                format_file_size(size)
+            ));
+        }
+
+        let raw = output;
 
         let language = detect_language(&path);
         let line_count = raw.lines().count();
