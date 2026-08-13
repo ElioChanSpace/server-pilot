@@ -154,13 +154,14 @@
   position: absolute;
   left: 0;
   top: 0;
-  bottom: 0;
   width: 52px;
+  height: 100%;
   background: var(--bg-primary-opaque, var(--bg-primary, #1e1e2e));
   border-right: 1px solid var(--border-color, #313244);
   color: var(--text-muted, #585b70);
   user-select: none;
   z-index: 1;
+  pointer-events: none;
 }
 
 .editorContent {

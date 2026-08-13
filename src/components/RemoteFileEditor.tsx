@@ -95,12 +95,17 @@ function useCanvasLineNumbers(
 
     const scrollTop = scrollTopRef.current ?? 0;
     const visibleStart = Math.floor(scrollTop / lineHeight);
-    const visibleEnd = Math.min(lineCount, Math.ceil((scrollTop + h) / lineHeight));
+    const visibleEnd = Math.min(lineCount, visibleStart + Math.ceil(h / lineHeight) + 1);
     const padRight = 8;
 
+    // Draw only visible lines
     for (let i = visibleStart; i < visibleEnd; i++) {
-      const y = i * lineHeight - scrollTop + lineHeight / 2;
-      ctx.fillText(String(i + 1), w - padRight, y);
+      // Calculate y position relative to canvas top edge
+      const y = (i * lineHeight - scrollTop) + lineHeight / 2;
+      // Only draw if within canvas bounds
+      if (y >= 0 && y <= h) {
+        ctx.fillText(String(i + 1), w - padRight, y);
+      }
     }
   }, [canvasRef, lineCount, scrollTopRef]);
 
@@ -226,7 +231,10 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
     if (textarea) {
       scrollTopRef.current = textarea.scrollTop;
-      drawLineNumbers();
+      // Use requestAnimationFrame for smooth canvas updates
+      requestAnimationFrame(() => {
+        drawLineNumbers();
+      });
     }
   }, [drawLineNumbers]);
 
