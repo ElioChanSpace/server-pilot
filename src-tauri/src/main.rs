@@ -16,7 +16,7 @@ use crate::servers::interface::commands::{
     fetch_system_services, generate_ssh_key,
     get_app_settings, get_app_stats, get_categories, get_custom_themes, get_default_ssh_key_path, get_file_content, get_servers,
     get_terminal_session_directory, highlight_code, import_app_data, list_remote_directory,
-    list_ssh_keys, list_ssh_tunnels, move_category, parse_ssh_config, pty_resize, pty_write, read_app_logs,
+    list_ssh_keys, list_ssh_tunnels, log_frontend_action, move_category, parse_ssh_config, pty_resize, pty_write, read_app_logs,
     read_remote_log, rename_remote_path, save_custom_app_themes, save_remote_file, system_service_action, test_server_connection, test_ssh_connection,
     update_app_settings, update_category, update_category_order, update_server,
     upload_directory_to_server, upload_file_to_server,
@@ -203,12 +203,12 @@ fn main() {
                 .build(app)
                 .map_err(|err| err.to_string())?;
 
-            // --- 关闭时最小化到托盘 ---
+            // --- 关闭时最小化到托盘，或关闭所有编辑器窗口 ---
             if let Some(window) = app.get_webview_window("main") {
-                let window_clone = window.clone();
+                let app_handle = app.handle().clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        let minimize = window_clone
+                        let minimize = app_handle
                             .state::<AppState>()
                             .data
                             .lock()
@@ -217,7 +217,16 @@ fn main() {
                             .unwrap_or(false);
                         if minimize {
                             api.prevent_close();
-                            let _ = window_clone.hide();
+                            if let Some(w) = app_handle.get_webview_window("main") {
+                                let _ = w.hide();
+                            }
+                        } else {
+                            // 真正关闭时，关闭所有编辑器窗口
+                            for (label, w) in app_handle.webview_windows() {
+                                if label.starts_with("editor-") {
+                                    let _ = w.close();
+                                }
+                            }
                         }
                     }
                 });
@@ -275,6 +284,7 @@ fn main() {
             create_ssh_tunnel,
             close_ssh_tunnel,
             list_ssh_tunnels,
+            log_frontend_action,
             check_port_available,
             get_file_content,
             highlight_code,
