@@ -295,6 +295,7 @@ pub async fn upload_file_to_server(
 
     tauri::async_runtime::spawn_blocking(move || -> Result<FileTransferResult, String> {
         let rt = create_async_runtime();
+        let overall_start = Instant::now();
         let result = rt.block_on(async {
             let sftp = ssh_client::create_sftp_session(&connection).await?;
 
@@ -390,7 +391,13 @@ pub async fn upload_file_to_server(
 
         result?;
 
-        // Emit completed
+        // Emit completed with final average speed
+        let total_secs = overall_start.elapsed().as_secs_f64();
+        let final_bps = if total_secs > 0.0 {
+            total_bytes.map(|b| b as f64 / total_secs)
+        } else {
+            None
+        };
         if let Some(tid) = transfer_id_for_result.as_deref() {
             emit_file_transfer_progress(
                 Some(&window),
@@ -404,7 +411,7 @@ pub async fn upload_file_to_server(
                     progress_percent: 100,
                     transferred_bytes: total_bytes,
                     total_bytes,
-                    bytes_per_second: None,
+                    bytes_per_second: final_bps,
                     eta_seconds: Some(0),
                     message: Some(format!("已上传到 {}", remote_path_for_result)),
                 },
@@ -695,6 +702,8 @@ pub async fn download_file_from_server(
 
     tauri::async_runtime::spawn_blocking(move || -> Result<FileTransferResult, String> {
         let rt = create_async_runtime();
+        let overall_start = Instant::now();
+        let mut final_total_bytes: Option<u64> = None;
         let result = rt.block_on(async {
             let sftp = ssh_client::create_sftp_session(&connection).await?;
 
@@ -704,6 +713,7 @@ pub async fn download_file_from_server(
                 .await
                 .map_err(|e| format!("Failed to stat remote file '{}': {}", remote_path, e))?;
             let total_bytes = Some(metadata.size.unwrap_or(0));
+            final_total_bytes = total_bytes;
 
             let mut remote_file = sftp
                 .open(&remote_path)
@@ -794,7 +804,13 @@ pub async fn download_file_from_server(
 
         result?;
 
-        // Emit completed
+        // Emit completed with final average speed
+        let total_secs = overall_start.elapsed().as_secs_f64();
+        let final_bps = if total_secs > 0.0 {
+            final_total_bytes.map(|b| b as f64 / total_secs)
+        } else {
+            None
+        };
         if let Some(tid) = transfer_id_for_result.as_deref() {
             emit_file_transfer_progress(
                 Some(&window),
@@ -806,9 +822,9 @@ pub async fn download_file_from_server(
                     remote_path: remote_path_for_result.clone(),
                     status: "completed".to_string(),
                     progress_percent: 100,
-                    transferred_bytes: None,
-                    total_bytes: None,
-                    bytes_per_second: None,
+                    transferred_bytes: final_total_bytes,
+                    total_bytes: final_total_bytes,
+                    bytes_per_second: final_bps,
                     eta_seconds: Some(0),
                     message: Some(format!("已下载到 {}", local_path_for_result)),
                 },

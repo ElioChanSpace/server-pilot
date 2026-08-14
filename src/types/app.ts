@@ -25,6 +25,23 @@ export interface FileTransferProgressEvent {
   message?: string | null;
 }
 
+export interface TransferRecord {
+  id: string;
+  direction: "upload" | "download";
+  fileName: string;
+  localPath: string;
+  remotePath: string;
+  serverName: string;
+  totalBytes: number;
+  transferredBytes: number;
+  averageSpeed: number; // bytes/s
+  startedAt: number; // timestamp ms
+  completedAt: number; // timestamp ms
+  duration: number; // ms
+  status: "completed" | "failed";
+  error?: string;
+}
+
 export interface UploadProgressOverlayState {
   transferId: string;
   sessionId: string;

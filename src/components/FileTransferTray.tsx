@@ -8,6 +8,7 @@ import {
   FaFileAlt,
   FaFolder,
   FaFolderPlus,
+  FaHistory,
   FaSyncAlt,
   FaTimes,
   FaTrash,
@@ -23,6 +24,7 @@ interface FileTransferTrayProps {
   isOpen: boolean;
   server: Server | null;
   onClose?: () => void;
+  onOpenHistory?: () => void;
 }
 
 interface FileTransferResult {
@@ -90,7 +92,7 @@ const normalizeRemotePath = (path: string) => {
 
 /* ── Component ── */
 
-export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, server, onClose }) => {
+export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, server, onClose, onOpenHistory }) => {
   /* ── State ── */
   const [currentPath, setCurrentPath] = useState("/");
   const [parentPath, setParentPath] = useState<string | null>(null);
@@ -469,6 +471,11 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
           <FaFolderPlus size={12} />
         </button>
         <div className={styles.toolSpacer} />
+        {onOpenHistory && (
+          <button className={styles.toolButton} onClick={onOpenHistory} title="传输历史">
+            <FaHistory size={12} />
+          </button>
+        )}
         <button className={styles.toolButton} onClick={() => loadDirectory(currentPath)} disabled={isLoading || !canOperate} title="刷新">
           <FaSyncAlt size={12} />
         </button>
