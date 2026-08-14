@@ -26,6 +26,11 @@ import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { UploadProgressToast } from "./components/UploadProgressToast";
 import { HostKeyPromptModal } from "./components/HostKeyPromptModal";
 import { CommandHistoryModal } from "./components/CommandHistoryModal";
+import { PortMonitorModal } from "./components/PortMonitorModal";
+import { DockerManagerModal } from "./components/DockerManagerModal";
+import { ServiceManagerModal } from "./components/ServiceManagerModal";
+import { TransferHistoryModal } from "./components/TransferHistoryModal";
+import { useTransferHistory } from "./hooks/useTransferHistory";
 import { FaEdit, FaPlus, FaFolderPlus, FaPlug, FaUnlink, FaTrash } from "react-icons/fa";
 import type { TerminalSession, TerminalSessionClosedEvent, TerminalSessionStatusEvent } from "./types/terminal";
 import type { AppSettings } from "./types/settings";
@@ -99,6 +104,9 @@ const AppContent: React.FC = () => {
   const [showFullscreenHint, setShowFullscreenHint] = useState(false);
   const confirmOnDisconnectRef = useRef(true);
   const [commandHistoryServer, setCommandHistoryServer] = useState<Server | null | undefined>(undefined); // undefined=关闭, null=全部, Server=指定
+  const [portMonitorServer, setPortMonitorServer] = useState<{ id: string; name: string } | null>(null);
+  const [dockerManagerServer, setDockerManagerServer] = useState<{ id: string; name: string } | null>(null);
+  const [serviceManagerServer, setServiceManagerServer] = useState<{ id: string; name: string } | null>(null);
 
   const { connectToServer, disconnectServer, closeTerminalSession, servers, categories, refreshCategories, refreshServers } = useServer();
 
@@ -110,6 +118,10 @@ const AppContent: React.FC = () => {
   const { setIsResizingRightSidebar } = useRightSidebarResize();
   const appStats = useAppStats();
   const { commands: commandHistory, addCommand, removeCommandsByServer, clearCommands } = useCommandHistory();
+  const { records: transferRecords, addRecord: addTransferRecord, removeRecord: removeTransferRecord, removeRecords: removeTransferRecords, clearHistory: clearTransferHistory } = useTransferHistory();
+  const [isTransferHistoryOpen, setIsTransferHistoryOpen] = useState(false);
+  const transferStartTimes = useRef<Map<string, number>>(new Map());
+  const transferMeta = useRef<Map<string, { direction: string; localPath: string; remotePath: string; totalBytes: number; serverName: string }>>(new Map());
 
   useWindowPersistence();
   useGlobalClipboard();
@@ -284,6 +296,14 @@ const AppContent: React.FC = () => {
     removeSessionCurrentDirectories(sessionIds);
   }, [removeTerminalOutputs, removeSessionCurrentDirectories]);
 
+  const currentSession = currentSessionId
+    ? sessions.find(session => session.id === currentSessionId) ?? null
+    : null;
+
+  const transferTargetServer = activeServer ?? (currentSession
+    ? servers.find(server => server.id === currentSession.serverId) ?? null
+    : null);
+
   // Tauri event listeners
   useEffect(() => {
     const unlistenPromises: Array<Promise<() => void>> = [
@@ -315,6 +335,46 @@ const AppContent: React.FC = () => {
       }),
       listen<FileTransferProgressEvent>("file-transfer-progress", (event) => {
         const payload = event.payload;
+
+        // Track start time and metadata for history
+        if (payload.status === "preparing") {
+          transferStartTimes.current.set(payload.transferId, Date.now());
+          transferMeta.current.set(payload.transferId, {
+            direction: payload.direction,
+            localPath: payload.localPath,
+            remotePath: payload.remotePath,
+            totalBytes: payload.totalBytes ?? 0,
+            serverName: transferTargetServer?.name ?? "",
+          });
+        }
+
+        // Record completed/failed transfers to history
+        if (payload.status === "completed" || payload.status === "failed") {
+          const startTime = transferStartTimes.current.get(payload.transferId) ?? Date.now();
+          const meta = transferMeta.current.get(payload.transferId);
+          const completedAt = Date.now();
+          const serverName = meta?.serverName ?? "";
+
+          addTransferRecord({
+            id: payload.transferId,
+            direction: (meta?.direction ?? payload.direction) as "upload" | "download",
+            fileName: payload.remotePath.split("/").pop() || payload.localPath.split(/[\\/]/).pop() || "file",
+            localPath: meta?.localPath ?? payload.localPath,
+            remotePath: meta?.remotePath ?? payload.remotePath,
+            serverName,
+            totalBytes: meta?.totalBytes ?? payload.totalBytes ?? 0,
+            transferredBytes: payload.transferredBytes ?? meta?.totalBytes ?? 0,
+            averageSpeed: payload.bytesPerSecond ?? 0,
+            startedAt: startTime,
+            completedAt,
+            duration: completedAt - startTime,
+            status: payload.status === "completed" ? "completed" : "failed",
+            error: payload.status === "failed" ? (payload.message ?? undefined) : undefined,
+          });
+          transferStartTimes.current.delete(payload.transferId);
+          transferMeta.current.delete(payload.transferId);
+        }
+
         setUploadProgressOverlay(prev => {
           if (!prev || prev.transferId !== payload.transferId) return prev;
           return {
@@ -339,7 +399,7 @@ const AppContent: React.FC = () => {
         unlistenPromise.then(unlisten => unlisten());
       });
     };
-  }, [appendTerminalChunk, updateSessionStatus, setUploadProgressOverlay, applySessionRemoval, notify]);
+  }, [appendTerminalChunk, updateSessionStatus, setUploadProgressOverlay, applySessionRemoval, notify, addTransferRecord, transferTargetServer]);
 
   // Active server sync
   useEffect(() => {
@@ -348,14 +408,6 @@ const AppContent: React.FC = () => {
       return servers.find(server => server.id === prev.id) ?? prev;
     });
   }, [servers]);
-
-  const currentSession = currentSessionId
-    ? sessions.find(session => session.id === currentSessionId) ?? null
-    : null;
-
-  const transferTargetServer = activeServer ?? (currentSession
-    ? servers.find(server => server.id === currentSession.serverId) ?? null
-    : null);
 
   // --- Callbacks ---
   const clearSelection = useCallback(() => {
@@ -645,6 +697,18 @@ const AppContent: React.FC = () => {
   const handleOpenCommandHistory = useCallback((server?: Server) => {
     setCommandHistoryServer(server ?? null);
   }, []);
+  const handleOpenPortMonitor = useCallback((serverId: string, serverName: string) => {
+    setPortMonitorServer({ id: serverId, name: serverName });
+  }, []);
+  const handleOpenDockerManager = useCallback((serverId: string, serverName: string) => {
+    setDockerManagerServer({ id: serverId, name: serverName });
+  }, []);
+  const handleOpenServiceManager = useCallback((serverId: string, serverName: string) => {
+    setServiceManagerServer({ id: serverId, name: serverName });
+  }, []);
+  const handleOpenTransferHistory = useCallback(() => {
+    setIsTransferHistoryOpen(true);
+  }, []);
   const toggleTransferTray = useCallback(() => {
     setIsTransferTrayOpen(prev => !prev);
     setIsRightSidebarOpen(false);
@@ -730,6 +794,10 @@ const AppContent: React.FC = () => {
             onCloseAllSessions={handleCloseAllSessions}
             onTerminalFilesDropped={handleTerminalFilesDropped}
             onTerminalCommandExecuted={handleTerminalCommandExecuted}
+            onOpenPortMonitor={handleOpenPortMonitor}
+            onOpenDockerManager={handleOpenDockerManager}
+            onOpenServiceManager={handleOpenServiceManager}
+            onOpenTransferHistory={handleOpenTransferHistory}
             terminalFontSize={appSettings?.terminalFontSize ?? 14}
             terminalScrollback={appSettings?.terminalScrollback ?? 5000}
             onTerminalFontSizeChange={handleTerminalFontSizeChange}
@@ -761,7 +829,7 @@ const AppContent: React.FC = () => {
           )}
         </div>
       </div>
-      <FileTransferTray isOpen={isTransferTrayOpen} server={transferTargetServer} onClose={toggleTransferTray} />
+      <FileTransferTray isOpen={isTransferTrayOpen} server={transferTargetServer} onClose={toggleTransferTray} onOpenHistory={handleOpenTransferHistory} />
       <BottomBar
         isLeftSidebarOpen={isLeftSidebarOpen}
         isRightSidebarOpen={isRightSidebarOpen}
@@ -826,6 +894,35 @@ const AppContent: React.FC = () => {
         />
       )}
       {contextMenu && <ContextMenu {...contextMenu} menuRef={contextMenuRef} onClose={closeContextMenu} />}
+      {portMonitorServer && (
+        <PortMonitorModal
+          serverId={portMonitorServer.id}
+          serverName={portMonitorServer.name}
+          onClose={() => setPortMonitorServer(null)}
+        />
+      )}
+      {dockerManagerServer && (
+        <DockerManagerModal
+          serverId={dockerManagerServer.id}
+          serverName={dockerManagerServer.name}
+          onClose={() => setDockerManagerServer(null)}
+        />
+      )}
+      {serviceManagerServer && (
+        <ServiceManagerModal
+          serverId={serviceManagerServer.id}
+          serverName={serviceManagerServer.name}
+          onClose={() => setServiceManagerServer(null)}
+        />
+      )}
+      <TransferHistoryModal
+        open={isTransferHistoryOpen}
+        onClose={() => setIsTransferHistoryOpen(false)}
+        records={transferRecords}
+        onRemove={removeTransferRecord}
+        onRemoveBatch={removeTransferRecords}
+        onClear={clearTransferHistory}
+      />
       {commandHistoryServer !== undefined && (
         <CommandHistoryModal
           commands={commandHistory}

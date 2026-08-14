@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaCopy, FaRedo, FaServer, FaTimes, FaWindowClose } from 'react-icons/fa';
+import { FaCopy, FaCogs, FaDocker, FaHistory, FaNetworkWired, FaRedo, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
@@ -18,6 +18,10 @@ interface TabBarProps {
   onCloseServerSessions: (sessionId: string) => void;
   onCloseAllSessions: () => void;
   onReconnectSession: (sessionId: string) => void;
+  onOpenPortMonitor: (serverId: string, serverName: string) => void;
+  onOpenDockerManager: (serverId: string, serverName: string) => void;
+  onOpenServiceManager: (serverId: string, serverName: string) => void;
+  onOpenTransferHistory: () => void;
 }
 
 interface TabContextMenuState {
@@ -38,6 +42,10 @@ const TabBarComponent: React.FC<TabBarProps> = ({
   onCloseServerSessions,
   onCloseAllSessions,
   onReconnectSession,
+  onOpenPortMonitor,
+  onOpenDockerManager,
+  onOpenServiceManager,
+  onOpenTransferHistory,
 }) => {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
@@ -111,6 +119,45 @@ const TabBarComponent: React.FC<TabBarProps> = ({
             onDuplicateSession(targetSession.id);
           },
         },
+        {
+          label: '工具箱',
+          icon: <FaTools />,
+          children: [
+            {
+              label: '端口监测',
+              icon: <FaNetworkWired />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenPortMonitor(server.id, server.name);
+              },
+            },
+            {
+              label: 'Docker 管理',
+              icon: <FaDocker />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenDockerManager(server.id, server.name);
+              },
+            },
+            {
+              label: '服务管理',
+              icon: <FaCogs />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenServiceManager(server.id, server.name);
+              },
+            },
+            { type: 'separator' },
+            {
+              label: '传输历史',
+              icon: <FaHistory />,
+              action: () => {
+                onOpenTransferHistory();
+              },
+            },
+          ],
+        },
+        { type: 'separator' },
         ...(hasSessionsOnLeft
           ? [{
               label: '关闭左侧终端',

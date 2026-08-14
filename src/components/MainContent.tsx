@@ -19,6 +19,10 @@ interface MainContentProps {
   onCloseAllSessions: () => void;
   onTerminalFilesDropped: (sessionId: string, paths: string[]) => void;
   onTerminalCommandExecuted: (sessionId: string, command: string) => void;
+  onOpenPortMonitor: (serverId: string, serverName: string) => void;
+  onOpenDockerManager: (serverId: string, serverName: string) => void;
+  onOpenServiceManager: (serverId: string, serverName: string) => void;
+  onOpenTransferHistory: () => void;
   terminalFontSize: number;
   terminalScrollback: number;
   onTerminalFontSizeChange: (delta: number) => void;
@@ -40,6 +44,10 @@ export const MainContent: React.FC<MainContentProps> = ({
   onCloseAllSessions,
   onTerminalFilesDropped,
   onTerminalCommandExecuted,
+  onOpenPortMonitor,
+  onOpenDockerManager,
+  onOpenServiceManager,
+  onOpenTransferHistory,
   terminalFontSize,
   terminalScrollback,
   onTerminalFontSizeChange,
@@ -111,6 +119,10 @@ export const MainContent: React.FC<MainContentProps> = ({
           onCloseServerSessions={onCloseServerSessions}
           onCloseAllSessions={onCloseAllSessions}
           onReconnectSession={onReconnectSession}
+          onOpenPortMonitor={onOpenPortMonitor}
+          onOpenDockerManager={onOpenDockerManager}
+          onOpenServiceManager={onOpenServiceManager}
+          onOpenTransferHistory={onOpenTransferHistory}
         />
       )}
       <div className={styles.stage}>
