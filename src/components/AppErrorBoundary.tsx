@@ -22,6 +22,7 @@ export class AppErrorBoundary extends React.Component<
           <p>{this.state.error.message || String(this.state.error)}</p>
           <button
             type="button"
+            className="primary-btn"
             onClick={() => this.setState({ error: null })}
           >
             重试

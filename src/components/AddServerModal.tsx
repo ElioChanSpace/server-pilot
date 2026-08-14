@@ -298,7 +298,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ onClose, initial
 
           <div className={styles.actions}>
             <button type="button" onClick={onClose} className={styles.secondaryButton}>取消</button>
-            <button type="submit" disabled={loading}>
+            <button type="submit" disabled={loading} className="primary-btn">
               {loading ? (isEditMode ? '保存中...' : '添加中...') : (isEditMode ? '保存修改' : '新增服务器')}
             </button>
           </div>

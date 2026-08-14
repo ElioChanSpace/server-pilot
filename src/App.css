@@ -430,8 +430,6 @@ select {
 button {
   cursor: pointer;
   border: none;
-  background: linear-gradient(135deg, var(--accent-color), var(--accent-strong));
-  color: #ffffff;
   padding: 10px 16px;
   border-radius: 12px;
   font-size: 14px;
@@ -443,17 +441,23 @@ button {
     opacity 0.18s ease;
 }
 
-button:hover {
-  background: linear-gradient(135deg, var(--accent-hover), var(--accent-color));
-  box-shadow: 0 12px 24px -18px var(--shadow-color);
-  transform: translateY(-1px);
-}
-
 button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+/* Primary action button style — apply via className="primary-btn" */
+.primary-btn {
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-strong));
+  color: #ffffff;
+}
+
+.primary-btn:hover {
+  background: linear-gradient(135deg, var(--accent-hover), var(--accent-color));
+  box-shadow: 0 12px 24px -18px var(--shadow-color);
+  transform: translateY(-1px);
 }
 
 input {

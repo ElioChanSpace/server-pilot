@@ -150,6 +150,7 @@ export const ImportSshConfigModal: React.FC<ImportSshConfigModalProps> = ({ onCl
           </button>
           <button
             type="button"
+            className="primary-btn"
             onClick={() => void handleImport()}
             disabled={isImporting || selected.size === 0}
           >

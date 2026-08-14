@@ -90,7 +90,7 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
             )}
             <button
               type="button"
-              className="console-reconnect-button"
+              className="console-reconnect-button primary-btn"
               onClick={onReconnect}
             >
               <FaPlug size={12} />

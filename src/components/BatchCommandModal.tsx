@@ -134,6 +134,7 @@ export const BatchCommandModal: React.FC<BatchCommandModalProps> = ({
           </button>
           <button
             type="button"
+            className="primary-btn"
             onClick={() => void handleRun()}
             disabled={isRunning || connectedSessions.length === 0 || selected.size === 0}
           >

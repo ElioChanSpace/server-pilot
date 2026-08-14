@@ -56,7 +56,7 @@ export const AddCategoryModal: React.FC<AddCategoryModalProps> = ({ onClose, par
           </div>
           <div className={styles.actions}>
             <button type="button" onClick={onClose} className={styles.secondaryButton}>取消</button>
-            <button type="submit" disabled={loading}>{loading ? (isEditing ? '保存中...' : '添加中...') : (isEditing ? '保存' : '新增分类')}</button>
+            <button type="submit" disabled={loading} className="primary-btn">{loading ? (isEditing ? '保存中...' : '添加中...') : (isEditing ? '保存' : '新增分类')}</button>
           </div>
         </form>
       </div>

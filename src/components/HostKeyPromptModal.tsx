@@ -35,7 +35,7 @@ export const HostKeyPromptModal: React.FC<{
           <button type="button" className={modalStyles.secondaryButton} onClick={() => handleRespond(false)}>
             取消
           </button>
-          <button type="button" onClick={() => handleRespond(true)}>
+          <button type="button" className="primary-btn" onClick={() => handleRespond(true)}>
             信任并连接
           </button>
         </div>
