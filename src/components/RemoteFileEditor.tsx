@@ -172,9 +172,12 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       setLineCount(result.lineCount);
       originalContentRef.current = result.raw;
       setIsDirty(false);
+      void invoke("log_frontend_action", { module: "Editor", message: `加载文件成功: ${filePath} (${result.language}, ${result.lineCount} 行)` });
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(typeof err === "string" ? err : "加载文件失败");
+      const msg = typeof err === "string" ? err : "加载文件失败";
+      setError(msg);
+      void invoke("log_frontend_action", { module: "Editor", message: `加载文件失败: ${filePath} — ${msg}` });
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
@@ -275,6 +278,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   // Save file
   const handleSave = useCallback(async () => {
     setSaveStatus("saving");
+    void invoke("log_frontend_action", { module: "Editor", message: `保存文件: ${filePath}` });
     try {
       await invoke<string>("save_remote_file", {
         serverId,
@@ -287,12 +291,15 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       setSaveStatus("saved");
       onSaved?.();
       void emit("editor-file-saved", { serverId, filePath });
+      void invoke("log_frontend_action", { module: "Editor", message: `保存成功: ${filePath}` });
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => { if (mountedRef.current) setSaveStatus("idle"); }, 2000);
     } catch (err) {
       if (!mountedRef.current) return;
+      const msg = typeof err === "string" ? err : "保存失败";
       setSaveStatus("error");
-      setError(typeof err === "string" ? err : "保存失败");
+      setError(msg);
+      void invoke("log_frontend_action", { module: "Editor", message: `保存失败: ${filePath} — ${msg}` });
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => { if (mountedRef.current) setSaveStatus("idle"); }, 3000);
     }
@@ -305,36 +312,32 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
     setIsDirty(false);
     setLineCount(original.split("\n").length);
     scheduleHighlight(original, language);
-  }, [language, scheduleHighlight]);
+    void invoke("log_frontend_action", { module: "Editor", message: `重置内容: ${filePath}` });
+  }, [language, scheduleHighlight, filePath]);
 
   // Toggle edit mode — only flips isReadOnly, no DOM rebuild
   const handleToggleEdit = useCallback(() => {
-    const t0 = performance.now();
-    console.log("[Editor] handleToggleEdit start");
+    let nextReadOnly = false;
     setIsReadOnly((prev) => {
-      const next = !prev;
-      console.log("[Editor] isReadOnly", prev, "->", next, "state flip took", (performance.now() - t0).toFixed(1), "ms");
-      if (!next) {
-        // Double rAF: first frame applies style changes, second frame focuses
-        // after layout/paint completes. Prevents jank on Windows WebView2.
-        const t1 = performance.now();
-        requestAnimationFrame(() => {
-          console.log("[Editor] rAF1 fired, delay:", (performance.now() - t1).toFixed(1), "ms");
-          const t2 = performance.now();
-          requestAnimationFrame(() => {
-            console.log("[Editor] rAF2 fired, delay:", (performance.now() - t2).toFixed(1), "ms");
-            const textarea = textareaRef.current;
-            if (textarea) {
-              textarea.focus();
-              textarea.setSelectionRange(0, 0);
-              console.log("[Editor] focus+setSelection done at", (performance.now() - t0).toFixed(1), "ms");
-            }
-          });
-        });
-      }
-      return next;
+      nextReadOnly = !prev;
+      return nextReadOnly;
     });
-  }, []);
+    // Log after state update (not inside updater — side effects in updater cause Windows jank)
+    void invoke("log_frontend_action", { module: "Editor", message: `切换模式: ${filePath} → ${nextReadOnly ? "只读" : "编辑"}` });
+    // Double rAF: first frame applies style changes, second frame focuses
+    // after layout/paint completes. Prevents jank on Windows WebView2.
+    if (!nextReadOnly) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (textarea) {
+            textarea.focus();
+            textarea.setSelectionRange(0, 0);
+          }
+        });
+      });
+    }
+  }, [filePath]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -470,7 +473,10 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
           <button
             type="button"
             className={styles.closeButton}
-            onClick={() => void onClose()}
+            onClick={() => {
+              void invoke("log_frontend_action", { module: "Editor", message: `关闭编辑器: ${filePath}` });
+              void onClose();
+            }}
             title="关闭 (ESC)"
           >
             <FaTimes />
@@ -485,7 +491,10 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
         ) : error ? (
           <div className={styles.error}>
             <span>{error}</span>
-            <button type="button" className={styles.errorRetry} onClick={() => void loadFile()}>
+            <button type="button" className={styles.errorRetry} onClick={() => {
+              void invoke("log_frontend_action", { module: "Editor", message: `重试加载文件: ${filePath}` });
+              void loadFile();
+            }}>
               重试
             </button>
           </div>

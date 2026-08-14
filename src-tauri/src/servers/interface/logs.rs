@@ -1,4 +1,5 @@
 use crate::servers::application::AppState;
+use log::info;
 use serde::Serialize;
 use std::fs;
 use std::fs::OpenOptions;
@@ -174,4 +175,10 @@ pub async fn read_remote_log(
     })
     .await
     .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
+pub async fn log_frontend_action(module: String, message: String) -> Result<(), String> {
+    info!("[{}] {}", module, message);
+    Ok(())
 }
