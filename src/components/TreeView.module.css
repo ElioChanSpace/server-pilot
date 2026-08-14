@@ -136,12 +136,33 @@
   color: var(--text-secondary);
 }
 
+.nodeHistoryAction {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.45;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+
+.serverItem:hover .nodeHistoryAction {
+  opacity: 1;
+}
+
+.nodeHistoryAction:hover {
+  color: var(--accent-color);
+  background: var(--surface-hover);
+}
+
 .serverItem {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px 8px 24px;
-  border-radius: 12px;
+  gap: 8px;
+  padding: 6px 10px 6px 24px;
+  border-radius: 10px;
   cursor: pointer;
   min-width: 0;
   color: var(--text-primary);
@@ -153,8 +174,14 @@
 
 .serverOsIcon {
   flex-shrink: 0;
+  position: relative;
   color: var(--text-secondary);
   font-size: 13px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .serverItem[data-active="true"] {
@@ -163,11 +190,14 @@
 }
 
 .statusDot {
-  width: 8px;
-  height: 8px;
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  flex-shrink: 0;
-  margin-top: -14px;
+  border: 1.5px solid var(--bg-secondary-opaque, var(--bg-secondary));
+  box-sizing: content-box;
 }
 
 .nodeAction:hover {

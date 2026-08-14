@@ -18,6 +18,7 @@ interface MainContentProps {
   onCloseServerSessions: (sessionId: string) => void;
   onCloseAllSessions: () => void;
   onTerminalFilesDropped: (sessionId: string, paths: string[]) => void;
+  onTerminalCommandExecuted: (sessionId: string, command: string) => void;
   terminalFontSize: number;
   terminalScrollback: number;
   onTerminalFontSizeChange: (delta: number) => void;
@@ -38,6 +39,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   onCloseServerSessions,
   onCloseAllSessions,
   onTerminalFilesDropped,
+  onTerminalCommandExecuted,
   terminalFontSize,
   terminalScrollback,
   onTerminalFontSizeChange,
@@ -83,6 +85,14 @@ export const MainContent: React.FC<MainContentProps> = ({
     });
     return map;
   }, [onReconnectSession, sessions]);
+
+  const commandCallbackBySession = useMemo(() => {
+    const map = new Map<string, (command: string) => void>();
+    sessions.forEach(session => {
+      map.set(session.id, (command: string) => onTerminalCommandExecuted(session.id, command));
+    });
+    return map;
+  }, [onTerminalCommandExecuted, sessions]);
 
   const hasActiveSessions = sessions.length > 0 && currentSessionId;
 
@@ -130,6 +140,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               resetToken={terminalOutputs[session.id]?.resetToken ?? 0}
               isActive={session.id === currentSessionId}
               onFilesDropped={filesDroppedBySession.get(session.id)!}
+              onCommandExecuted={commandCallbackBySession.get(session.id)}
               fontSize={terminalFontSize}
               scrollback={terminalScrollback}
               status={session.status}

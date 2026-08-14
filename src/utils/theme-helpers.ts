@@ -4,6 +4,10 @@ import { APP_THEMES, DEFAULT_THEME } from './app-themes';
 export type ThemeMode = 'dark' | 'light';
 
 export const THEME_STORAGE_KEY = 'server-pilot-app-theme';
+export const LEFT_SIDEBAR_WIDTH_KEY = 'server-pilot-left-sidebar-width';
+export const MIN_LEFT_SIDEBAR_WIDTH = 200;
+export const MAX_LEFT_SIDEBAR_WIDTH = 480;
+
 export const RIGHT_SIDEBAR_WIDTH_KEY = 'server-pilot-right-sidebar-width';
 export const MIN_RIGHT_SIDEBAR_WIDTH = 320;
 export const MAX_RIGHT_SIDEBAR_WIDTH = 840;
@@ -180,6 +184,9 @@ export const importTheme = (jsonStr: string): AppTheme | null => {
     return null;
   }
 };
+
+export const clampLeftSidebarWidth = (width: number) =>
+  Math.min(MAX_LEFT_SIDEBAR_WIDTH, Math.max(MIN_LEFT_SIDEBAR_WIDTH, width));
 
 export const clampRightSidebarWidth = (width: number) =>
   Math.min(MAX_RIGHT_SIDEBAR_WIDTH, Math.max(MIN_RIGHT_SIDEBAR_WIDTH, width));

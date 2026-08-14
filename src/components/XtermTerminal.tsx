@@ -14,6 +14,7 @@ interface XtermTerminalProps {
   onResize: (cols: number, rows: number) => void;
   isActive: boolean;
   onFilesDropped: (paths: string[]) => void;
+  onCommandExecuted?: (command: string) => void;
   fontSize: number;
   scrollback: number;
   onFontSizeChange: (delta: number) => void;
@@ -25,6 +26,7 @@ const arePropsEqual = (prev: XtermTerminalProps, next: XtermTerminalProps) =>
   prev.onInput === next.onInput &&
   prev.onResize === next.onResize &&
   prev.onFilesDropped === next.onFilesDropped &&
+  prev.onCommandExecuted === next.onCommandExecuted &&
   prev.fontSize === next.fontSize &&
   prev.scrollback === next.scrollback &&
   prev.onFontSizeChange === next.onFontSizeChange &&
@@ -38,6 +40,7 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   onResize,
   isActive,
   onFilesDropped,
+  onCommandExecuted,
   fontSize,
   scrollback,
   onFontSizeChange,
@@ -50,6 +53,8 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const renderedChunkCountRef = useRef(0);
   const fitFrameRef = useRef<number | null>(null);
+  const inputBufferRef = useRef('');
+  const skipNextCharCountRef = useRef(0); // 跳过 ESC 序列中的后续字符数
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [isDropTargetActive, setIsDropTargetActive] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -220,7 +225,66 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
 
 
       terminal.onData(data => {
+        // 命令追踪：维护输入缓冲区
+        for (let i = 0; i < data.length; i++) {
+          const ch = data[i];
+          const code = ch.charCodeAt(0);
+
+          // 跳过 ESC 序列中的后续字符
+          if (skipNextCharCountRef.current > 0) {
+            skipNextCharCountRef.current--;
+            continue;
+          }
+
+          if (code === 27) {
+            // ESC — 开始跳过整个转义序列（ESC [ ... letter）
+            // 计算序列中剩余的字符数
+            let seqLen = 0;
+            for (let j = i + 1; j < data.length; j++) {
+              seqLen++;
+              const c = data[j];
+              if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c === '~') {
+                break;
+              }
+            }
+            skipNextCharCountRef.current = seqLen;
+            continue;
+          }
+
+          if (ch === '\r' || ch === '\n') {
+            // Enter — 记录命令
+            const cmd = inputBufferRef.current.trim();
+            if (cmd && onCommandExecuted) {
+              onCommandExecuted(cmd);
+            }
+            inputBufferRef.current = '';
+          } else if (code === 127 || ch === '\b') {
+            // Backspace
+            inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+          } else if (ch === '\x03') {
+            // Ctrl+C — 清空缓冲区
+            inputBufferRef.current = '';
+          } else if (ch === '\x15') {
+            // Ctrl+U — 清空缓冲区
+            inputBufferRef.current = '';
+          } else if (code >= 32) {
+            // 可打印字符（包括 Unicode）
+            inputBufferRef.current += ch;
+          }
+          // 其他控制字符忽略
+        }
+
         onInput(data);
+      });
+
+      // 选中自动复制到系统剪贴板
+      terminal.onSelectionChange(() => {
+        const selection = terminal.getSelection();
+        if (selection) {
+          void navigator.clipboard.writeText(selection).catch(() => {
+            // 静默失败（例如窗口失焦时可能无权限）
+          });
+        }
       });
 
       terminal.onResize(({ cols, rows }) => {
@@ -390,6 +454,8 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
     terminal.reset();
     applyTerminalTheme(terminal);
     renderedChunkCountRef.current = 0;
+    inputBufferRef.current = '';
+    skipNextCharCountRef.current = 0;
 
     if (outputChunks.length > 0) {
       terminal.write(outputChunks.join(''));

@@ -1,5 +1,4 @@
 import React from "react";
-// Using a more descriptive set of icons from the Tabler Icons collection
 import {
   TbLayoutSidebarLeftCollapse,
   TbLayoutSidebarRightCollapse,
@@ -8,7 +7,7 @@ import {
   TbCpu,
   TbDeviceDesktop,
 } from "react-icons/tb";
-import { FaExchangeAlt } from "react-icons/fa";
+import { FaExchangeAlt, FaHistory } from "react-icons/fa";
 import type { AppStats } from "../types/app";
 import styles from "./BottomBar.module.css";
 
@@ -19,6 +18,7 @@ interface BottomBarProps {
   toggleLeftSidebar: () => void;
   toggleRightSidebar: () => void;
   toggleTransferTray: () => void;
+  onOpenCommandHistory: () => void;
   terminalCount: number;
   serverCount: number;
   appStats: AppStats;
@@ -31,6 +31,7 @@ const BottomBarComponent: React.FC<BottomBarProps> = ({
   toggleLeftSidebar,
   toggleRightSidebar,
   toggleTransferTray,
+  onOpenCommandHistory,
   terminalCount,
   serverCount,
   appStats,
@@ -61,6 +62,14 @@ const BottomBarComponent: React.FC<BottomBarProps> = ({
           title="切换文件传输面板"
         >
           <FaExchangeAlt size={14} />
+        </button>
+        <button
+          className={styles.toggleButton}
+          onClick={onOpenCommandHistory}
+          data-active={false}
+          title="命令历史"
+        >
+          <FaHistory size={14} />
         </button>
       </div>
       <div className={styles.statsGroup}>

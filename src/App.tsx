@@ -18,12 +18,14 @@ import { RightSidebar } from "./components/RightSidebar";
 import { BottomBar } from "./components/BottomBar";
 import { FileTransferTray } from "./components/FileTransferTray";
 import { MainContent } from "./components/MainContent";
+import { isInsideTerminal } from "./utils/dom-helpers";
 import { ContextMenu } from "./components/ContextMenu";
 import type { ContextMenuAction } from "./components/ContextMenu";
 import { MenuBar } from "./components/MenuBar";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { UploadProgressToast } from "./components/UploadProgressToast";
 import { HostKeyPromptModal } from "./components/HostKeyPromptModal";
+import { CommandHistoryModal } from "./components/CommandHistoryModal";
 import { FaEdit, FaPlus, FaFolderPlus, FaPlug, FaUnlink, FaTrash } from "react-icons/fa";
 import type { TerminalSession, TerminalSessionClosedEvent, TerminalSessionStatusEvent } from "./types/terminal";
 import type { AppSettings } from "./types/settings";
@@ -34,11 +36,13 @@ import type { ThemeMode } from "./utils/theme-helpers";
 import { APP_THEMES, DEFAULT_THEME } from "./utils/app-themes";
 import { useTerminalOutputs } from "./hooks/useTerminalOutputs";
 import { useWindowPersistence } from "./hooks/useWindowPersistence";
+import { useLeftSidebarResize } from "./hooks/useLeftSidebarResize";
 import { useRightSidebarResize } from "./hooks/useRightSidebarResize";
 import { useGlobalClipboard } from "./hooks/useGlobalClipboard";
 import { useNotifications } from "./hooks/useNotifications";
 import { useFileUpload } from "./hooks/useFileUpload";
 import { useAppStats } from "./hooks/useAppStats";
+import { useCommandHistory } from "./hooks/useCommandHistory";
 import "./App.css";
 
 const LogViewer = lazy(() => import("./components/LogViewer"));
@@ -78,6 +82,14 @@ const AppContent: React.FC = () => {
   const sessionsRef = useRef<TerminalSession[]>([]);
   const serversRef = useRef<Server[]>([]);
   const currentSessionIdRef = useRef<string | null>(null);
+  const generateDisplayId = (): string => {
+    // 生成 6 位随机 base36 字符串作为终端唯一标识
+    const arr = new Uint8Array(4);
+    crypto.getRandomValues(arr);
+    let num = 0;
+    for (let i = 0; i < 4; i++) num = num * 256 + arr[i];
+    return num.toString(36).padStart(6, '0').slice(0, 6).toUpperCase();
+  };
   const [themeId, setThemeId] = useState<string>(getInitialThemeId);
   const theme: ThemeMode = getThemeMode(themeId);
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
@@ -86,6 +98,7 @@ const AppContent: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showFullscreenHint, setShowFullscreenHint] = useState(false);
   const confirmOnDisconnectRef = useRef(true);
+  const [commandHistoryServer, setCommandHistoryServer] = useState<Server | null | undefined>(undefined); // undefined=关闭, null=全部, Server=指定
 
   const { connectToServer, disconnectServer, closeTerminalSession, servers, categories, refreshCategories, refreshServers } = useServer();
 
@@ -93,8 +106,10 @@ const AppContent: React.FC = () => {
   const { terminalOutputs, appendTerminalChunk, resetTerminalOutput, removeTerminalOutputs } = useTerminalOutputs(sessionsRef);
   const { notify, notificationsEnabledRef } = useNotifications();
   const { uploadProgressOverlay, setUploadProgressOverlay, handleTerminalFilesDropped, removeSessionCurrentDirectories } = useFileUpload(servers, sessions, notify);
+  const { setIsResizingLeftSidebar } = useLeftSidebarResize();
   const { setIsResizingRightSidebar } = useRightSidebarResize();
   const appStats = useAppStats();
+  const { commands: commandHistory, addCommand, removeCommandsByServer, clearCommands } = useCommandHistory();
 
   useWindowPersistence();
   useGlobalClipboard();
@@ -155,18 +170,19 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  // ESC key to exit fullscreen
+  // ESC key to exit fullscreen — only when no modal/overlay is open
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && isFullscreen) {
-        event.preventDefault();
-        void getCurrentWindow().setFullscreen(false).then(() => setIsFullscreen(false));
-      }
+      if (event.key !== "Escape" || !isFullscreen) return;
+      // 有模态框打开时不拦截 ESC，让模态框自己处理
+      if (isCommandPaletteOpen || isSettingsOpen || isServerModalOpen || isCategoryModalOpen || editingServer || editingCategory) return;
+      event.preventDefault();
+      void getCurrentWindow().setFullscreen(false).then(() => setIsFullscreen(false));
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullscreen]);
+  }, [isFullscreen, isCommandPaletteOpen, isSettingsOpen, isServerModalOpen, isCategoryModalOpen, editingServer, editingCategory]);
 
   // Welcome dismissal
   useEffect(() => {
@@ -179,9 +195,9 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const isMac = navigator.platform.toUpperCase().includes("MAC");
     const handleCommandPaletteShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) {
-        return;
-      }
+      if (event.defaultPrevented) return;
+      // 终端内不拦截 Ctrl+K，避免与 shell 的 kill-line 冲突
+      if (isInsideTerminal(event.target as Element)) return;
       const hasPrimaryModifier = isMac
         ? event.metaKey && !event.ctrlKey
         : event.ctrlKey && !event.metaKey;
@@ -360,9 +376,10 @@ const AppContent: React.FC = () => {
 
     try {
       const result = await connectToServer(server.id);
+      const displayId = generateDisplayId();
       setSessions(prev => reindexSessions([
         ...prev,
-        { id: result.sessionId, serverId: server.id, terminalIndex: 0, status: "connecting", createdAt: Date.now() },
+        { id: result.sessionId, serverId: server.id, terminalIndex: 0, displayId, status: "connecting", createdAt: Date.now() },
       ]));
       setCurrentSessionId(result.sessionId);
       resetTerminalOutput(result.sessionId, [`[信息] 正在连接 ${server.username}@${server.host}:${server.port} ...\r\n`]);
@@ -371,9 +388,19 @@ const AppContent: React.FC = () => {
     }
   }, [clearSelection, connectToServer, resetTerminalOutput]);
 
-  const handleCloseSession = useCallback((sessionId: string) => {
-    closeTerminalSession(sessionId).catch(err => console.error("关闭终端失败:", err));
+  const handleCloseSession = useCallback(async (sessionId: string) => {
+    // 乐观更新：先从 UI 移除
+    const removedSession = sessionsRef.current.find(s => s.id === sessionId);
     applySessionRemoval([sessionId], { anchorSessionId: sessionId });
+    try {
+      await closeTerminalSession(sessionId);
+    } catch (err) {
+      console.error("关闭终端失败，恢复会话:", err);
+      // 后端失败 — 恢复会话到 UI
+      if (removedSession) {
+        setSessions(prev => [...prev, removedSession]);
+      }
+    }
   }, [applySessionRemoval, closeTerminalSession]);
 
   const handleSelectSession = useCallback((sessionId: string) => {
@@ -436,6 +463,13 @@ const AppContent: React.FC = () => {
     void handleConnectServer(server);
   }, [handleConnectServer, servers, sessions]);
 
+  const handleTerminalCommandExecuted = useCallback((sessionId: string, command: string) => {
+    const session = sessionsRef.current.find(s => s.id === sessionId);
+    if (!session) return;
+    const server = serversRef.current.find(s => s.id === session.serverId);
+    addCommand(sessionId, session.displayId, session.serverId, server?.name ?? '未知服务器', command);
+  }, [addCommand]);
+
   const handleSelectCategory = useCallback((category: Category | null) => {
     clearSelection();
     setActiveCategory(category);
@@ -451,7 +485,8 @@ const AppContent: React.FC = () => {
       if (!confirmed) return;
     }
 
-    const relatedSessions = sessions.filter(session => session.serverId === server.id);
+    // 用 sessionsRef 获取最新数据，避免闭包过时
+    const relatedSessions = sessionsRef.current.filter(session => session.serverId === server.id);
     if (relatedSessions.length > 0) {
       applySessionRemoval(relatedSessions.map(session => session.id), { anchorSessionId: currentSessionId });
       disconnectServer(server.id).catch(err => console.error("断开连接失败:", err));
@@ -463,7 +498,7 @@ const AppContent: React.FC = () => {
     } catch (err) {
       console.error("断开连接失败:", err);
     }
-  }, [applySessionRemoval, currentSessionId, disconnectServer, sessions]);
+  }, [applySessionRemoval, currentSessionId, disconnectServer]);
 
   const handleEditServerSaved = useCallback((updatedServer: Server) => {
     setActiveServer(prev => (prev?.id === updatedServer.id ? updatedServer : prev));
@@ -476,17 +511,21 @@ const AppContent: React.FC = () => {
     try {
       await invoke("delete_server", { id: server.id });
       setActiveServer(prev => (prev?.id === server.id ? null : prev));
-      setSessions(prev => prev.filter(s => s.serverId !== server.id));
-      setCurrentSessionId(prev => {
-        const remaining = sessions.filter(s => s.serverId !== server.id);
-        return prev && sessions.find(s => s.id === prev)?.serverId === server.id
-          ? (remaining[0]?.id ?? null)
-          : prev;
+      setSessions(prev => {
+        const remaining = prev.filter(s => s.serverId !== server.id);
+        // 在同一个 updater 内计算 nextSessionId，避免闭包过时
+        setCurrentSessionId(currentPrev => {
+          if (currentPrev && prev.find(s => s.id === currentPrev)?.serverId === server.id) {
+            return remaining[0]?.id ?? null;
+          }
+          return currentPrev;
+        });
+        return remaining;
       });
     } catch (error) {
       console.error("删除服务器失败:", error);
     }
-  }, [sessions]);
+  }, []);
 
   const handleDeleteCategory = useCallback(async (category: Category) => {
     const confirmed = await confirm(`确定要删除分类「${category.name}」吗？其中的服务器将变为未分类。`, { title: "删除分类", kind: "warning" });
@@ -602,6 +641,10 @@ const AppContent: React.FC = () => {
     setIsRightSidebarOpen(prev => !prev);
     setIsTransferTrayOpen(false);
   }, []);
+
+  const handleOpenCommandHistory = useCallback((server?: Server) => {
+    setCommandHistoryServer(server ?? null);
+  }, []);
   const toggleTransferTray = useCallback(() => {
     setIsTransferTrayOpen(prev => !prev);
     setIsRightSidebarOpen(false);
@@ -660,8 +703,18 @@ const AppContent: React.FC = () => {
           onEditCategory={handleEditCategory}
           onConnectServer={handleConnectServer}
           onDisconnectServer={handleDisconnectServer}
+          onOpenCommandHistory={handleOpenCommandHistory}
           onServerContextMenu={handleServerContextMenu}
         />
+        {isLeftSidebarOpen && (
+          <div
+            className="left-sidebar-resizer"
+            onPointerDown={(event) => { event.preventDefault(); setIsResizingLeftSidebar(true); }}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整服务器列表宽度"
+          />
+        )}
         <div className="workspace-shell">
           <MainContent
             sessions={sessions}
@@ -676,6 +729,7 @@ const AppContent: React.FC = () => {
             onCloseServerSessions={handleCloseServerSessions}
             onCloseAllSessions={handleCloseAllSessions}
             onTerminalFilesDropped={handleTerminalFilesDropped}
+            onTerminalCommandExecuted={handleTerminalCommandExecuted}
             terminalFontSize={appSettings?.terminalFontSize ?? 14}
             terminalScrollback={appSettings?.terminalScrollback ?? 5000}
             onTerminalFontSizeChange={handleTerminalFontSizeChange}
@@ -715,6 +769,7 @@ const AppContent: React.FC = () => {
         toggleLeftSidebar={toggleLeftSidebar}
         toggleRightSidebar={toggleRightSidebar}
         toggleTransferTray={toggleTransferTray}
+        onOpenCommandHistory={handleOpenCommandHistory}
         terminalCount={sessions.length}
         serverCount={servers.length}
         appStats={appStats}
@@ -771,6 +826,16 @@ const AppContent: React.FC = () => {
         />
       )}
       {contextMenu && <ContextMenu {...contextMenu} menuRef={contextMenuRef} onClose={closeContextMenu} />}
+      {commandHistoryServer !== undefined && (
+        <CommandHistoryModal
+          commands={commandHistory}
+          servers={servers}
+          categories={categories}
+          initialServerId={commandHistoryServer && commandHistoryServer !== null ? commandHistoryServer.id : undefined}
+          onClose={() => setCommandHistoryServer(undefined)}
+          onClear={(serverId) => serverId ? removeCommandsByServer(serverId) : clearCommands()}
+        />
+      )}
     </div>
   );
 };

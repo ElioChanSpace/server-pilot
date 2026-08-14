@@ -156,6 +156,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({
         {sessions.map(session => {
           const server = servers.find(item => item.id === session.serverId);
           const serverName = server?.name ?? '终端';
+          const username = server?.username ?? '';
           const timeStr = session.createdAt ? formatTime(session.createdAt) : '';
           const statusMeta = getServerStatusMeta(session.status);
           const StatusIcon = statusMeta.icon;
@@ -172,19 +173,25 @@ const TabBarComponent: React.FC<TabBarProps> = ({
                 setContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.id });
               }}
             >
-              <span className={styles.tabTitle}>
-                <StatusIcon
-                  size={12}
-                  className={`${styles.statusIcon} ${statusMeta.spinning ? styles.statusSpinning : ''}`.trim()}
-                  style={{ color: statusMeta.color }}
-                />
-                <span className={styles.tabTitleText}>{serverName}</span>
-                {timeStr && <span className={styles.tabTime}>{timeStr}</span>}
-              </span>
+              <StatusIcon
+                size={12}
+                className={`${styles.statusIcon} ${statusMeta.spinning ? styles.statusSpinning : ''}`.trim()}
+                style={{ color: statusMeta.color }}
+              />
+              <div className={styles.tabContent}>
+                <div className={styles.tabPrimary}>
+                  <span className={styles.tabServerName}>{serverName}</span>
+                  {username && <span className={styles.tabUsername}>{username}</span>}
+                </div>
+                <div className={styles.tabSecondary}>
+                  {timeStr && <span className={styles.tabTime}>{timeStr}</span>}
+                  <span className={styles.tabDisplayId}>{session.displayId}</span>
+                </div>
+              </div>
               <button
                 className={styles.closeButton}
                 onClick={(e) => {
-                  e.stopPropagation(); // 防止点击关闭按钮时触发标签页的切换事件
+                  e.stopPropagation();
                   onCloseSession(session.id);
                 }}
                 title={`关闭 ${serverName}`}

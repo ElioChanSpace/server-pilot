@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -13,7 +13,8 @@ import {
 import { useServer, Server, Category, OsType } from '../context/ServerContext';
 import {
   FaChevronDown, FaChevronRight, FaEdit, FaFolder, FaFolderOpen,
-  FaGripVertical, FaLinux, FaPlus, FaPlug, FaServer, FaUnlink, FaWindows,
+  FaGripVertical, FaHistory, FaLinux, FaPlus, FaPlug, FaServer, FaSearch,
+  FaTimes, FaUnlink, FaWindows,
 } from 'react-icons/fa';
 import treeStyles from './TreeView.module.css';
 import sidebarStyles from './LeftSidebar.module.css';
@@ -44,6 +45,8 @@ interface CategoryNodeProps {
   overCategoryId: string | null;
   dropPosition: 'before' | 'inside' | 'after' | null;
   activeDragId: string | null;
+  matchingServerIds: Set<string> | null;
+  visibleCategoryIds: Set<string> | null;
   onCategoryContextMenu: (e: React.MouseEvent, cat: Category | null) => void;
   onSelectCategory: (cat: Category) => void;
   onCreateServer: (cat: Category | null) => void;
@@ -52,6 +55,7 @@ interface CategoryNodeProps {
   onSelectServer: (server: Server) => void;
   onConnectServer: (server: Server) => void;
   onDisconnectServer: (server: Server) => void;
+  onOpenCommandHistory?: (server: Server) => void;
   onServerContextMenu?: (e: React.MouseEvent, server: Server) => void;
 }
 
@@ -60,18 +64,31 @@ const CategoryNode = memo<CategoryNodeProps>((props) => {
     category, depth, expandedCategories, toggleCategory,
     categoryChildrenMap, serversByCategory, categoryServerCounts,
     activeCategory, activeServer, overCategoryId, dropPosition, activeDragId,
+    matchingServerIds, visibleCategoryIds,
     onCategoryContextMenu, onSelectCategory, onCreateServer, onCreateSubCategory,
-    onEditCategory, onSelectServer, onConnectServer, onDisconnectServer, onServerContextMenu,
+    onEditCategory, onSelectServer, onConnectServer, onDisconnectServer, onOpenCommandHistory, onServerContextMenu,
   } = props;
 
-  const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({ id: category.id });
-  const { setNodeRef: setDropRef } = useDroppable({ id: category.id });
+  const isSearching = matchingServerIds !== null;
+  const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({ id: category.id, disabled: isSearching });
+  const { setNodeRef: setDropRef } = useDroppable({ id: category.id, disabled: isSearching });
 
-  const isExpanded = expandedCategories.has(category.id);
-  const childCategories = categoryChildrenMap.get(category.id) ?? EMPTY_CATEGORIES;
-  const childServers = serversByCategory.get(category.id) ?? EMPTY_SERVERS;
+  // 搜索时过滤子分类和子服务器
+  const allChildCategories = categoryChildrenMap.get(category.id) ?? EMPTY_CATEGORIES;
+  const allChildServers = serversByCategory.get(category.id) ?? EMPTY_SERVERS;
+  const childCategories = isSearching
+    ? allChildCategories.filter(c => visibleCategoryIds?.has(c.id))
+    : allChildCategories;
+  const childServers = isSearching
+    ? allChildServers.filter(s => matchingServerIds.has(s.id))
+    : allChildServers;
   const hasChildren = childCategories.length > 0 || childServers.length > 0;
-  const serverCount = categoryServerCounts.get(category.id) ?? 0;
+  // 搜索时显示匹配数量，否则显示总数
+  const serverCount = isSearching
+    ? childServers.length
+    : (categoryServerCounts.get(category.id) ?? 0);
+  // 搜索时强制展开
+  const isExpanded = isSearching || expandedCategories.has(category.id);
 
   const isOver = overCategoryId === category.id && activeDragId !== category.id;
   const showBefore = isOver && dropPosition === 'before';
@@ -98,9 +115,11 @@ const CategoryNode = memo<CategoryNodeProps>((props) => {
         data-drop-inside={showInside || undefined}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onCategoryContextMenu(e, category); }}
       >
-        <div className={treeStyles.dragHandle} {...attributes} {...listeners} title="拖拽排序或移入其他分类">
-          <FaGripVertical size={10} />
-        </div>
+        {!isSearching && (
+          <div className={treeStyles.dragHandle} {...attributes} {...listeners} title="拖拽排序或移入其他分类">
+            <FaGripVertical size={10} />
+          </div>
+        )}
         <button
           type="button"
           className={treeStyles.expander}
@@ -147,6 +166,7 @@ const CategoryNode = memo<CategoryNodeProps>((props) => {
               onSelectServer={onSelectServer}
               onConnectServer={onConnectServer}
               onDisconnectServer={onDisconnectServer}
+              onOpenCommandHistory={onOpenCommandHistory}
               onServerContextMenu={onServerContextMenu}
             />
           ))}
@@ -166,15 +186,20 @@ interface ServerNodeProps {
   onSelectServer: (server: Server) => void;
   onConnectServer: (server: Server) => void;
   onDisconnectServer: (server: Server) => void;
+  onOpenCommandHistory?: (server: Server) => void;
   onServerContextMenu?: (e: React.MouseEvent, server: Server) => void;
 }
 
-const ServerNode = memo<ServerNodeProps>(({ server, depth, activeServer, onSelectServer, onConnectServer, onDisconnectServer, onServerContextMenu }) => {
+const ServerNode = memo<ServerNodeProps>(({ server, depth, activeServer, onSelectServer, onConnectServer, onDisconnectServer, onOpenCommandHistory, onServerContextMenu }) => {
   const handleActionClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (server.osType !== OsType.Linux) return;
     if (server.status === 'connected' || server.status === 'connecting') onDisconnectServer(server);
     else onConnectServer(server);
+  };
+  const handleHistoryClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onOpenCommandHistory?.(server);
   };
   return (
     <div
@@ -185,12 +210,17 @@ const ServerNode = memo<ServerNodeProps>(({ server, depth, activeServer, onSelec
       onDoubleClick={() => onConnectServer(server)}
       onContextMenu={(e) => { if (onServerContextMenu) { e.preventDefault(); e.stopPropagation(); onServerContextMenu(e, server); } }}
     >
-      <div className={treeStyles.statusDot} style={{ backgroundColor: getStatusColor(server.status) }} />
-      {server.osType === OsType.Windows ? <FaWindows className={treeStyles.serverOsIcon} /> : <FaLinux className={treeStyles.serverOsIcon} />}
+      <span className={treeStyles.serverOsIcon}>
+        {server.osType === OsType.Windows ? <FaWindows /> : <FaLinux />}
+        <span className={treeStyles.statusDot} style={{ backgroundColor: getStatusColor(server.status) }} />
+      </span>
       <div className={treeStyles.nodeBody}>
         <span className={treeStyles.nodeTitle}>{server.name}</span>
         <span className={treeStyles.nodeMeta}>{server.username}@{server.host}:{server.port}</span>
       </div>
+      <button type="button" className={treeStyles.nodeHistoryAction} onClick={handleHistoryClick} title="命令历史">
+        <FaHistory size={10} />
+      </button>
       <button type="button" className={treeStyles.nodeAction} onClick={handleActionClick} disabled={server.osType !== OsType.Linux}
         title={server.osType !== OsType.Linux ? '暂不支持 Windows' : server.status === 'connected' || server.status === 'connecting' ? '断开连接' : '连接服务器'}
       >
@@ -215,28 +245,33 @@ interface LeftSidebarProps {
   onEditCategory: (category: Category) => void;
   onConnectServer: (server: Server) => void;
   onDisconnectServer: (server: Server) => void;
+  onOpenCommandHistory: (server: Server) => void;
   onServerContextMenu?: (event: React.MouseEvent, server: Server) => void;
 }
 
 export const LeftSidebar = memo<LeftSidebarProps>(({
   isOpen, activeServer, activeCategory, isUncategorizedActive, onSelectServer, onSelectCategory,
   onCategoryContextMenu, onCreateServer, onCreateSubCategory, onEditCategory,
-  onConnectServer, onDisconnectServer, onServerContextMenu,
+  onConnectServer, onDisconnectServer, onOpenCommandHistory, onServerContextMenu,
 }) => {
+  console.log('[Search] LeftSidebar render');
   const { categories, servers, updateCategoryOrder, moveCategoryToParent } = useServer();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [overCategoryId, setOverCategoryId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<'before' | 'inside' | 'after' | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // refs 用于在回调中读取最新值
   const overCategoryIdRef = useRef<string | null>(null);
   const dropPositionRef = useRef<'before' | 'inside' | 'after' | null>(null);
   const activeDragIdRef = useRef<string | null>(null);
 
-  useEffect(() => { overCategoryIdRef.current = overCategoryId; }, [overCategoryId]);
-  useEffect(() => { dropPositionRef.current = dropPosition; }, [dropPosition]);
-  useEffect(() => { activeDragIdRef.current = activeDragId; }, [activeDragId]);
+  // useLayoutEffect 同步 ref，确保 handleDragEnd 读取时已是最新值
+  useLayoutEffect(() => { overCategoryIdRef.current = overCategoryId; }, [overCategoryId]);
+  useLayoutEffect(() => { dropPositionRef.current = dropPosition; }, [dropPosition]);
+  useLayoutEffect(() => { activeDragIdRef.current = activeDragId; }, [activeDragId]);
 
   // 新增分类时自动展开
   useEffect(() => {
@@ -354,46 +389,191 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
 
   const activeDragCategory = useMemo(() => activeDragId ? categories.find(c => c.id === activeDragId) : null, [activeDragId, categories]);
 
+  // ---- 搜索过滤 ----
+  const trimmedQuery = searchQuery.trim();
+  const isSearching = trimmedQuery.length > 0;
+  const { matchingServerIds, visibleCategoryIds } = useMemo(() => {
+    if (!trimmedQuery) { return { matchingServerIds: null, visibleCategoryIds: null }; }
+
+    const q = trimmedQuery.toLowerCase();
+
+    // 预构建索引
+    const parentMap = new Map<string, string | undefined>();
+    categories.forEach(c => parentMap.set(c.id, c.parentId));
+    const serversByCatId = new Map<string, Server[]>();
+    servers.forEach(s => { if (s.categoryId) { const arr = serversByCatId.get(s.categoryId); if (arr) arr.push(s); else serversByCatId.set(s.categoryId, [s]); } });
+    const childrenByParentId = new Map<string, Category[]>();
+    categories.forEach(c => { if (c.parentId) { const arr = childrenByParentId.get(c.parentId); if (arr) arr.push(c); else childrenByParentId.set(c.parentId, [c]); } });
+
+    const serverIds = new Set<string>();
+    const catIds = new Set<string>();
+
+    // 向上收集祖先分类
+    const collectAncestors = (startId: string | undefined) => {
+      let cur = startId;
+      let depth = 0;
+      while (cur) {
+        if (depth > 50) break;
+        catIds.add(cur);
+        cur = parentMap.get(cur);
+        depth++;
+      }
+    };
+
+    // 匹配服务器
+    servers.forEach(s => {
+      if (s.name.toLowerCase().includes(q) || s.host.toLowerCase().includes(q) || s.username.toLowerCase().includes(q) || String(s.port).includes(q)) {
+        serverIds.add(s.id);
+        collectAncestors(s.categoryId);
+      }
+    });
+
+    // 匹配分类名
+    categories.forEach(c => {
+      if (c.name.toLowerCase().includes(q)) {
+        catIds.add(c.id);
+        const collectDescendants = (catId: string, visited: Set<string>) => {
+          if (visited.has(catId)) return;
+          visited.add(catId);
+          (serversByCatId.get(catId) ?? []).forEach(s => serverIds.add(s.id));
+          (childrenByParentId.get(catId) ?? []).forEach(cc => {
+            catIds.add(cc.id);
+            collectDescendants(cc.id, visited);
+          });
+        };
+        collectDescendants(c.id, new Set());
+        collectAncestors(c.parentId);
+      }
+    });
+
+    return { matchingServerIds: serverIds, visibleCategoryIds: catIds };
+  }, [trimmedQuery, servers, categories]);
+
+  // 过滤根分类和未分类服务器
+  const filteredRootCategories = useMemo(() => {
+    if (!visibleCategoryIds) return rootCategories;
+    return rootCategories.filter(c => visibleCategoryIds.has(c.id));
+  }, [rootCategories, visibleCategoryIds]);
+
+  const filteredUncategorizedServers = useMemo(() => {
+    if (!matchingServerIds) return uncategorizedServers;
+    return uncategorizedServers.filter(s => matchingServerIds.has(s.id));
+  }, [uncategorizedServers, matchingServerIds]);
+
+  console.log(`[Search] render: isSearching=${isSearching} trimmedQuery="${trimmedQuery}" rootCats:${filteredRootCategories.length} uncategorized:${filteredUncategorizedServers.length} expanded:${expandedCategories.size}`);
+
+  // 搜索时展开所有匹配的分类
+  // 用 trimmedQuery 而非 visibleCategoryIds（Set 引用每次渲染都不同，会导致无限循环）
+  useEffect(() => {
+    if (!isSearching || !visibleCategoryIds) return;
+    console.log(`[Search] useEffect expand: query="${trimmedQuery}" catIds:${visibleCategoryIds.size} uncategorized:${filteredUncategorizedServers.length}`);
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      let added = 0;
+      visibleCategoryIds.forEach(id => { if (!next.has(id)) { next.add(id); added++; } });
+      if (filteredUncategorizedServers.length > 0 && !next.has('__uncategorized__')) {
+        next.add('__uncategorized__');
+        added++;
+      }
+      console.log(`[Search] setExpandedCategories: prev:${prev.size} added:${added} → next:${next.size} changed:${added > 0}`);
+      return added > 0 ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trimmedQuery]);
+
+  // Escape 快捷键聚焦搜索框
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const nodeProps = {
     depth: 0, expandedCategories, toggleCategory, categoryChildrenMap, serversByCategory, categoryServerCounts,
     activeCategory, activeServer, overCategoryId, dropPosition, activeDragId,
+    matchingServerIds, visibleCategoryIds,
     onCategoryContextMenu, onSelectCategory, onCreateServer, onCreateSubCategory, onEditCategory,
-    onSelectServer, onConnectServer, onDisconnectServer, onServerContextMenu,
+    onSelectServer, onConnectServer, onDisconnectServer, onOpenCommandHistory, onServerContextMenu,
   };
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => { setActiveDragId(null); setOverCategoryId(null); setDropPosition(null); }}>
       <div className={sidebarStyles.leftSidebar} data-closed={!isOpen}>
-        {rootCategories.map(cat => <CategoryNode key={cat.id} category={cat} {...nodeProps} />)}
-        {/* 未分类 */}
-        <div className={treeStyles.treeNode}>
-          <div className={treeStyles.header} data-active={isUncategorizedActive}
-            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onCategoryContextMenu(e, null); }}>
-            <button type="button" className={treeStyles.expander}
-              onClick={(e) => { e.stopPropagation(); if (uncategorizedServers.length > 0) toggleCategory('__uncategorized__'); }}>
-              {uncategorizedServers.length > 0
-                ? (expandedCategories.has('__uncategorized__') ? <FaChevronDown size={10} /> : <FaChevronRight size={10} />)
-                : <span className={treeStyles.expanderSpacer} />}
+        {/* 搜索框 */}
+        <div className={sidebarStyles.searchBox}>
+          <FaSearch className={sidebarStyles.searchIcon} size={11} />
+          <input
+            ref={searchInputRef}
+            className={sidebarStyles.searchInput}
+            placeholder="搜索名称、IP..."
+            value={searchQuery}
+            onChange={e => {
+              const t0 = performance.now();
+              setSearchQuery(e.target.value);
+              console.log(`[Search] input onChange → setSearchQuery done in ${(performance.now() - t0).toFixed(1)}ms`);
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Escape') {
+                if (searchQuery) { e.stopPropagation(); setSearchQuery(''); }
+                searchInputRef.current?.blur();
+              }
+            }}
+          />
+          {searchQuery && (
+            <button type="button" className={sidebarStyles.searchClear} onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }} title="清除">
+              <FaTimes size={9} />
             </button>
-            <button type="button" className={treeStyles.headerMain}
-              onClick={() => { onSelectCategory(null); if (uncategorizedServers.length > 0 && !expandedCategories.has('__uncategorized__')) toggleCategory('__uncategorized__'); }}>
-              {expandedCategories.has('__uncategorized__') ? <FaFolderOpen className={treeStyles.folderIcon} /> : <FaFolder className={treeStyles.folderIcon} />}
-              <div className={treeStyles.nodeBody}>
-                <span className={treeStyles.nodeTitle}>未分类</span>
-                <span className={treeStyles.nodeMeta}>{uncategorizedServers.length} 台服务器</span>
-              </div>
-            </button>
-            <div className={treeStyles.nodeActions}>
-              <button type="button" className={treeStyles.nodeAction} onClick={(e) => { e.stopPropagation(); onCreateServer(null); }} title="新建服务器">
-                <FaServer size={11} />
-              </button>
-            </div>
-          </div>
-          {expandedCategories.has('__uncategorized__') && uncategorizedServers.map(s => (
-            <ServerNode key={s.id} server={s} depth={1} activeServer={activeServer}
-              onSelectServer={onSelectServer} onConnectServer={onConnectServer} onDisconnectServer={onDisconnectServer} onServerContextMenu={onServerContextMenu} />
-          ))}
+          )}
         </div>
+
+        {/* 树节点 */}
+        {filteredRootCategories.map(cat => <CategoryNode key={cat.id} category={cat} {...nodeProps} />)}
+        {/* 未分类 */}
+        {(filteredUncategorizedServers.length > 0 || !isSearching) && (
+          <div className={treeStyles.treeNode}>
+            <div className={treeStyles.header} data-active={isUncategorizedActive}
+              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onCategoryContextMenu(e, null); }}>
+              {!isSearching && (
+                <button type="button" className={treeStyles.expander}
+                  onClick={(e) => { e.stopPropagation(); if (filteredUncategorizedServers.length > 0) toggleCategory('__uncategorized__'); }}>
+                  {filteredUncategorizedServers.length > 0
+                    ? (expandedCategories.has('__uncategorized__') ? <FaChevronDown size={10} /> : <FaChevronRight size={10} />)
+                    : <span className={treeStyles.expanderSpacer} />}
+                </button>
+              )}
+              <button type="button" className={treeStyles.headerMain}
+                onClick={() => { onSelectCategory(null); if (filteredUncategorizedServers.length > 0 && !expandedCategories.has('__uncategorized__')) toggleCategory('__uncategorized__'); }}>
+                {(isSearching || expandedCategories.has('__uncategorized__')) ? <FaFolderOpen className={treeStyles.folderIcon} /> : <FaFolder className={treeStyles.folderIcon} />}
+                <div className={treeStyles.nodeBody}>
+                  <span className={treeStyles.nodeTitle}>未分类</span>
+                  <span className={treeStyles.nodeMeta}>{filteredUncategorizedServers.length} 台服务器</span>
+                </div>
+              </button>
+              {!isSearching && (
+                <div className={treeStyles.nodeActions}>
+                  <button type="button" className={treeStyles.nodeAction} onClick={(e) => { e.stopPropagation(); onCreateServer(null); }} title="新建服务器">
+                    <FaServer size={11} />
+                  </button>
+                </div>
+              )}
+            </div>
+            {(isSearching || expandedCategories.has('__uncategorized__')) && filteredUncategorizedServers.map(s => (
+              <ServerNode key={s.id} server={s} depth={1} activeServer={activeServer}
+                onSelectServer={onSelectServer} onConnectServer={onConnectServer} onDisconnectServer={onDisconnectServer}
+                onOpenCommandHistory={onOpenCommandHistory} onServerContextMenu={onServerContextMenu} />
+            ))}
+          </div>
+        )}
+        {/* 搜索无结果 */}
+        {isSearching && filteredRootCategories.length === 0 && filteredUncategorizedServers.length === 0 && (
+          <div className={sidebarStyles.searchEmpty}>无匹配结果</div>
+        )}
       </div>
       <DragOverlay dropAnimation={null}>
         {activeDragCategory ? (

@@ -1,0 +1,407 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal {
+  width: min(760px, 92vw);
+  height: min(600px, 80vh);
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Header ---- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.closeBtn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* ---- Toolbar ---- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.dropdownWrapper {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.dropdownButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 5px 10px;
+  background: var(--surface-hover);
+  border: 1px solid var(--glass-border);
+  border-radius: 7px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.dropdownButton:hover {
+  background: var(--surface-active);
+}
+
+.dropdownLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdownArrow {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.dropdownBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  max-height: 320px;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+/* ---- Simple dropdown items ---- */
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background 0.1s;
+}
+
+.dropdownItem:hover {
+  background: var(--surface-hover);
+}
+
+.dropdownItemActive {
+  color: var(--accent-color);
+  background: var(--surface-hover);
+}
+
+.dropdownItemLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.dropdownItemCount {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* ---- Tree dropdown items ---- */
+.treeAll {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background 0.1s;
+}
+
+.treeAll:hover {
+  background: var(--surface-hover);
+}
+
+.treeCategory {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: default;
+  margin-top: 4px;
+}
+
+.treeCategory:first-child {
+  margin-top: 0;
+}
+
+.treeCategoryIcon {
+  color: var(--accent-color);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.treeServer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background 0.1s;
+}
+
+.treeServer:hover {
+  background: var(--surface-hover);
+}
+
+.treeServerActive {
+  color: var(--accent-color);
+  background: var(--surface-hover);
+}
+
+.treeServerIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.treeServerName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treeServerCount {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* ---- Clear button ---- */
+.clearBtn {
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.clearBtn:hover {
+  color: var(--danger-color);
+  border-color: var(--danger-color);
+}
+
+/* ---- Command list ---- */
+.commandList {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.emptyIcon {
+  opacity: 0.25;
+  margin-bottom: 4px;
+}
+
+.emptyHint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ---- Command row ---- */
+.commandRow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+  min-height: 32px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.commandRow:last-child {
+  border-bottom: none;
+}
+
+.commandRow:hover {
+  background: var(--surface-hover);
+}
+
+.commandTime {
+  flex-shrink: 0;
+  width: 90px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+  padding-right: 10px;
+}
+
+.commandSep {
+  flex-shrink: 0;
+  width: 1px;
+  align-self: stretch;
+  background: var(--glass-border);
+  margin: 5px 0;
+}
+
+.commandDisplayId {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.commandContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  overflow: hidden;
+}
+
+.commandServer {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--accent-color);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.commandText {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.copyIcon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.1s;
+  padding: 5px 0;
+}
+
+.commandRow:hover .copyIcon {
+  opacity: 0.5;
+}
+
+/* ---- Footer ---- */
+.footer {
+  padding: 7px 20px;
+  border-top: 1px solid var(--glass-border);
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  text-align: center;
+}

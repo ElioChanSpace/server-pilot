@@ -58,7 +58,6 @@ function useCanvasLineNumbers(
   const dprRef = useRef(window.devicePixelRatio || 1);
   const lineHeightRef = useRef(20.8); // 13px * 1.6 line-height
   const paddingTopRef = useRef(12); // matches textarea/highlight padding
-  const fillStyleRef = useRef<string>("");
   const fontRef = useRef<string>("");
 
   const draw = useCallback(() => {
@@ -86,15 +85,12 @@ function useCanvasLineNumbers(
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    // Cache font and fillStyle — avoid repeated style resolution per frame
+    // 字体可缓存（不变），但颜色需每次读取（主题切换时 CSS 变量会变）
     if (!fontRef.current) {
       fontRef.current = `13px 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace`;
     }
-    if (!fillStyleRef.current) {
-      fillStyleRef.current = getComputedStyle(canvas).getPropertyValue("color").trim() || "#585b70";
-    }
     ctx.font = fontRef.current;
-    ctx.fillStyle = fillStyleRef.current;
+    ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("color").trim() || "#585b70";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
 
@@ -141,14 +137,24 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollTopRef = useRef<number>(0);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originalContentRef = useRef<string>("");
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // 清理所有未完成的 timer
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
   const drawLineNumbers = useCanvasLineNumbers(canvasRef, lineCount, scrollTopRef);
 
   // Load file content
   const loadFile = useCallback(async () => {
-    console.log("[Editor] loadFile start, path:", filePath);
-    const t0 = performance.now();
     setIsLoading(true);
     setError(null);
 
@@ -158,22 +164,19 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
         path: filePath,
         themeMode: themeMode,
       });
-      console.log("[Editor] get_file_content returned in", (performance.now() - t0).toFixed(1), "ms, lines:", result.lineCount, "size:", result.fileSize);
 
-      const t1 = performance.now();
+      if (!mountedRef.current) return;
       setContent(result.raw);
       setHighlightedHtml(result.html);
       setLanguage(result.language);
       setLineCount(result.lineCount);
       originalContentRef.current = result.raw;
       setIsDirty(false);
-      console.log("[Editor] state updates took", (performance.now() - t1).toFixed(1), "ms");
     } catch (err) {
-      console.error("[Editor] loadFile error:", err);
+      if (!mountedRef.current) return;
       setError(typeof err === "string" ? err : "加载文件失败");
     } finally {
-      setIsLoading(false);
-      console.log("[Editor] loadFile total:", (performance.now() - t0).toFixed(1), "ms");
+      if (mountedRef.current) setIsLoading(false);
     }
   }, [serverId, filePath, themeMode]);
 
@@ -196,17 +199,15 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       }
 
       highlightTimerRef.current = setTimeout(async () => {
-        const t0 = performance.now();
         try {
           const result = await invoke<HighlightedCode>("highlight_code", {
             code,
             language: lang,
             themeMode: themeMode,
           });
-          console.log("[Editor] highlight_code returned in", (performance.now() - t0).toFixed(1), "ms, htmlLen:", result.html.length);
-          setHighlightedHtml(result.html);
-        } catch (err) {
-          console.error("[Editor] highlight_code error:", err, "took", (performance.now() - t0).toFixed(1), "ms");
+          if (mountedRef.current) setHighlightedHtml(result.html);
+        } catch {
+          // non-fatal
         }
       }, 300);
     },
@@ -237,9 +238,8 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   // Sync scroll between textarea, highlight canvas, and line numbers canvas.
   // Uses transform instead of scrollTop for the highlight layer — more reliable
   // with nested <pre> elements and avoids scrollHeight mismatch issues.
-  const scrollLogThrottleRef = useRef(0);
+  const rafPendingRef = useRef(false);
   const handleScroll = useCallback(() => {
-    const t0 = performance.now();
     const textarea = textareaRef.current;
     const highlight = highlightRef.current;
 
@@ -249,15 +249,14 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
     if (textarea) {
       scrollTopRef.current = textarea.scrollTop;
-      requestAnimationFrame(() => {
-        drawLineNumbers();
-        const elapsed = performance.now() - t0;
-        // Throttle scroll logs to avoid flooding — log every 500ms or if slow
-        if (elapsed > 8 || performance.now() - scrollLogThrottleRef.current > 500) {
-          scrollLogThrottleRef.current = performance.now();
-          console.log("[Editor] handleScroll took", elapsed.toFixed(1), "ms, scrollTop:", textarea.scrollTop);
-        }
-      });
+      // 合并同帧多次 scroll 事件，每帧只重绘一次 canvas
+      if (!rafPendingRef.current) {
+        rafPendingRef.current = true;
+        requestAnimationFrame(() => {
+          rafPendingRef.current = false;
+          drawLineNumbers();
+        });
+      }
     }
   }, [drawLineNumbers]);
 
@@ -275,8 +274,6 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
   // Save file
   const handleSave = useCallback(async () => {
-    console.log("[Editor] handleSave start, path:", filePath, "contentLen:", content.length);
-    const t0 = performance.now();
     setSaveStatus("saving");
     try {
       await invoke<string>("save_remote_file", {
@@ -284,18 +281,20 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
         path: filePath,
         content,
       });
-      console.log("[Editor] save_remote_file returned in", (performance.now() - t0).toFixed(1), "ms");
+      if (!mountedRef.current) return;
       originalContentRef.current = content;
       setIsDirty(false);
       setSaveStatus("saved");
       onSaved?.();
       void emit("editor-file-saved", { serverId, filePath });
-      setTimeout(() => setSaveStatus("idle"), 2000);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => { if (mountedRef.current) setSaveStatus("idle"); }, 2000);
     } catch (err) {
-      console.error("[Editor] handleSave error:", err, "took", (performance.now() - t0).toFixed(1), "ms");
+      if (!mountedRef.current) return;
       setSaveStatus("error");
       setError(typeof err === "string" ? err : "保存失败");
-      setTimeout(() => setSaveStatus("idle"), 3000);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => { if (mountedRef.current) setSaveStatus("idle"); }, 3000);
     }
   }, [serverId, filePath, content, onSaved]);
 

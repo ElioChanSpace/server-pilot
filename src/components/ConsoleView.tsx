@@ -10,6 +10,7 @@ interface ConsoleViewProps {
   resetToken: number;
   isActive: boolean;
   onFilesDropped: (paths: string[]) => void;
+  onCommandExecuted?: (command: string) => void;
   fontSize: number;
   scrollback: number;
   status: TerminalSessionStatus;
@@ -23,6 +24,7 @@ const arePropsEqual = (prev: ConsoleViewProps, next: ConsoleViewProps) =>
   prev.resetToken === next.resetToken &&
   prev.isActive === next.isActive &&
   prev.onFilesDropped === next.onFilesDropped &&
+  prev.onCommandExecuted === next.onCommandExecuted &&
   prev.fontSize === next.fontSize &&
   prev.scrollback === next.scrollback &&
   prev.status === next.status &&
@@ -37,6 +39,7 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
   resetToken,
   isActive,
   onFilesDropped,
+  onCommandExecuted,
   fontSize,
   scrollback,
   status,
@@ -73,6 +76,7 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
         onResize={handleResize}
         isActive={isActive}
         onFilesDropped={onFilesDropped}
+        onCommandExecuted={onCommandExecuted}
         fontSize={fontSize}
         scrollback={scrollback}
         onFontSizeChange={onFontSizeChange}

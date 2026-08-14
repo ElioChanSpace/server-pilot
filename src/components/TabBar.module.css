@@ -7,7 +7,7 @@
   padding: 0 4px;
   gap: 2px;
   scrollbar-width: none;
-  min-height: 38px;
+  min-height: 46px;
 }
 
 .tabBar::-webkit-scrollbar {
@@ -18,13 +18,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 12px 8px;
+  padding: 6px 12px 7px;
   cursor: pointer;
   background-color: transparent;
   border: none;
   border-radius: 8px 8px 0 0;
-  min-width: 120px;
-  max-width: 200px;
+  min-width: 150px;
   color: var(--text-muted);
   font-size: 12px;
   user-select: none;
@@ -53,35 +52,10 @@
   border-radius: 2px 2px 0 0;
 }
 
-.tabTitle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-}
-
-.tabTitleText {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tabTime {
-  font-size: 10px;
-  color: var(--text-muted);
-  opacity: 0.7;
-  white-space: nowrap;
-  margin-left: 2px;
-}
-
-.tab[data-active="true"] .tabTime {
-  opacity: 0.9;
-}
-
 .statusIcon {
   flex-shrink: 0;
   opacity: 0.7;
+  align-self: center;
 }
 
 .tab[data-active="true"] .statusIcon {
@@ -93,31 +67,97 @@
 }
 
 @keyframes tab-status-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.tabContent {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.tabPrimary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tabServerName {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.tabUsername {
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  opacity: 0.75;
+}
+
+.tab[data-active="true"] .tabServerName {
+  color: var(--text-primary);
+}
+
+.tab[data-active="true"] .tabUsername {
+  opacity: 0.85;
+}
+
+.tabSecondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tabTime {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabDisplayId {
+  font-size: 10px;
+  white-space: nowrap;
+  font-family: Menlo, Monaco, "Courier New", monospace;
+  color: var(--text-muted);
+  opacity: 0.45;
+  letter-spacing: 0.04em;
+}
+
+.tab[data-active="true"] .tabTime {
+  opacity: 0.8;
+}
+
+.tab[data-active="true"] .tabDisplayId {
+  opacity: 0.6;
 }
 
 .closeButton {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 4px;
   background-color: var(--surface-active);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 10px;
   padding: 0;
   margin: 0;
-  margin-left: 4px;
+  margin-left: 2px;
   box-shadow: none;
   transform: none;
   opacity: 0;
   transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+  flex-shrink: 0;
 }
 
 .tab:hover .closeButton,
