@@ -4,9 +4,13 @@
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 6px;
-  z-index: 9999; /* <-- FIX: Increased z-index to a very high value */
+  z-index: 9999;
   box-shadow: 0 16px 36px -24px var(--shadow-color);
   min-width: 180px;
+}
+
+.menuItemWrapper {
+  position: relative;
 }
 
 .contextMenuItem {
@@ -22,9 +26,37 @@
   gap: 10px;
   box-shadow: none;
   transform: none;
+  position: relative;
 }
 
 .contextMenuItem:hover {
   background-color: var(--surface-hover);
   color: var(--accent-strong);
+}
+
+.separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--glass-border);
+}
+
+.menuLabel {
+  flex: 1;
+}
+
+.submenuArrow {
+  flex-shrink: 0;
+  opacity: 0.5;
+  margin-left: auto;
+}
+
+.submenu {
+  position: fixed;
+  background-color: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 6px;
+  z-index: 10000;
+  box-shadow: 0 16px 36px -24px var(--shadow-color);
+  min-width: 160px;
 }
