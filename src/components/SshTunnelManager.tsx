@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FaNetworkWired, FaPlus, FaTrash, FaSync } from "react-icons/fa";
@@ -138,7 +139,7 @@ export const SshTunnelManager: React.FC<SshTunnelManagerProps> = ({ server, onCl
     }
   };
 
-  return (
+  return createPortal(
     <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.content}>
         <div className={styles.header}>
@@ -295,6 +296,7 @@ export const SshTunnelManager: React.FC<SshTunnelManagerProps> = ({ server, onCl
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
