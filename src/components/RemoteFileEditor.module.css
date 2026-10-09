@@ -1,6 +1,7 @@
 /* ==================== 窗口形态 (A) ==================== */
-/* 编辑窗口为透明窗体，内容放在 10px 内缩的圆角容器中 —— 四角与 macOS
-   原生窗口一致；html/body 由本文件强制透明（覆盖 App.css 的渐变底色）。 */
+/* 编辑窗口为透明窗体，内容全幅填充（inset:0）并做四角圆角 ——
+   透明仅在四角露出桌面，形成 macOS 原生圆角观感，无外部透明边框；
+   html/body 由本文件强制透明（覆盖 App.css 的渐变底色）。 */
 :global(html),
 :global(body),
 :global(#root) {
@@ -10,14 +11,14 @@
 
 .editorOverlay {
   position: fixed;
-  inset: 10px;
+  inset: 0;
   z-index: 100;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary-opaque, var(--bg-primary, #1e1e2e));
+  /* 全幅填充 + 四角圆角：透明窗体仅在四角露出桌面，与 macOS 原生一致，
+     不再有外部透明边框/浮层阴影 */
   border-radius: 10px;
-  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.35);
   overflow: hidden;
   animation: editorEnter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
