@@ -7,6 +7,7 @@ use tauri::State;
 
 use super::file_transfer::resolve_transfer_server;
 use super::ssh_client;
+use super::util::shell_quote;
 
 // ---- Process manager ----
 
@@ -107,6 +108,164 @@ pub async fn process_action(
     .map_err(|err| err.to_string())?
 }
 
+// ---- Disk analysis ----
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskUsage {
+    pub filesystem: String,
+    pub size: String,
+    pub used: String,
+    pub avail: String,
+    pub use_percent: u8,
+    pub mount: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirUsage {
+    pub path: String,
+    pub name: String,
+    pub size_kb: u64,
+}
+
+fn parse_df_output(output: &str) -> Vec<DiskUsage> {
+    let mut disks = Vec::new();
+    for line in output.lines().skip(1) {
+        let mut fields = line.split_whitespace();
+        let (Some(fs), Some(size), Some(used), Some(avail), Some(usepct), Some(mount)) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) else {
+            continue;
+        };
+        disks.push(DiskUsage {
+            filesystem: fs.to_string(),
+            size: size.to_string(),
+            used: used.to_string(),
+            avail: avail.to_string(),
+            use_percent: usepct.trim_end_matches('%').parse().unwrap_or(0),
+            mount: mount.to_string(),
+        });
+    }
+    disks
+}
+
+fn parse_du_output(output: &str, parent: &str) -> Vec<DirUsage> {
+    let mut entries: Vec<DirUsage> = Vec::new();
+    for line in output.lines() {
+        let mut fields = line.splitn(2, char::is_whitespace);
+        let (Some(size_kb), Some(path)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        let Ok(size_kb) = size_kb.parse::<u64>() else { continue };
+        let path = path.trim();
+        // Skip the summary line for the parent directory itself
+        if path.trim_end_matches('/') == parent.trim_end_matches('/') {
+            continue;
+        }
+        let name = path
+            .rsplit('/')
+            .next()
+            .filter(|n| !n.is_empty())
+            .unwrap_or(path)
+            .to_string();
+        entries.push(DirUsage {
+            path: path.to_string(),
+            name,
+            size_kb,
+        });
+    }
+    entries.sort_by(|a, b| b.size_kb.cmp(&a.size_kb));
+    entries.truncate(50);
+    entries
+}
+
+#[tauri::command(async)]
+pub async fn fetch_disk_usage(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<DiskUsage>, String> {
+    let connection = resolve_transfer_server(&state, &id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = ssh_client::run_ssh_exec_blocking(
+            &connection,
+            "df -hP -x tmpfs -x devtmpfs -x squashfs 2>/dev/null || df -hP 2>/dev/null",
+            "fetch disk usage",
+        )?;
+        Ok(parse_df_output(&output))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command(async)]
+pub async fn fetch_dir_usage(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+) -> Result<Vec<DirUsage>, String> {
+    if path.trim().is_empty() {
+        return Err("路径不能为空".to_string());
+    }
+    let connection = resolve_transfer_server(&state, &id)?;
+    let quoted = shell_quote(path.trim().trim_end_matches('/'));
+    let parent = path.trim().trim_end_matches('/').to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let cmd = format!(
+            "du -x -k -d 1 -- {} 2>/dev/null | sort -rn | head -n 60",
+            quoted
+        );
+        let output = ssh_client::run_ssh_exec_blocking(&connection, &cmd, "fetch directory usage")?;
+        Ok(parse_du_output(&output, &parent))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command(async)]
+pub async fn fetch_large_files(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    min_size_mb: u32,
+) -> Result<Vec<DirUsage>, String> {
+    if path.trim().is_empty() {
+        return Err("路径不能为空".to_string());
+    }
+    let min_mb = min_size_mb.clamp(1, 100_000);
+    let connection = resolve_transfer_server(&state, &id)?;
+    let quoted = shell_quote(path.trim().trim_end_matches('/'));
+    tauri::async_runtime::spawn_blocking(move || {
+        let cmd = format!(
+            "find -- {} -xdev -type f -size +{}M -printf '%s\\t%p\\n' 2>/dev/null | sort -rn | head -n 40",
+            quoted, min_mb
+        );
+        let output = ssh_client::run_ssh_exec_blocking(&connection, &cmd, "fetch large files")?;
+        let mut files: Vec<DirUsage> = output
+            .lines()
+            .filter_map(|line| {
+                let (size, path) = line.split_once('\t')?;
+                let size_kb = size.parse::<u64>().ok()? / 1024;
+                let name = path.rsplit('/').next().unwrap_or(path).to_string();
+                Some(DirUsage {
+                    path: path.to_string(),
+                    name,
+                    size_kb,
+                })
+            })
+            .collect();
+        files.sort_by(|a, b| b.size_kb.cmp(&a.size_kb));
+        Ok(files)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,5 +281,29 @@ mod tests {
         assert_eq!(processes[0].user, "root");
         assert_eq!(processes[1].command, "nginx: worker");
         assert_eq!(processes[1].cpu, 5.2);
+    }
+
+    #[test]
+    fn parse_df_output_extracts_mounts() {
+        let output = "Filesystem      Size  Used Avail Use% Mounted on\n\
+                      /dev/vda1        40G   12G   26G  32% /\n\
+                      /dev/vdb1       100G   80G   20G  80% /data";
+        let disks = parse_df_output(output);
+        assert_eq!(disks.len(), 2);
+        assert_eq!(disks[0].mount, "/");
+        assert_eq!(disks[0].use_percent, 32);
+        assert_eq!(disks[1].use_percent, 80);
+    }
+
+    #[test]
+    fn parse_du_output_skips_parent_and_sorts() {
+        let output = "12000\t/var/log\n\
+                      300\t/var/cache\n\
+                      50000\t/var";
+        let entries = parse_du_output(output, "/var");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].path, "/var/log");
+        assert_eq!(entries[0].name, "log");
+        assert_eq!(entries[1].name, "cache");
     }
 }

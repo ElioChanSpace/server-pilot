@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaCopy, FaCogs, FaDocker, FaHistory, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
+import { FaCopy, FaCogs, FaDocker, FaHdd, FaHistory, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
 import { getServerStatusMeta } from '../utils/serverStatus';
 
-export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes';
+export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes' | 'disk';
 
 interface TabBarProps {
   sessions: TerminalSession[];
@@ -127,6 +127,14 @@ const TabBarComponent: React.FC<TabBarProps> = ({
               action: () => {
                 const server = servers.find(s => s.id === targetSession.serverId);
                 if (server) onOpenTool('processes', server.id, server.name);
+              },
+            },
+            {
+              label: '磁盘分析',
+              icon: <FaHdd />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenTool('disk', server.id, server.name);
               },
             },
             {
