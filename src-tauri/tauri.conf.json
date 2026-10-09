@@ -23,6 +23,7 @@
   "plugins": {},
   "app": {
     "withGlobalTauri": false,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "fullscreen": false,
@@ -32,7 +33,7 @@
         "minHeight": 600,
         "width": 1400,
         "height": 900,
-        "transparent": false,
+        "transparent": true,
         "decorations": true,
         "center": true,
         "useHttpsScheme": true

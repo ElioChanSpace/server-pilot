@@ -520,6 +520,76 @@ export const APP_THEMES: Record<string, AppTheme> = {
       bodyGradient: 'linear-gradient(160deg, #1a1d24 0%, #242933 52%, #2e3440 100%)',
     },
   },
+
+  // 琉璃（透明）— 玻璃拟态：半透明面板 + 极光渐变透出桌面
+  glass: {
+    id: 'glass',
+    name: '琉璃（透明）',
+    type: 'dark',
+    colors: {
+      accent: '#7dd3fc',
+      accentHover: '#a5e3ff',
+      accentStrong: '#38bdf8',
+
+      bgPrimary: 'rgba(12, 18, 30, 0.52)',
+      bgSecondary: 'rgba(16, 24, 40, 0.46)',
+      bgElevated: 'rgba(30, 42, 66, 0.62)',
+      glassBg: 'rgba(18, 27, 45, 0.38)',
+      glassBorder: 'rgba(255, 255, 255, 0.14)',
+      borderColor: 'rgba(255, 255, 255, 0.10)',
+      shadowColor: 'rgba(2, 6, 16, 0.55)',
+
+      textPrimary: 'rgba(240, 248, 255, 0.96)',
+      textSecondary: 'rgba(186, 205, 224, 0.88)',
+      textMuted: 'rgba(148, 170, 194, 0.66)',
+
+      surfaceHover: 'rgba(255, 255, 255, 0.07)',
+      surfaceActive: 'rgba(125, 211, 252, 0.14)',
+      surfaceOverlay: 'rgba(6, 12, 22, 0.60)',
+
+      sidebarBg: 'rgba(10, 16, 28, 0.42)',
+      sidebarText: 'rgba(240, 248, 255, 0.96)',
+      sidebarTextSecondary: 'rgba(186, 205, 224, 0.88)',
+      sidebarItemBg: 'rgba(255, 255, 255, 0.04)',
+      sidebarItemHoverBg: 'rgba(255, 255, 255, 0.09)',
+
+      success: '#4ade80',
+      warning: '#fbbf24',
+      danger: '#fb7185',
+      dangerHover: '#fda4af',
+      error: '#fb7185',
+      info: '#7dd3fc',
+      debug: '#c4b5fd',
+      dangerSoft: 'rgba(251, 113, 133, 0.12)',
+
+      terminalBg: 'rgba(8, 13, 23, 0.88)',
+      terminalFg: 'rgba(226, 240, 255, 0.96)',
+      terminalCursor: '#7dd3fc',
+      terminalSelection: 'rgba(56, 189, 248, 0.24)',
+      terminalBlack: '#334155',
+      terminalRed: '#fb7185',
+      terminalGreen: '#4ade80',
+      terminalYellow: '#fbbf24',
+      terminalBlue: '#60a5fa',
+      terminalMagenta: '#c084fc',
+      terminalCyan: '#22d3ee',
+      terminalWhite: '#e2f0ff',
+      terminalBrightBlack: '#64748b',
+      terminalBrightRed: '#fda4af',
+      terminalBrightGreen: '#86efac',
+      terminalBrightYellow: '#fde68a',
+      terminalBrightBlue: '#93c5fd',
+      terminalBrightMagenta: '#d8b4fe',
+      terminalBrightCyan: '#67e8f9',
+      terminalBrightWhite: '#f8fafc',
+
+      bodyGradient:
+        'radial-gradient(1200px 700px at 12% -10%, rgba(56, 189, 248, 0.20), transparent 55%),' +
+        'radial-gradient(1000px 620px at 92% 8%, rgba(168, 85, 247, 0.18), transparent 52%),' +
+        'radial-gradient(1100px 760px at 55% 118%, rgba(20, 184, 166, 0.16), transparent 58%),' +
+        'linear-gradient(165deg, rgba(8, 13, 24, 0.38) 0%, rgba(12, 20, 36, 0.30) 55%, rgba(10, 16, 30, 0.42) 100%)',
+    },
+  },
 };
 
 export const DEFAULT_THEME = 'dark';
