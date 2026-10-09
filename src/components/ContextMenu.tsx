@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { FaChevronRight } from 'react-icons/fa';
 import styles from './ContextMenu.module.css';
 
@@ -45,7 +46,10 @@ const SubMenu: React.FC<{
     setPos({ top, left });
   }, [parentRect]);
 
-  return (
+  // Portal to document.body: menus must escape ancestor stacking contexts
+  // (content-wrapper z-index, sidebar overflow, backdrop-filter containing
+  // blocks) or their items get covered/clipped by surrounding panels.
+  return createPortal(
     <div
       ref={ref}
       className={styles.contextMenu}
@@ -66,7 +70,8 @@ const SubMenu: React.FC<{
           </button>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 };
 
@@ -127,7 +132,8 @@ const MenuItem: React.FC<{
 };
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, actions, menuRef, onClose }) => {
-  return (
+  // Portal to document.body — see SubMenu for the stacking-context rationale.
+  return createPortal(
     <div ref={menuRef} className={styles.contextMenu} style={{ top: y, left: x }}>
       {actions.map((item, index) => {
         if (item.type === 'separator') {
@@ -135,6 +141,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, actions, menuRef
         }
         return <MenuItem key={index} item={item} onClose={onClose} />;
       })}
-    </div>
+    </div>,
+    document.body,
   );
 };

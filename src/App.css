@@ -677,9 +677,10 @@ select {
 }
 
 /* ====================== 琉璃（透明）主题增强 ====================== */
-/* 玻璃拟态：结构性面板叠加毛玻璃，让半透明主题透出桌面 */
+/* 玻璃拟态：结构性面板叠加毛玻璃，让半透明主题透出桌面。
+   注意：不要对 main/overflow 容器加 backdrop-filter —— 它会成为 fixed
+   定位的包含块并被 overflow 裁剪（曾导致右键菜单项被遮住）。 */
 :root[data-theme-id="glass"] header,
-:root[data-theme-id="glass"] main,
 :root[data-theme-id="glass"] aside,
 :root[data-theme-id="glass"] [class*="leftSidebar"],
 :root[data-theme-id="glass"] [class*="rightSidebar"],

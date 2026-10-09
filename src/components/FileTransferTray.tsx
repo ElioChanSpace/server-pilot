@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { open, save, ask } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -660,8 +661,8 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
         </div>
       </div>
 
-      {/* ── Context menu ── */}
-      {contextMenu.visible && contextMenu.entry && (
+      {/* ── Context menu（portal 到 body，避免被托盘层叠上下文/overflow 遮挡） ── */}
+      {contextMenu.visible && contextMenu.entry && createPortal(
         <div
           ref={contextRef}
           className={styles.contextMenu}
@@ -710,7 +711,8 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
           >
             <FaTrash size={11} /> 删除
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

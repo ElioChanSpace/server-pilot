@@ -39,10 +39,17 @@
       "identifier": "fs:scope",
       "allow": [
         "$APP/*",
-        "$DESKTOP/*",
-        "$DOWNLOAD/*",
+        "$APP/**",
+        "$HOME",
         "$HOME/**",
-        "$TMP/**"
+        "$DESKTOP",
+        "$DESKTOP/**",
+        "$DOCUMENT",
+        "$DOCUMENT/**",
+        "$DOWNLOAD",
+        "$DOWNLOAD/**",
+        "$TEMP",
+        "$TEMP/**"
       ]
     },
     "shell:allow-open",
