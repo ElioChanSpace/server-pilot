@@ -5,7 +5,7 @@ import { FitAddon } from 'xterm-addon-fit';
 import { SearchAddon } from 'xterm-addon-search';
 import { FaChevronDown, FaChevronUp, FaCopy, FaPaste, FaSearch, FaTimes } from 'react-icons/fa';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { ContextMenu, ContextMenuAction } from './ContextMenu';
+import { ContextMenu, ContextMenuAction, isEventInsideContextMenu } from './ContextMenu';
 import 'xterm/css/xterm.css';
 
 interface XtermTerminalProps {
@@ -530,6 +530,9 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
     const handlePointerOutside = (event: PointerEvent | MouseEvent) => {
       const target = event.target;
       if (target instanceof Node && contextMenuRef.current?.contains(target)) {
+        return;
+      }
+      if (isEventInsideContextMenu(target)) {
         return;
       }
       closeContextMenu();

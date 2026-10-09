@@ -19,11 +19,24 @@ interface ContextMenuProps {
   onClose: () => void;
 }
 
+/**
+ * 判定事件是否落在任意右键菜单（含 Portal 到 body 的子菜单）内。
+ * 菜单 Portal 后不再位于调用方 menuRef 的 DOM 子树中，外部点击检测
+ * 必须同时识别 [data-context-menu] 标记，否则 pointerdown 会先卸载菜单，
+ * 导致菜单项永远点不到。
+ */
+export function isEventInsideContextMenu(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return target.closest('[data-context-menu="true"]') !== null;
+}
+
 const SubMenu: React.FC<{
   items: ContextMenuAction[];
   parentRect: DOMRect;
   onClose: () => void;
-}> = ({ items, parentRect, onClose }) => {
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}> = ({ items, parentRect, onClose, onMouseEnter, onMouseLeave }) => {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: parentRect.top, left: parentRect.right + 2 });
 
@@ -52,8 +65,11 @@ const SubMenu: React.FC<{
   return createPortal(
     <div
       ref={ref}
+      data-context-menu="true"
       className={styles.contextMenu}
       style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 10000 }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       {items.map((item, i) => {
         if (item.type === 'separator') {
@@ -125,6 +141,10 @@ const MenuItem: React.FC<{
           items={item.children!}
           parentRect={btnRef.current.getBoundingClientRect()}
           onClose={onClose}
+          // SubMenu 已 Portal 到 body，不再是 wrapper 的 DOM 后代，
+          // 需要显式接管 hover 才能阻止 200ms 计时器把子菜单关掉。
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
         />
       )}
     </div>
@@ -134,7 +154,7 @@ const MenuItem: React.FC<{
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, actions, menuRef, onClose }) => {
   // Portal to document.body — see SubMenu for the stacking-context rationale.
   return createPortal(
-    <div ref={menuRef} className={styles.contextMenu} style={{ top: y, left: x }}>
+    <div ref={menuRef} data-context-menu="true" className={styles.contextMenu} style={{ top: y, left: x }}>
       {actions.map((item, index) => {
         if (item.type === 'separator') {
           return <div key={index} className={styles.separator} />;

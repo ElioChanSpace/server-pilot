@@ -665,6 +665,7 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
       {contextMenu.visible && contextMenu.entry && createPortal(
         <div
           ref={contextRef}
+          data-context-menu="true"
           className={styles.contextMenu}
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >

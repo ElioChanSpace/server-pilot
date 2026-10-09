@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
 import { FaBolt, FaCalendarAlt, FaChartLine, FaColumns, FaCopy, FaCogs, FaDocker, FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
-import { ContextMenu, ContextMenuAction } from './ContextMenu';
+import { ContextMenu, ContextMenuAction, isEventInsideContextMenu } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
 import { getServerStatusMeta } from '../utils/serverStatus';
@@ -64,6 +64,11 @@ const TabBarComponent: React.FC<TabBarProps> = ({
     const handlePointerOutside = (event: PointerEvent | MouseEvent) => {
       const target = event.target;
       if (target instanceof Node && contextMenuRef.current?.contains(target)) {
+        return;
+      }
+      // Portal 到 body 的子菜单不在 menuRef 子树内，需按标记识别，
+      // 否则 pointerdown 先卸载菜单，菜单项永远无法点击。
+      if (isEventInsideContextMenu(target)) {
         return;
       }
       setContextMenu(null);

@@ -20,7 +20,7 @@ import { FileTransferTray } from "./components/FileTransferTray";
 import { MainContent } from "./components/MainContent";
 import { isInsideTerminal } from "./utils/dom-helpers";
 import { getErrorMessage } from "./utils/format-helpers";
-import { ContextMenu } from "./components/ContextMenu";
+import { ContextMenu, isEventInsideContextMenu } from "./components/ContextMenu";
 import type { ContextMenuAction } from "./components/ContextMenu";
 import { MenuBar } from "./components/MenuBar";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
@@ -795,6 +795,7 @@ const AppContent: React.FC = () => {
     const handlePointerOutside = (event: PointerEvent | MouseEvent) => {
       const target = event.target;
       if (target instanceof Node && contextMenuRef.current?.contains(target)) return;
+      if (isEventInsideContextMenu(target)) return;
       closeContextMenu();
     };
 
