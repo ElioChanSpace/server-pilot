@@ -266,6 +266,85 @@ pub async fn fetch_large_files(
     .map_err(|err| err.to_string())?
 }
 
+// ---- System info ----
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemInfo {
+    pub hostname: String,
+    pub kernel: String,
+    pub arch: String,
+    pub distro: String,
+    pub cpu_model: String,
+    pub cpu_cores: u32,
+    pub load1: f64,
+    pub load5: f64,
+    pub load15: f64,
+    pub procs_running: u32,
+    pub uptime_seconds: u64,
+    pub mem_total_kb: u64,
+    pub mem_used_kb: u64,
+    pub mem_avail_kb: u64,
+    pub swap_total_kb: u64,
+    pub swap_used_kb: u64,
+}
+
+const SYSINFO_COMMAND: &str = r#"{ \
+echo "hostname=$(hostname 2>/dev/null)"; \
+echo "kernel=$(uname -sr 2>/dev/null)"; \
+echo "arch=$(uname -m 2>/dev/null)"; \
+echo "distro=$(grep -m1 PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2- | tr -d '\"')"; \
+echo "cpu_model=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//')"; \
+echo "cpu_cores=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null)"; \
+awk '{print "load1="$1; print "load5="$2; print "load15="$3; split($4,p,"/"); print "procs_running="p[1]}' /proc/loadavg 2>/dev/null; \
+awk '{print "uptime_seconds="$1}' /proc/uptime 2>/dev/null; \
+awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}/MemFree/{f=$2}/MemFree:/{}/SwapTotal/{st=$2}/SwapFree/{sf=$2}END{print "mem_total_kb="t; print "mem_avail_kb="a; print "mem_used_kb="(t-a); print "swap_total_kb="st; print "swap_used_kb="(st-sf)}' /proc/meminfo 2>/dev/null; \
+} 2>/dev/null"#;
+
+fn parse_kv_output(output: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    for line in output.lines() {
+        if let Some((key, value)) = line.split_once('=') {
+            map.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    map
+}
+
+#[tauri::command(async)]
+pub async fn fetch_system_info(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<SystemInfo, String> {
+    let connection = resolve_transfer_server(&state, &id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = ssh_client::run_ssh_exec_blocking(&connection, SYSINFO_COMMAND, "fetch system info")?;
+        let kv = parse_kv_output(&output);
+        let get = |key: &str| kv.get(key).cloned().unwrap_or_default();
+        let num = |key: &str| kv.get(key).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        Ok(SystemInfo {
+            hostname: get("hostname"),
+            kernel: get("kernel"),
+            arch: get("arch"),
+            distro: get("distro"),
+            cpu_model: get("cpu_model"),
+            cpu_cores: num("cpu_cores") as u32,
+            load1: get("load1").parse().unwrap_or(0.0),
+            load5: get("load5").parse().unwrap_or(0.0),
+            load15: get("load15").parse().unwrap_or(0.0),
+            procs_running: num("procs_running") as u32,
+            uptime_seconds: num("uptime_seconds"),
+            mem_total_kb: num("mem_total_kb"),
+            mem_used_kb: num("mem_used_kb"),
+            mem_avail_kb: num("mem_avail_kb"),
+            swap_total_kb: num("swap_total_kb"),
+            swap_used_kb: num("swap_used_kb"),
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,5 +384,14 @@ mod tests {
         assert_eq!(entries[0].path, "/var/log");
         assert_eq!(entries[0].name, "log");
         assert_eq!(entries[1].name, "cache");
+    }
+
+    #[test]
+    fn parse_kv_output_extracts_fields() {
+        let output = "hostname=web-01\nkernel=Linux 6.1.0\nmem_total_kb=8000000\nmalformed line\n";
+        let kv = parse_kv_output(output);
+        assert_eq!(kv.get("hostname").unwrap(), "web-01");
+        assert_eq!(kv.get("kernel").unwrap(), "Linux 6.1.0");
+        assert_eq!(kv.len(), 3);
     }
 }

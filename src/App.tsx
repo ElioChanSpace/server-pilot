@@ -31,6 +31,7 @@ import { PortMonitorModal } from "./components/PortMonitorModal";
 import { DockerManagerModal } from "./components/DockerManagerModal";
 import { ProcessManagerModal } from "./components/ProcessManagerModal";
 import { DiskAnalysisModal } from "./components/DiskAnalysisModal";
+import { SystemInfoModal } from "./components/SystemInfoModal";
 import { ServiceManagerModal } from "./components/ServiceManagerModal";
 import { TransferHistoryModal } from "./components/TransferHistoryModal";
 import { useTransferHistory } from "./hooks/useTransferHistory";
@@ -963,6 +964,13 @@ const AppContent: React.FC = () => {
       )}
       {toolboxTarget?.tool === 'disk' && (
         <DiskAnalysisModal
+          serverId={toolboxTarget.id}
+          serverName={toolboxTarget.name}
+          onClose={() => setToolboxTarget(null)}
+        />
+      )}
+      {toolboxTarget?.tool === 'sysinfo' && (
+        <SystemInfoModal
           serverId={toolboxTarget.id}
           serverName={toolboxTarget.name}
           onClose={() => setToolboxTarget(null)}
