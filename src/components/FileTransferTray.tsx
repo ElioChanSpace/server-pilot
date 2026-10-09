@@ -402,6 +402,8 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
     // Check if window already exists
     const existing = await WebviewWindow.getByLabel(label);
     if (existing) {
+      // 已存在的窗口也要确保可见（防止残留的不可见窗口导致"点了没反应"）
+      await existing.show().catch(() => {});
       await existing.setFocus();
       setEditingPaths(prev => new Set(prev).add(entry.path));
       return;

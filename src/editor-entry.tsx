@@ -23,8 +23,12 @@ function EditorApp() {
     const win = getCurrentWindow();
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        void win.show().catch(() => {});
-        void win.setFocus().catch(() => {});
+        win.show()
+          .then(() => win.setFocus().catch(() => {}))
+          .catch(err => {
+            // show 失败（如权限缺失）时窗口会一直不可见，必须显式暴露
+            console.error("[Editor] win.show() failed:", err);
+          });
       });
     });
   }, []);
