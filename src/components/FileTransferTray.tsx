@@ -103,6 +103,8 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
   const [selected, setSelected] = useState<string | null>(null);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, entry: null });
+  // 正在编辑的文件路径集合（对应行显示"编辑中"高亮）
+  const [editingPaths, setEditingPaths] = useState<Set<string>>(new Set());
 
   // Refs so the long-lived event listeners never need to be re-registered
   // when the current directory or server object identity changes.
@@ -401,10 +403,13 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
     const existing = await WebviewWindow.getByLabel(label);
     if (existing) {
       await existing.setFocus();
+      setEditingPaths(prev => new Set(prev).add(entry.path));
       return;
     }
 
-    new WebviewWindow(label, {
+    // B: 标记"编辑中"行态；A: 透明圆角窗 + 首帧就绪再显示（避免白闪/方角）
+    setEditingPaths(prev => new Set(prev).add(entry.path));
+    const win = new WebviewWindow(label, {
       url,
       title: `编辑 - ${entry.name}`,
       width: 900,
@@ -412,10 +417,42 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
       minWidth: 600,
       minHeight: 400,
       decorations: false,
+      transparent: true,
+      shadow: true,
+      visible: false,
       resizable: true,
       center: true,
     });
+    win.once("tauri://error", () => {
+      setEditingPaths(prev => {
+        const next = new Set(prev);
+        next.delete(entry.path);
+        return next;
+      });
+    });
   };
+
+  // 编辑窗口关闭后复位行态（编辑器在关闭前 emit "editor-closed"）
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<{ path: string }>("editor-closed", event => {
+      if (disposed) return;
+      setEditingPaths(prev => {
+        if (!prev.has(event.payload.path)) return prev;
+        const next = new Set(prev);
+        next.delete(event.payload.path);
+        return next;
+      });
+    }).then(fn => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   /* ── Context menu ── */
   const openContextMenu = (e: React.MouseEvent, entry: RemoteDirectoryEntry) => {
@@ -582,6 +619,7 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
                   key={entry.path}
                   className={styles.fileRow}
                   data-selected={selected === entry.path}
+                  data-editing={editingPaths.has(entry.path) || undefined}
                   data-type={entry.isDir ? "dir" : "file"}
                   onClick={() => handleRowClick(entry)}
                   onDoubleClick={() => handleRowDoubleClick(entry)}

@@ -18,6 +18,17 @@ applyTheme(initialTheme);
 function EditorApp() {
   const currentThemeRef = useRef(initialThemeId);
 
+  // 窗口以 visible:false 创建，首帧就绪后再显示 —— 配合入场动画，杜绝白闪/方角
+  useEffect(() => {
+    const win = getCurrentWindow();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void win.show().catch(() => {});
+        void win.setFocus().catch(() => {});
+      });
+    });
+  }, []);
+
   // Listen for theme changes via storage event + polling fallback
   useEffect(() => {
     const applyIfChanged = (newId: string | null) => {

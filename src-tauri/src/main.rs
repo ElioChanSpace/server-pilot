@@ -31,7 +31,8 @@ use crate::servers::interface::commands::{
     read_remote_log,
     remove_command_history_by_server, remove_command_history_by_session, remove_transfer_history,
     remove_transfer_history_batch, rename_remote_path, replace_command_history,
-    replace_transfer_history, save_custom_app_themes, save_remote_file, system_service_action,
+    replace_transfer_history, save_custom_app_themes, save_remote_file, stat_remote_file,
+    system_service_action,
     test_server_connection, test_ssh_connection, update_app_settings, update_category,
     update_category_order, update_server, upload_directory_to_server, upload_file_to_server,
 };
@@ -342,6 +343,7 @@ fn main() {
             get_file_content,
             highlight_code,
             save_remote_file,
+            stat_remote_file,
             get_custom_themes,
             save_custom_app_themes,
             get_app_stats,

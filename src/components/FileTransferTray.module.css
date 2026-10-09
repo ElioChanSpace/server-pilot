@@ -357,6 +357,21 @@
   border-left-color: var(--accent-color);
 }
 
+/* 编辑中：文件名 accent 高亮 + 行底色，直到编辑窗口关闭 */
+.fileRow[data-editing="true"] {
+  background: rgba(106, 168, 143, 0.1);
+  border-left-color: var(--accent-color);
+}
+
+.fileRow[data-editing="true"] .fileNametext {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.fileRow[data-editing="true"] .fileIcon[data-type="file"] {
+  color: var(--accent-color);
+}
+
 .fileName {
   display: flex;
   align-items: center;

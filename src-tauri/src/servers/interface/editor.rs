@@ -255,6 +255,50 @@ pub async fn save_remote_file(
     .map_err(|err| err.to_string())?
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteFileStat {
+    pub size: u64,
+    pub mtime: i64,
+}
+
+/// Stat a remote file (size + mtime) — used by the editor for conflict
+/// detection before saving (the remote file may have changed since load).
+#[tauri::command]
+pub async fn stat_remote_file(
+    state: State<'_, AppState>,
+    server_id: String,
+    path: String,
+) -> Result<RemoteFileStat, String> {
+    let path = path.trim().to_string();
+    if path.is_empty() {
+        return Err("文件路径不能为空".to_string());
+    }
+
+    let connection = resolve_transfer_server(&state, &server_id)?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        // GNU stat first, BSD stat fallback
+        let cmd = format!(
+            "stat -c '%s %Y' -- {p} 2>/dev/null || stat -f '%z %m' -- {p} 2>/dev/null",
+            p = shell_quote(&path)
+        );
+        let output = ssh_client::run_ssh_exec_blocking(&connection, &cmd, "stat file")?;
+        let mut parts = output.split_whitespace();
+        let size = parts
+            .next()
+            .and_then(|v| v.parse::<u64>().ok())
+            .ok_or_else(|| format!("无法获取文件信息: {}", path))?;
+        let mtime = parts
+            .next()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0);
+        Ok(RemoteFileStat { size, mtime })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 fn format_file_size(bytes: usize) -> String {
     if bytes < 1024 {
         format!("{} B", bytes)
