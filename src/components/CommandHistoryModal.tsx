@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import type { CommandRecord } from '../types/terminal';
 import type { Server, Category } from '../context/ServerContext';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { FaCopy, FaTimes, FaChevronDown, FaHistory, FaFolder, FaServer, FaTerminal } from 'react-icons/fa';
 import styles from './CommandHistoryModal.module.css';
 
@@ -304,11 +305,19 @@ export const CommandHistoryModal: React.FC<CommandHistoryModalProps> = ({
   // Always show displayId column when there are multiple terminal sessions
   const showDisplayId = terminalSessions.length > 1;
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom — only when the user is already near the bottom,
+  // so reading history is not interrupted by new commands.
   useEffect(() => {
     if (filteredCommands.length > prevCountRef.current) {
       const el = scrollRef.current;
-      if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+      if (el) {
+        requestAnimationFrame(() => {
+          const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+          if (nearBottom) {
+            el.scrollTop = el.scrollHeight;
+          }
+        });
+      }
     }
     prevCountRef.current = filteredCommands.length;
   }, [filteredCommands.length]);
@@ -322,8 +331,15 @@ export const CommandHistoryModal: React.FC<CommandHistoryModalProps> = ({
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  const copyCommand = async (command: string) => {
-    try { await navigator.clipboard.writeText(command); } catch { /* silent */ }
+  const [copiedCommandId, setCopiedCommandId] = useState<string | null>(null);
+  const copyCommand = async (command: string, commandId: string) => {
+    try {
+      await writeText(command);
+      setCopiedCommandId(commandId);
+      setTimeout(() => setCopiedCommandId(null), 2000);
+    } catch (err) {
+      console.error("复制命令失败:", err);
+    }
   };
 
   const handleClear = () => {
@@ -384,8 +400,8 @@ export const CommandHistoryModal: React.FC<CommandHistoryModalProps> = ({
               <div
                 key={cmd.id}
                 className={styles.commandRow}
-                onClick={() => void copyCommand(cmd.command)}
-                title={`${fullDateTime(cmd.timestamp)}\n终端: ${cmd.displayId}\n点击复制`}
+                onClick={() => void copyCommand(cmd.command, cmd.id)}
+                title={`${fullDateTime(cmd.timestamp)}\n终端: ${cmd.displayId}\n${copiedCommandId === cmd.id ? '已复制' : '点击复制'}`}
               >
                 <span className={styles.commandTime}>{relativeTime(cmd.timestamp)}</span>
                 <span className={styles.commandSep} />

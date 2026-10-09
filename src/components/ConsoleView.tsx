@@ -7,6 +7,7 @@ import { FaPlug } from 'react-icons/fa';
 interface ConsoleViewProps {
   sessionId: string;
   outputChunks: string[];
+  droppedChunks: number;
   resetToken: number;
   isActive: boolean;
   onFilesDropped: (paths: string[]) => void;
@@ -36,6 +37,7 @@ const arePropsEqual = (prev: ConsoleViewProps, next: ConsoleViewProps) =>
 const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
   sessionId,
   outputChunks,
+  droppedChunks,
   resetToken,
   isActive,
   onFilesDropped,
@@ -71,6 +73,7 @@ const ConsoleViewComponent: React.FC<ConsoleViewProps> = ({
     >
       <XtermTerminal
         outputChunks={outputChunks}
+        droppedChunks={droppedChunks}
         resetToken={resetToken}
         onInput={handleInput}
         onResize={handleResize}

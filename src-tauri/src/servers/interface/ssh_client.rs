@@ -3,8 +3,9 @@ use log::{error, info, warn};
 use russh::client::{self, Handler};
 use russh::keys::key;
 use russh_sftp::client::SftpSession;
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 
 use super::file_transfer::TransferConnection;
@@ -12,8 +13,19 @@ use super::util::SSH_COMMAND_TIMEOUT;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(15);
+/// SSH connections are kept alive between commands for this long so that
+/// bursts of commands (monitoring polls, port enrichment) reuse one
+/// authenticated session instead of reconnecting per command.
+const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const POOL_MAX_AGE: Duration = Duration::from_secs(60 * 10);
+/// Upper bound for command output kept in memory. Output beyond this limit is
+/// discarded and a truncation marker is appended.
+const EXEC_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 
-pub(crate) struct SshClientHandler;
+pub(crate) struct SshClientHandler {
+    pub(crate) host: String,
+    pub(crate) port: u16,
+}
 
 #[async_trait]
 impl Handler for SshClientHandler {
@@ -21,9 +33,40 @@ impl Handler for SshClientHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &key::PublicKey,
+        server_public_key: &key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        match russh::keys::check_known_hosts(&self.host, self.port, server_public_key) {
+            Ok(true) => Ok(true),
+            Err(russh::keys::Error::KeyChanged { line }) => {
+                error!(
+                    "[SshClient] REFUSING connection to {}:{}: host key changed (known_hosts line {}) — possible MITM attack",
+                    self.host, self.port, line
+                );
+                Ok(false)
+            }
+            Err(err) => {
+                warn!(
+                    "[SshClient] known_hosts check failed for {}:{}: {} — accepting key",
+                    self.host, self.port, err
+                );
+                Ok(true)
+            }
+            Ok(false) => {
+                // Trust on first use: record the key so future mismatches are detected.
+                info!(
+                    "[SshClient] Unknown host key for {}:{}, recording to known_hosts (TOFU)",
+                    self.host, self.port
+                );
+                if let Err(err) = russh::keys::learn_known_hosts(&self.host, self.port, server_public_key)
+                {
+                    warn!(
+                        "[SshClient] Failed to record host key for {}:{}: {}",
+                        self.host, self.port, err
+                    );
+                }
+                Ok(true)
+            }
+        }
     }
 }
 
@@ -32,7 +75,7 @@ async fn create_ssh_session(
     conn: &TransferConnection,
 ) -> Result<client::Handle<SshClientHandler>, String> {
     let mut config = client::Config::default();
-    config.inactivity_timeout = Some(Duration::from_secs(30));
+    config.inactivity_timeout = Some(POOL_MAX_AGE);
     let config = Arc::new(config);
     let addr = (conn.host.as_str(), conn.port);
 
@@ -64,8 +107,13 @@ async fn create_ssh_session(
 
     info!("[SshClient] TCP connected, starting SSH handshake...");
 
+    let handler = SshClientHandler {
+        host: conn.host.clone(),
+        port: conn.port,
+    };
+
     // SSH handshake
-    let mut session = client::connect_stream(config, socket, SshClientHandler)
+    let mut session = client::connect_stream(config, socket, handler)
         .await
         .map_err(|e| {
             error!(
@@ -81,10 +129,7 @@ async fn create_ssh_session(
     if let Some(key_path) = conn.key_path.as_deref() {
         if !key_path.is_empty() {
             info!("[SshClient] Authenticating with key: {}", key_path);
-            let passphrase = conn
-                .key_passphrase
-                .as_deref()
-                .filter(|s| !s.is_empty());
+            let passphrase = conn.key_passphrase.as_deref().filter(|s| !s.is_empty());
 
             match russh::keys::load_secret_key(key_path, passphrase) {
                 Ok(key_pair) => {
@@ -121,7 +166,10 @@ async fn create_ssh_session(
     // Password authentication
     if let Some(password) = conn.password.as_deref() {
         if !password.is_empty() {
-            info!("[SshClient] Authenticating with password for {}", conn.username);
+            info!(
+                "[SshClient] Authenticating with password for {}",
+                conn.username
+            );
             let auth_result = tokio::time::timeout(
                 AUTH_TIMEOUT,
                 session.authenticate_password(&conn.username, password),
@@ -153,9 +201,7 @@ async fn create_ssh_session(
 }
 
 /// Create an SFTP session from an SSH connection.
-pub(crate) async fn create_sftp_session(
-    conn: &TransferConnection,
-) -> Result<SftpSession, String> {
+pub(crate) async fn create_sftp_session(conn: &TransferConnection) -> Result<SftpSession, String> {
     info!(
         "[SshClient] Creating SFTP session for {}@{}",
         conn.username, conn.host
@@ -163,37 +209,132 @@ pub(crate) async fn create_sftp_session(
     let session = create_ssh_session(conn).await?;
 
     info!("[SshClient] Opening channel...");
-    let channel = session
-        .channel_open_session()
-        .await
-        .map_err(|e| {
-            error!("[SshClient] Failed to open channel: {}", e);
-            format!("打开通道失败: {}", e)
-        })?;
+    let channel = session.channel_open_session().await.map_err(|e| {
+        error!("[SshClient] Failed to open channel: {}", e);
+        format!("打开通道失败: {}", e)
+    })?;
 
     info!("[SshClient] Requesting SFTP subsystem...");
-    channel
-        .request_subsystem(true, "sftp")
-        .await
-        .map_err(|e| {
-            error!("[SshClient] Failed to request SFTP subsystem: {}", e);
-            format!("请求 SFTP 子系统失败: {}", e)
-        })?;
+    channel.request_subsystem(true, "sftp").await.map_err(|e| {
+        error!("[SshClient] Failed to request SFTP subsystem: {}", e);
+        format!("请求 SFTP 子系统失败: {}", e)
+    })?;
 
     info!("[SshClient] Initializing SFTP session...");
-    let sftp = SftpSession::new(channel.into_stream())
-        .await
-        .map_err(|e| {
-            error!("[SshClient] Failed to init SFTP session: {}", e);
-            format!("初始化 SFTP 会话失败: {}", e)
-        })?;
+    let sftp = SftpSession::new(channel.into_stream()).await.map_err(|e| {
+        error!("[SshClient] Failed to init SFTP session: {}", e);
+        format!("初始化 SFTP 会话失败: {}", e)
+    })?;
 
     info!("[SshClient] SFTP session established successfully");
     Ok(sftp)
 }
 
+// ---- Shared runtime & connection pool -------------------------------------
+
+fn ssh_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("ssh-client")
+            .enable_all()
+            .build()
+            .expect("failed to build SSH client runtime")
+    })
+}
+
+/// Run a future on the shared SSH runtime from a blocking context.
+pub(crate) fn block_on_shared<F: std::future::Future>(fut: F) -> F::Output {
+    ssh_runtime().block_on(fut)
+}
+
+struct PooledConnection {
+    handle: Arc<client::Handle<SshClientHandler>>,
+    created_at: Instant,
+    last_used: Instant,
+}
+
+fn connection_pool() -> &'static Mutex<HashMap<(String, u16, String, String), PooledConnection>> {
+    static POOL: OnceLock<Mutex<HashMap<(String, u16, String, String), PooledConnection>>> =
+        OnceLock::new();
+    POOL.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Pool key. The password itself is never stored in the key — only whether one
+/// was configured — so secrets do not leak through the map.
+fn pool_key(conn: &TransferConnection) -> (String, u16, String, String) {
+    let auth_id = format!(
+        "key={}|pw={}",
+        conn.key_path.as_deref().unwrap_or(""),
+        if conn.password.as_deref().is_some_and(|p| !p.is_empty()) {
+            1
+        } else {
+            0
+        }
+    );
+    (
+        conn.host.clone(),
+        conn.port,
+        conn.username.clone(),
+        auth_id,
+    )
+}
+
+fn evict_pool_entries(pool: &mut HashMap<(String, u16, String, String), PooledConnection>) {
+    pool.retain(|_, entry| {
+        let fresh = entry.last_used.elapsed() < POOL_IDLE_TIMEOUT
+            && entry.created_at.elapsed() < POOL_MAX_AGE;
+        let alive = !entry.handle.is_closed();
+        if !(fresh && alive) {
+            info!("[SshClient] Evicting pooled SSH connection (stale or closed)");
+        }
+        fresh && alive
+    });
+}
+
+async fn acquire_shared_session(
+    conn: &TransferConnection,
+) -> Result<Arc<client::Handle<SshClientHandler>>, String> {
+    let key = pool_key(conn);
+    {
+        let mut pool = connection_pool().lock().map_err(|e| e.to_string())?;
+        evict_pool_entries(&mut pool);
+        if let Some(entry) = pool.get_mut(&key) {
+            if !entry.handle.is_closed() {
+                entry.last_used = Instant::now();
+                return Ok(entry.handle.clone());
+            }
+        }
+    }
+
+    // Drop the lock while connecting (connect can take seconds).
+    let handle = Arc::new(create_ssh_session(conn).await?);
+    let mut pool = connection_pool().lock().map_err(|e| e.to_string())?;
+    evict_pool_entries(&mut pool);
+    pool.insert(
+        key,
+        PooledConnection {
+            handle: handle.clone(),
+            created_at: Instant::now(),
+            last_used: Instant::now(),
+        },
+    );
+    Ok(handle)
+}
+
+/// Remove and close a pooled connection (e.g. after a timed-out command so a
+/// possibly half-dead channel/connection is not reused).
+fn evict_shared_session(conn: &TransferConnection) {
+    if let Ok(mut pool) = connection_pool().lock() {
+        pool.remove(&pool_key(conn));
+    }
+}
+
 /// Run a command via SSH exec and return stdout.
-/// Drop-in replacement for util::run_ssh_command using russh.
+///
+/// Uses (and reuses) a pooled SSH connection, enforces a total timeout and
+/// caps the amount of buffered output.
 pub(crate) async fn run_ssh_exec(
     conn: &TransferConnection,
     command: &str,
@@ -205,12 +346,29 @@ pub(crate) async fn run_ssh_exec(
         action_label, timeout, command
     );
 
-    let session = tokio::time::timeout(timeout, create_ssh_session(conn))
-        .await
-        .map_err(|_| {
-            error!("[SshClient] SSH connection timed out for action: {}", action_label);
-            format!("Timed out after {:?} while trying to {}", timeout, action_label)
-        })??;
+    let exec_future = run_ssh_exec_on_pooled(conn, command, action_label);
+    match tokio::time::timeout(timeout, exec_future).await {
+        Ok(result) => result,
+        Err(_) => {
+            error!(
+                "[SshClient] Command timed out after {:?} for action: {}",
+                timeout, action_label
+            );
+            evict_shared_session(conn);
+            Err(format!(
+                "Timed out after {:?} while trying to {}",
+                timeout, action_label
+            ))
+        }
+    }
+}
+
+async fn run_ssh_exec_on_pooled(
+    conn: &TransferConnection,
+    command: &str,
+    action_label: &str,
+) -> Result<String, String> {
+    let session = acquire_shared_session(conn).await?;
 
     let mut channel = session
         .channel_open_session()
@@ -222,19 +380,33 @@ pub(crate) async fn run_ssh_exec(
         .await
         .map_err(|e| format!("Failed to execute command for {}: {}", action_label, e))?;
 
-    let mut output = Vec::new();
+    let mut output: Vec<u8> = Vec::new();
+    let mut truncated = false;
     let mut exit_code: Option<u32> = None;
 
     while let Some(msg) = channel.wait().await {
         match msg {
-            russh::ChannelMsg::Data { data } => output.extend_from_slice(&data),
-            russh::ChannelMsg::ExtendedData { data, .. } => output.extend_from_slice(&data),
+            russh::ChannelMsg::Data { data } | russh::ChannelMsg::ExtendedData { data, .. } => {
+                if output.len() < EXEC_OUTPUT_LIMIT {
+                    let remaining = EXEC_OUTPUT_LIMIT - output.len();
+                    let take = remaining.min(data.len());
+                    output.extend_from_slice(&data[..take]);
+                    if take < data.len() {
+                        truncated = true;
+                    }
+                } else {
+                    truncated = true;
+                }
+            }
             russh::ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
             _ => {}
         }
     }
 
-    let output_str = String::from_utf8_lossy(&output).to_string();
+    let mut output_str = String::from_utf8_lossy(&output).to_string();
+    if truncated {
+        output_str.push_str("\n...[output truncated]...");
+    }
     info!(
         "[SshClient] Command completed: action={:?}, exit_code={:?}, output={} bytes",
         action_label,
@@ -243,10 +415,14 @@ pub(crate) async fn run_ssh_exec(
     );
 
     match exit_code {
-        Some(0) | None => Ok(output_str),
+        Some(0) => Ok(output_str),
         Some(code) => Err(format!(
             "Command exited with status {} during {}: {}",
             code, action_label, output_str
+        )),
+        None => Err(format!(
+            "Connection closed before command finished during {}: {}",
+            action_label, output_str
         )),
     }
 }
@@ -257,9 +433,5 @@ pub(crate) fn run_ssh_exec_blocking(
     command: &str,
     action_label: &str,
 ) -> Result<String, String> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime");
-    rt.block_on(run_ssh_exec(conn, command, action_label))
+    ssh_runtime().block_on(run_ssh_exec(conn, command, action_label))
 }

@@ -48,6 +48,8 @@
     "dialog:allow-ask",
     "dialog:allow-confirm",
     "notification:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
     "shell:default",
     "fs:default",
     "dialog:default"

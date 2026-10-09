@@ -36,23 +36,33 @@ pub async fn connect_server(
         s.clone()
     };
 
-    let password = match credential_store::get_password(&server.id) {
-        Ok(password) => password,
-        Err(err) => {
-            warn!("Failed to read password from keychain for {}: {}", server.id, err);
-            None
-        }
-    };
-    let key_passphrase = match credential_store::get_key_passphrase(&server.id) {
-        Ok(passphrase) => passphrase,
-        Err(err) => {
-            warn!(
-                "Failed to read key passphrase from keychain for {}: {}",
-                server.id, err
-            );
-            None
-        }
-    };
+    // Keychain IPC is blocking — keep it off the async runtime workers.
+    let server_id_for_creds = server.id.clone();
+    let (password, key_passphrase) = tauri::async_runtime::spawn_blocking(move || {
+        let password = match credential_store::get_password(&server_id_for_creds) {
+            Ok(password) => password,
+            Err(err) => {
+                warn!(
+                    "Failed to read password from keychain for {}: {}",
+                    server_id_for_creds, err
+                );
+                None
+            }
+        };
+        let key_passphrase = match credential_store::get_key_passphrase(&server_id_for_creds) {
+            Ok(passphrase) => passphrase,
+            Err(err) => {
+                warn!(
+                    "Failed to read key passphrase from keychain for {}: {}",
+                    server_id_for_creds, err
+                );
+                None
+            }
+        };
+        (password, key_passphrase)
+    })
+    .await
+    .map_err(|err| err.to_string())?;
     let use_key_auth = server.auth_method == "key";
 
     if !matches!(server.os_type, OsType::Linux) {
@@ -93,7 +103,7 @@ pub fn pty_write(
     session_manager::write_to_session(session_manager, session_id, data)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pty_resize(
     session_manager: State<'_, SessionManagerState>,
     session_id: String,
@@ -103,7 +113,7 @@ pub fn pty_resize(
     session_manager::resize_session(session_manager, session_id, rows, cols)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_terminal_session_directory(
     session_manager: State<'_, SessionManagerState>,
     session_id: String,
@@ -111,7 +121,7 @@ pub fn get_terminal_session_directory(
     session_manager::read_session_current_directory(session_manager, session_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn disconnect_server(
     session_manager: State<'_, SessionManagerState>,
     server_id: String,
@@ -119,7 +129,7 @@ pub fn disconnect_server(
     session_manager::close_server_sessions(session_manager, server_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn close_terminal_session(
     session_manager: State<'_, SessionManagerState>,
     session_id: String,

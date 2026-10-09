@@ -1,75 +1,103 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { TransferRecord } from "../types/app";
 
-const STORAGE_KEY = "server-pilot-transfer-history";
+const LEGACY_STORAGE_KEY = "server-pilot-transfer-history";
 const MAX_RECORDS = 200;
 
-let globalRecords: TransferRecord[] = loadFromStorage();
-const listeners = new Set<() => void>();
-
-function loadFromStorage(): TransferRecord[] {
+function loadLegacyRecords(): TransferRecord[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw) as TransferRecord[];
+    const records = JSON.parse(raw);
+    return Array.isArray(records) ? records : [];
   } catch {
     return [];
   }
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-function scheduleSave() {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(globalRecords));
-    } catch {
-      // ignore quota errors
-    }
-    saveTimer = null;
-  }, 300);
-}
-
-function notify() {
-  listeners.forEach((l) => l());
-}
-
 export function useTransferHistory() {
-  const [records, setRecords] = useState(globalRecords);
+  const [records, setRecords] = useState<TransferRecord[]>([]);
+  const recordsRef = useRef<TransferRecord[]>([]);
+  const mountedRef = useRef(true);
+
+  const setRecordState = useCallback((next: TransferRecord[]) => {
+    recordsRef.current = next;
+    setRecords(next);
+  }, []);
 
   useEffect(() => {
-    const listener = () => setRecords([...globalRecords]);
-    listeners.add(listener);
-    // Sync in case records changed between render and effect
-    listener();
-    return () => {
-      listeners.delete(listener);
+    mountedRef.current = true;
+
+    const load = async () => {
+      try {
+        let loaded = await invoke<TransferRecord[]>("get_transfer_history");
+        const legacyRecords = loadLegacyRecords();
+        if (loaded.length === 0 && legacyRecords.length > 0) {
+          loaded = await invoke<TransferRecord[]>("replace_transfer_history", {
+            records: legacyRecords,
+          });
+          window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+        }
+        if (mountedRef.current) {
+          setRecordState(loaded);
+        }
+      } catch (error) {
+        console.error("加载传输历史失败:", error);
+      }
     };
-  }, []);
 
-  const addRecord = useCallback((record: TransferRecord) => {
-    globalRecords = [record, ...globalRecords].slice(0, MAX_RECORDS);
-    scheduleSave();
-    notify();
-  }, []);
+    void load();
 
-  const removeRecord = useCallback((id: string) => {
-    globalRecords = globalRecords.filter((r) => r.id !== id);
-    scheduleSave();
-    notify();
-  }, []);
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [setRecordState]);
 
-  const removeRecords = useCallback((ids: Set<string>) => {
-    globalRecords = globalRecords.filter((r) => !ids.has(r.id));
-    scheduleSave();
-    notify();
-  }, []);
+  const addRecord = useCallback(async (record: TransferRecord) => {
+    try {
+      const saved = await invoke<TransferRecord>("add_transfer_history", { record });
+      const next = [saved, ...recordsRef.current].slice(0, MAX_RECORDS);
+      setRecordState(next);
+    } catch (error) {
+      console.error("保存传输历史失败:", error);
+      const next = [record, ...recordsRef.current].slice(0, MAX_RECORDS);
+      setRecordState(next);
+    }
+  }, [setRecordState]);
 
-  const clearHistory = useCallback(() => {
-    globalRecords = [];
-    scheduleSave();
-    notify();
-  }, []);
+  const removeRecord = useCallback(async (id: string) => {
+    const previous = recordsRef.current;
+    setRecordState(previous.filter((r) => r.id !== id));
+    try {
+      await invoke("remove_transfer_history", { id });
+    } catch (error) {
+      console.error("删除传输历史失败:", error);
+      setRecordState(previous);
+    }
+  }, [setRecordState]);
+
+  const removeRecords = useCallback(async (ids: Set<string>) => {
+    const previous = recordsRef.current;
+    setRecordState(previous.filter((r) => !ids.has(r.id)));
+    try {
+      await invoke("remove_transfer_history_batch", { ids: Array.from(ids) });
+    } catch (error) {
+      console.error("批量删除传输历史失败:", error);
+      setRecordState(previous);
+    }
+  }, [setRecordState]);
+
+  const clearHistory = useCallback(async () => {
+    const previous = recordsRef.current;
+    setRecordState([]);
+    try {
+      await invoke("clear_transfer_history");
+    } catch (error) {
+      console.error("清空传输历史失败:", error);
+      setRecordState(previous);
+    }
+  }, [setRecordState]);
 
   return { records, addRecord, removeRecord, removeRecords, clearHistory };
 }

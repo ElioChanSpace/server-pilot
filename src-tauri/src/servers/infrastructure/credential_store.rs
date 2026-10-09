@@ -12,8 +12,7 @@ lazy_static::lazy_static! {
 }
 
 fn entry_for(account: &str) -> Result<Entry, String> {
-    Entry::new(KEYCHAIN_SERVICE, account)
-        .map_err(|err| format!("无法访问系统钥匙串: {err}"))
+    Entry::new(KEYCHAIN_SERVICE, account).map_err(|err| format!("无法访问系统钥匙串: {err}"))
 }
 
 pub fn save_password(server_id: &str, password: &str) -> Result<(), String> {
@@ -39,18 +38,30 @@ pub fn get_password(server_id: &str) -> Result<Option<String>, String> {
     }
 
     // 缓存未命中，从钥匙串读取
-    info!("[Credential] Reading password from keychain for server: {}", server_id);
+    info!(
+        "[Credential] Reading password from keychain for server: {}",
+        server_id
+    );
     let password = match entry_for(&format!("password:{server_id}"))?.get_password() {
         Ok(password) => {
-            info!("[Credential] Password found in keychain for server: {}", server_id);
+            info!(
+                "[Credential] Password found in keychain for server: {}",
+                server_id
+            );
             Some(password)
         }
         Err(keyring::Error::NoEntry) => {
-            info!("[Credential] No password entry in keychain for server: {}", server_id);
+            info!(
+                "[Credential] No password entry in keychain for server: {}",
+                server_id
+            );
             None
         }
         Err(err) => {
-            warn!("[Credential] Keychain read error for server {}: {}", server_id, err);
+            warn!(
+                "[Credential] Keychain read error for server {}: {}",
+                server_id, err
+            );
             return Err(format!("读取系统钥匙串失败: {err}"));
         }
     };
@@ -80,24 +91,39 @@ pub fn get_key_passphrase(server_id: &str) -> Result<Option<String>, String> {
     // 先检查缓存
     if let Ok(cache) = PASSPHRASE_CACHE.lock() {
         if let Some(cached) = cache.get(server_id) {
-            info!("[Credential] Key passphrase cache hit for server: {}", server_id);
+            info!(
+                "[Credential] Key passphrase cache hit for server: {}",
+                server_id
+            );
             return Ok(cached.clone());
         }
     }
 
     // 缓存未命中，从钥匙串读取
-    info!("[Credential] Reading key passphrase from keychain for server: {}", server_id);
+    info!(
+        "[Credential] Reading key passphrase from keychain for server: {}",
+        server_id
+    );
     let passphrase = match entry_for(&format!("key-passphrase:{server_id}"))?.get_password() {
         Ok(passphrase) => {
-            info!("[Credential] Key passphrase found in keychain for server: {}", server_id);
+            info!(
+                "[Credential] Key passphrase found in keychain for server: {}",
+                server_id
+            );
             Some(passphrase)
         }
         Err(keyring::Error::NoEntry) => {
-            info!("[Credential] No key passphrase entry in keychain for server: {}", server_id);
+            info!(
+                "[Credential] No key passphrase entry in keychain for server: {}",
+                server_id
+            );
             None
         }
         Err(err) => {
-            warn!("[Credential] Keychain read error for key passphrase, server {}: {}", server_id, err);
+            warn!(
+                "[Credential] Keychain read error for key passphrase, server {}: {}",
+                server_id, err
+            );
             return Err(format!("读取系统钥匙串密钥口令失败: {err}"));
         }
     };
@@ -162,8 +188,7 @@ pub fn delete_key_passphrase(server_id: &str) -> Result<(), String> {
     }
 }
 
-/// 清除所有缓存（用于测试或安全场景）
-#[allow(dead_code)]
+/// 清除所有缓存（退出时调用，避免明文凭据常驻内存）
 pub fn clear_cache() {
     if let Ok(mut cache) = PASSWORD_CACHE.lock() {
         cache.clear();

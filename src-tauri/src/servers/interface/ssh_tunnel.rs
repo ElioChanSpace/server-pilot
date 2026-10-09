@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,9 +44,43 @@ pub struct TunnelManager {
 
 impl TunnelManager {
     pub fn new() -> Self {
+        // Remove stale askpass scripts that a previous crash may have left behind.
+        if let Ok(dir) = std::env::temp_dir().read_dir() {
+            for entry in dir.flatten() {
+                if entry.file_name().to_string_lossy().starts_with("server-pilot-askpass-") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
         Self {
             tunnels: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Reap tunnels whose ssh process has exited so they don't linger as
+    /// zombies with a stale "active" status.
+    pub fn reap_dead_tunnels(&self) -> Vec<(String, u32)> {
+        let mut dead = Vec::new();
+        if let Ok(mut tunnels) = self.tunnels.lock() {
+            let finished: Vec<String> = tunnels
+                .iter_mut()
+                .filter_map(|(id, entry)| match entry.child.try_wait() {
+                    Ok(Some(status)) => {
+                        dead.push((id.clone(), status.code().unwrap_or(-1) as u32));
+                        Some(id.clone())
+                    }
+                    _ => None,
+                })
+                .collect();
+            for id in finished {
+                if let Some(mut entry) = tunnels.remove(&id) {
+                    if let Some(path) = entry.askpass_path.take() {
+                        let _ = fs::remove_file(path);
+                    }
+                }
+            }
+        }
+        dead
     }
 }
 
@@ -67,34 +101,68 @@ impl Drop for TunnelManager {
 fn get_server_connection_info(
     state: &State<'_, AppState>,
     server_id: &str,
-) -> Result<(String, String, u16, Option<String>, Option<String>, Option<String>), String> {
-    let data = state.data.lock().map_err(|e| e.to_string())?;
-    let server = data
-        .servers
-        .iter()
-        .find(|s| s.id == server_id)
-        .ok_or("Server not found")?;
+) -> Result<
+    (
+        String,
+        String,
+        u16,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ),
+    String,
+> {
+    // Clone what we need and release the global lock before keychain IPC.
+    let (username, host, port, key_path, proxy_jump) = {
+        let data = state.data.lock().map_err(|e| e.to_string())?;
+        let server = data
+            .servers
+            .iter()
+            .find(|s| s.id == server_id)
+            .ok_or("Server not found")?;
 
-    if !matches!(server.os_type, OsType::Linux) {
-        return Err("仅支持 Linux 服务器".to_string());
-    }
+        if !matches!(server.os_type, OsType::Linux) {
+            return Err("仅支持 Linux 服务器".to_string());
+        }
 
-    let password = credential_store::get_password(server_id)?
-        .filter(|v| !v.is_empty());
-    let _key_passphrase = credential_store::get_key_passphrase(server_id)?
-        .filter(|v| !v.is_empty());
+        (
+            server.username.clone(),
+            server.host.clone(),
+            server.port,
+            server.key_path.clone(),
+            server.proxy_jump.clone(),
+        )
+    };
 
-    Ok((
-        server.username.clone(),
-        server.host.clone(),
-        server.port,
-        password,
-        server.key_path.clone(),
-        server.proxy_jump.clone(),
-    ))
+    let password = credential_store::get_password(server_id)?.filter(|v| !v.is_empty());
+    let _key_passphrase =
+        credential_store::get_key_passphrase(server_id)?.filter(|v| !v.is_empty());
+
+    Ok((username, host, port, password, key_path, proxy_jump))
 }
 
-#[tauri::command]
+/// Remove stale askpass scripts left behind by crashed runs.
+pub fn cleanup_stale_askpass_files(app: &AppHandle) {
+    if let Ok(dir) = app.path().app_data_dir() {
+        if let Ok(entries) = dir.read_dir() {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with("askpass-") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+    // Legacy location (older versions wrote to the system temp dir).
+    if let Ok(entries) = std::env::temp_dir().read_dir() {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with("server-pilot-askpass-") {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+#[tauri::command(async)]
 pub fn create_ssh_tunnel(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -147,16 +215,20 @@ pub fn create_ssh_tunnel(
 
     // Set SSH_ASKPASS for password authentication
     if let Some(pwd) = password {
-        // Create a temporary script for ssh-askpass
-        let askpass_script = format!(
-            "#!/bin/sh\necho '{}'",
-            pwd.replace("'", "'\\''")
-        );
+        // Create a temporary script for ssh-askpass. Keep it inside the app's
+        // private data dir and always delete it afterwards (including stale
+        // files from crashed runs, see TunnelManager::new).
+        let askpass_script = format!("#!/bin/sh\necho '{}'", pwd.replace('\'', "'\\''"));
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let path = std::env::temp_dir().join(format!("server-pilot-askpass-{}", tunnel_id));
+            let dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| format!("无法获取应用数据目录: {}", e))?;
+            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let path = dir.join(format!("askpass-{}", tunnel_id));
             std::fs::write(&path, &askpass_script)
                 .map_err(|e| format!("Failed to create askpass script: {}", e))?;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
@@ -172,11 +244,33 @@ pub fn create_ssh_tunnel(
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::null());
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("启动 SSH 隧道失败: {}", e))?;
 
     let pid = child.id();
+
+    // Give ssh a moment to fail fast (auth error, unreachable host, ...) so a
+    // dead process is never reported as an active tunnel.
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            if let Some(path) = askpass_path.take() {
+                let _ = fs::remove_file(path);
+            }
+            return Err(format!(
+                "SSH 隧道启动失败（进程立即退出，status: {}），请检查认证信息和端口配置",
+                status
+            ));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            if let Some(path) = askpass_path.take() {
+                let _ = fs::remove_file(path);
+            }
+            return Err(format!("检查 SSH 隧道进程失败: {}", e));
+        }
+    }
 
     let tunnel = SshTunnel {
         id: tunnel_id.clone(),
@@ -193,7 +287,13 @@ pub fn create_ssh_tunnel(
         .tunnels
         .lock()
         .map_err(|e| e.to_string())?
-        .insert(tunnel_id.clone(), TunnelEntry { child, askpass_path });
+        .insert(
+            tunnel_id.clone(),
+            TunnelEntry {
+                child,
+                askpass_path,
+            },
+        );
 
     info!("SSH tunnel created: {} (PID: {})", tunnel_id, pid);
 
@@ -203,7 +303,7 @@ pub fn create_ssh_tunnel(
     Ok(tunnel)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn close_ssh_tunnel(
     app: AppHandle,
     tunnel_manager: State<'_, TunnelManager>,
@@ -233,15 +333,14 @@ pub fn close_ssh_tunnel(
     }
 }
 
-#[tauri::command]
-pub fn list_ssh_tunnels(
-    tunnel_manager: State<'_, TunnelManager>,
-) -> Result<Vec<String>, String> {
+#[tauri::command(async)]
+pub fn list_ssh_tunnels(tunnel_manager: State<'_, TunnelManager>) -> Result<Vec<String>, String> {
+    tunnel_manager.reap_dead_tunnels();
     let tunnels = tunnel_manager.tunnels.lock().map_err(|e| e.to_string())?;
     Ok(tunnels.keys().cloned().collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn check_port_available(port: u16) -> Result<bool, String> {
     use std::net::TcpListener;
 

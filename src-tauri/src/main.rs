@@ -5,23 +5,28 @@ mod servers;
 
 use crate::servers::application::AppState;
 use crate::servers::infrastructure::credential_store;
+use crate::servers::infrastructure::session_manager;
 use crate::servers::infrastructure::session_manager::SessionManagerState;
 use crate::servers::infrastructure::FileRepository;
+use crate::servers::infrastructure::StateDatabase;
 use crate::servers::interface::commands::{
-    check_port_available, clear_app_logs, close_ssh_tunnel, close_terminal_session,
+    add_command_history, add_transfer_history, check_port_available, clear_app_logs,
+    clear_command_history, clear_transfer_history, close_ssh_tunnel, close_terminal_session,
     connect_server, create_category, create_remote_directory, create_server, create_ssh_tunnel,
-    delete_category, delete_remote_path, delete_server, disconnect_server,
-    docker_container_action, download_file_from_server, export_app_data, fetch_docker_containers,
-    fetch_docker_logs, fetch_server_metrics, fetch_server_ports, fetch_service_logs,
-    fetch_system_services, generate_ssh_key,
-    get_app_settings, get_app_stats, get_categories, get_custom_themes, get_default_ssh_key_path, get_file_content, get_servers,
-    get_terminal_session_directory, highlight_code, import_app_data, list_remote_directory,
-    list_ssh_keys, list_ssh_tunnels, log_frontend_action, move_category, parse_ssh_config, pty_resize, pty_write, read_app_logs,
-    read_remote_log, rename_remote_path, save_custom_app_themes, save_remote_file, system_service_action, test_server_connection, test_ssh_connection,
-    update_app_settings, update_category, update_category_order, update_server,
-    upload_directory_to_server, upload_file_to_server,
+    delete_category, delete_remote_path, delete_server, disconnect_server, docker_container_action,
+    download_file_from_server, export_app_data, fetch_docker_containers, fetch_docker_logs,
+    fetch_server_metrics, fetch_server_ports, fetch_service_logs, fetch_system_services,
+    generate_ssh_key, get_app_settings, get_app_stats, get_categories, get_command_history,
+    get_custom_themes, get_default_ssh_key_path, get_file_content, get_servers,
+    get_terminal_session_directory, get_transfer_history, highlight_code, import_app_data,
+    list_remote_directory, list_ssh_keys, list_ssh_tunnels, log_frontend_action, move_category,
+    parse_ssh_config, pty_resize, pty_write, read_app_logs, read_remote_log,
+    remove_command_history_by_server, remove_command_history_by_session, remove_transfer_history,
+    remove_transfer_history_batch, rename_remote_path, replace_command_history,
+    replace_transfer_history, save_custom_app_themes, save_remote_file, system_service_action,
+    test_server_connection, test_ssh_connection, update_app_settings, update_category,
+    update_category_order, update_server, upload_directory_to_server, upload_file_to_server,
 };
-use crate::servers::infrastructure::session_manager;
 use log::LevelFilter;
 use log4rs::{
     append::{console::ConsoleAppender, file::FileAppender},
@@ -29,28 +34,26 @@ use log4rs::{
     encode::pattern::PatternEncoder,
 };
 use std::{fs, path::PathBuf, sync::Arc};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     path::PathResolver,
     Manager,
 };
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
 fn resolve_app_log_path<R: tauri::Runtime>(
-    _path_resolver: &PathResolver<R>,
+    path_resolver: &PathResolver<R>,
 ) -> Result<PathBuf, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|_| "无法获取可执行文件路径".to_string())?;
-    let exe_dir = exe_path
-        .parent()
-        .ok_or_else(|| "无法获取可执行文件目录".to_string())?;
-    let log_dir = exe_dir.join("logs");
-    Ok(log_dir.join("app.log"))
+    // Logs live in the per-user app data dir: writing next to the executable
+    // breaks the macOS code signature of packaged .app bundles.
+    let log_dir = path_resolver
+        .app_data_dir()
+        .map_err(|_| "无法获取应用数据目录".to_string())?
+        .join("logs");
+    Ok(log_dir.join("server-pilot.log"))
 }
 
-fn initialize_logging<R: tauri::Runtime>(
-    path_resolver: &PathResolver<R>,
-) -> Result<(), String> {
+fn initialize_logging<R: tauri::Runtime>(path_resolver: &PathResolver<R>) -> Result<(), String> {
     let log_path = resolve_app_log_path(path_resolver)?;
     if let Some(parent) = log_path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("创建日志目录失败: {}", err))?;
@@ -115,16 +118,46 @@ fn reset_server_statuses(app_state: &AppState) -> Result<(), String> {
     Ok(())
 }
 
+fn migrate_legacy_command_history(
+    app_state: &AppState,
+    state_database: &StateDatabase,
+) -> Result<(), String> {
+    let legacy_records = {
+        let data = app_state.data.lock().map_err(|err| err.to_string())?;
+        data.command_history.clone()
+    };
+
+    let migrated = state_database.migrate_legacy_command_history(&legacy_records)?;
+    // Only clear the legacy field once the records are safely in state.db —
+    // if the DB already had history (migrated == false), the legacy records
+    // were NOT moved and must be kept.
+    if migrated && !legacy_records.is_empty() {
+        {
+            let mut data = app_state.data.lock().map_err(|err| err.to_string())?;
+            data.command_history.clear();
+        }
+        app_state.save()?;
+    }
+
+    if migrated {
+        log::info!("已将旧命令历史迁移到 state.db");
+    }
+
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(SessionManagerState::default())
         .manage(servers::interface::ssh_tunnel::TunnelManager::new())
         .setup(|app| {
             initialize_logging(app.path())?;
+            servers::interface::ssh_tunnel::cleanup_stale_askpass_files(app.handle());
 
             // 仅在 debug 模式下设置原生菜单（用于开发工具）
             #[cfg(debug_assertions)]
@@ -152,8 +185,10 @@ fn main() {
             // --- Dependency Injection ---
             let repository = Arc::new(FileRepository::new(app.handle().clone()));
             let app_state = AppState::new(repository);
+            let state_database = StateDatabase::new(app.handle())?;
             migrate_legacy_passwords(&app_state)?;
             reset_server_statuses(&app_state)?;
+            migrate_legacy_command_history(&app_state, &state_database)?;
 
             // --- 系统托盘 ---
             let show_item = MenuItemBuilder::with_id("show", "显示主窗口")
@@ -169,11 +204,7 @@ fn main() {
                 .map_err(|err| err.to_string())?;
 
             TrayIconBuilder::with_id("main-tray")
-                .icon(
-                    app.default_window_icon()
-                        .cloned()
-                        .ok_or("缺少应用图标")?,
-                )
+                .icon(app.default_window_icon().cloned().ok_or("缺少应用图标")?)
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -233,6 +264,7 @@ fn main() {
             }
 
             app.manage(app_state);
+            app.manage(state_database);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -291,9 +323,26 @@ fn main() {
             save_remote_file,
             get_custom_themes,
             save_custom_app_themes,
-            get_app_stats
+            get_app_stats,
+            get_command_history,
+            add_command_history,
+            remove_command_history_by_session,
+            remove_command_history_by_server,
+            clear_command_history,
+            replace_command_history,
+            get_transfer_history,
+            add_transfer_history,
+            remove_transfer_history,
+            remove_transfer_history_batch,
+            clear_transfer_history,
+            replace_transfer_history
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app_handle, _event| {});
+        .run(|_app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Never leave decrypted credentials in memory after quit.
+                servers::infrastructure::credential_store::clear_cache();
+            }
+        });
 }

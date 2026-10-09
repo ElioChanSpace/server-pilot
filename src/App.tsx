@@ -19,6 +19,7 @@ import { BottomBar } from "./components/BottomBar";
 import { FileTransferTray } from "./components/FileTransferTray";
 import { MainContent } from "./components/MainContent";
 import { isInsideTerminal } from "./utils/dom-helpers";
+import { getErrorMessage } from "./utils/format-helpers";
 import { ContextMenu } from "./components/ContextMenu";
 import type { ContextMenuAction } from "./components/ContextMenu";
 import { MenuBar } from "./components/MenuBar";
@@ -100,6 +101,7 @@ const AppContent: React.FC = () => {
   const [isTransferTrayOpen, setIsTransferTrayOpen] = useState(false);
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPromptEvent | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const appSettingsRef = useRef<AppSettings | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showFullscreenHint, setShowFullscreenHint] = useState(false);
   const confirmOnDisconnectRef = useRef(true);
@@ -112,6 +114,10 @@ const AppContent: React.FC = () => {
 
   // Independent hooks
   const { terminalOutputs, appendTerminalChunk, resetTerminalOutput, removeTerminalOutputs } = useTerminalOutputs(sessionsRef);
+  const terminalOutputsRef = useRef(terminalOutputs);
+  useEffect(() => {
+    terminalOutputsRef.current = terminalOutputs;
+  }, [terminalOutputs]);
   const { notify, notificationsEnabledRef } = useNotifications();
   const { uploadProgressOverlay, setUploadProgressOverlay, handleTerminalFilesDropped, removeSessionCurrentDirectories } = useFileUpload(servers, sessions, notify);
   const { setIsResizingLeftSidebar } = useLeftSidebarResize();
@@ -136,6 +142,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const win = getCurrentWindow();
     let mounted = true;
+    let hintTimer: number | null = null;
 
     const checkFullscreen = async () => {
       try {
@@ -151,8 +158,23 @@ const AppContent: React.FC = () => {
         if (mounted) {
           setIsFullscreen(isFs);
           if (isFs) {
+            // Show the hint once per fullscreen session with a single timer.
             setShowFullscreenHint(true);
-            setTimeout(() => setShowFullscreenHint(false), 3000);
+            if (hintTimer !== null) {
+              window.clearTimeout(hintTimer);
+            }
+            hintTimer = window.setTimeout(() => {
+              hintTimer = null;
+              if (mounted) {
+                setShowFullscreenHint(false);
+              }
+            }, 3000);
+          } else {
+            if (hintTimer !== null) {
+              window.clearTimeout(hintTimer);
+              hintTimer = null;
+            }
+            setShowFullscreenHint(false);
           }
         }
       } catch { /* ignore */ }
@@ -170,15 +192,14 @@ const AppContent: React.FC = () => {
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
 
-    // Poll as fallback
-    const interval = setInterval(() => void checkFullscreen(), 200);
-
     return () => {
       mounted = false;
+      if (hintTimer !== null) {
+        window.clearTimeout(hintTimer);
+      }
       void unlistenResize.then(fn => fn());
       void unlistenMove.then(fn => fn());
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      clearInterval(interval);
     };
   }, []);
 
@@ -226,10 +247,23 @@ const AppContent: React.FC = () => {
   // Load app settings
   useEffect(() => {
     void invoke<AppSettings>("get_app_settings")
-      .then(setAppSettings)
+      .then(settings => {
+        appSettingsRef.current = settings;
+        setAppSettings(settings);
+      })
       .catch(error => {
         console.error("加载应用设置失败:", error);
       });
+  }, []);
+
+  // Persist settings outside of any setState updater (updaters must be pure —
+  // in StrictMode they run twice, which would double the IPC calls).
+  const persistAppSettings = useCallback((next: AppSettings) => {
+    appSettingsRef.current = next;
+    setAppSettings(next);
+    void invoke("update_app_settings", { payload: next }).catch(error => {
+      console.error("保存应用设置失败:", error);
+    });
   }, []);
 
   // Apply app settings
@@ -344,7 +378,9 @@ const AppContent: React.FC = () => {
             localPath: payload.localPath,
             remotePath: payload.remotePath,
             totalBytes: payload.totalBytes ?? 0,
-            serverName: transferTargetServer?.name ?? "",
+            // Resolve from the transfer's own server id — never from whatever
+            // server the UI happens to have selected right now.
+            serverName: serversRef.current.find(server => server.id === payload.serverId)?.name ?? "",
           });
         }
 
@@ -399,7 +435,12 @@ const AppContent: React.FC = () => {
         unlistenPromise.then(unlisten => unlisten());
       });
     };
-  }, [appendTerminalChunk, updateSessionStatus, setUploadProgressOverlay, applySessionRemoval, notify, addTransferRecord, transferTargetServer]);
+    // Global listeners register exactly once. All values read inside handlers
+    // come from refs or are stable useCallbacks — depending on anything
+    // rendered (e.g. the selected server) would tear down/re-register the
+    // listeners on every selection change and drop events in between.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Active server sync
   useEffect(() => {
@@ -429,31 +470,46 @@ const AppContent: React.FC = () => {
     try {
       const result = await connectToServer(server.id);
       const displayId = generateDisplayId();
+      const newSession: TerminalSession = { id: result.sessionId, serverId: server.id, terminalIndex: 0, displayId, status: "connecting", createdAt: Date.now() };
+      // Make the session visible to the output pipeline immediately so chunks
+      // arriving before the next render are not silently dropped.
+      sessionsRef.current = [...sessionsRef.current, newSession];
       setSessions(prev => reindexSessions([
         ...prev,
-        { id: result.sessionId, serverId: server.id, terminalIndex: 0, displayId, status: "connecting", createdAt: Date.now() },
+        newSession,
       ]));
       setCurrentSessionId(result.sessionId);
       resetTerminalOutput(result.sessionId, [`[信息] 正在连接 ${server.username}@${server.host}:${server.port} ...\r\n`]);
     } catch (err) {
-      setConnectionError(err as string);
+      setConnectionError(getErrorMessage(err));
     }
   }, [clearSelection, connectToServer, resetTerminalOutput]);
 
   const handleCloseSession = useCallback(async (sessionId: string) => {
-    // 乐观更新：先从 UI 移除
-    const removedSession = sessionsRef.current.find(s => s.id === sessionId);
+    // 乐观更新：先从 UI 移除，但保留快照以便失败时完整恢复
+    const removedIndex = sessionsRef.current.findIndex(s => s.id === sessionId);
+    const removedSession = removedIndex >= 0 ? sessionsRef.current[removedIndex] : undefined;
+    const savedOutputs = terminalOutputsRef.current[sessionId];
     applySessionRemoval([sessionId], { anchorSessionId: sessionId });
     try {
       await closeTerminalSession(sessionId);
     } catch (err) {
       console.error("关闭终端失败，恢复会话:", err);
-      // 后端失败 — 恢复会话到 UI
+      // 后端失败 — 恢复会话（含历史输出）到原来的位置
       if (removedSession) {
-        setSessions(prev => [...prev, removedSession]);
+        const restore = (list: TerminalSession[]) => {
+          const next = [...list];
+          next.splice(Math.min(removedIndex, next.length), 0, removedSession);
+          return next;
+        };
+        sessionsRef.current = restore(sessionsRef.current);
+        setSessions(prev => restore(prev));
+      }
+      if (savedOutputs) {
+        resetTerminalOutput(sessionId, savedOutputs.chunks);
       }
     }
-  }, [applySessionRemoval, closeTerminalSession]);
+  }, [applySessionRemoval, closeTerminalSession, resetTerminalOutput]);
 
   const handleSelectSession = useCallback((sessionId: string) => {
     const selectedSession = sessions.find(session => session.id === sessionId) ?? null;
@@ -642,23 +698,17 @@ const AppContent: React.FC = () => {
     const currentTheme = APP_THEMES[themeId];
     const nextThemeId = currentTheme?.type === 'dark' ? 'light' : 'dark';
     setThemeId(nextThemeId);
-    setAppSettings(prev => {
-      if (!prev) return prev;
-      const nextSettings: AppSettings = { ...prev, themePreference: nextThemeId };
-      void invoke("update_app_settings", { payload: nextSettings }).catch(error => { console.error("保存主题设置失败:", error); });
-      return nextSettings;
-    });
-  }, [themeId]);
+    const prev = appSettingsRef.current;
+    if (!prev) return;
+    persistAppSettings({ ...prev, themePreference: nextThemeId });
+  }, [themeId, persistAppSettings]);
 
   const handleChangeTheme = useCallback((newThemeId: string) => {
     setThemeId(newThemeId);
-    setAppSettings(prev => {
-      if (!prev) return prev;
-      const nextSettings: AppSettings = { ...prev, themePreference: newThemeId };
-      void invoke("update_app_settings", { payload: nextSettings }).catch(error => { console.error("保存主题设置失败:", error); });
-      return nextSettings;
-    });
-  }, []);
+    const prev = appSettingsRef.current;
+    if (!prev) return;
+    persistAppSettings({ ...prev, themePreference: newThemeId });
+  }, [persistAppSettings]);
 
   const handleToggleFullscreen = useCallback(async () => {
     try {
@@ -676,15 +726,12 @@ const AppContent: React.FC = () => {
   }, [isFullscreen]);
 
   const handleTerminalFontSizeChange = useCallback((delta: number) => {
-    setAppSettings(prev => {
-      if (!prev) return prev;
-      const nextFontSize = delta === 0 ? 14 : Math.min(24, Math.max(12, prev.terminalFontSize + delta));
-      if (nextFontSize === prev.terminalFontSize) return prev;
-      const next = { ...prev, terminalFontSize: nextFontSize };
-      void invoke("update_app_settings", { payload: next }).catch(error => { console.error("保存终端字体设置失败:", error); });
-      return next;
-    });
-  }, []);
+    const prev = appSettingsRef.current;
+    if (!prev) return;
+    const nextFontSize = delta === 0 ? 14 : Math.min(24, Math.max(12, prev.terminalFontSize + delta));
+    if (nextFontSize === prev.terminalFontSize) return;
+    persistAppSettings({ ...prev, terminalFontSize: nextFontSize });
+  }, [persistAppSettings]);
 
   const handleDismissError = useCallback(() => setConnectionError(null), []);
   const handleCloseLogViewer = useCallback(() => setIsLogViewerOpen(false), []);

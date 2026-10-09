@@ -3,13 +3,17 @@ import { Server } from "../context/ServerContext";
 import { ConsoleView } from "./ConsoleView";
 import { TabBar } from "./TabBar";
 import type { TerminalSession } from "../types/terminal";
+import type { TerminalOutputState } from "../types/app";
 import styles from "./MainContent.module.css";
+
+// Stable empty array so unrendered sessions don't break memoized children.
+const EMPTY_CHUNKS: string[] = [];
 
 interface MainContentProps {
   sessions: TerminalSession[];
   servers: Server[];
   currentSessionId: string | null;
-  terminalOutputs: Record<string, { chunks: string[]; resetToken: number }>;
+  terminalOutputs: Record<string, TerminalOutputState>;
   onSelectSession: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
@@ -30,7 +34,7 @@ interface MainContentProps {
   disconnectMessage?: string | null;
 }
 
-export const MainContent: React.FC<MainContentProps> = ({
+const MainContentComponent: React.FC<MainContentProps> = ({
   sessions,
   servers,
   currentSessionId,
@@ -148,7 +152,8 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             <ConsoleView
               sessionId={session.id}
-              outputChunks={terminalOutputs[session.id]?.chunks ?? []}
+              outputChunks={terminalOutputs[session.id]?.chunks ?? EMPTY_CHUNKS}
+              droppedChunks={terminalOutputs[session.id]?.droppedChunks ?? 0}
               resetToken={terminalOutputs[session.id]?.resetToken ?? 0}
               isActive={session.id === currentSessionId}
               onFilesDropped={filesDroppedBySession.get(session.id)!}
@@ -166,3 +171,5 @@ export const MainContent: React.FC<MainContentProps> = ({
     </main>
   );
 };
+
+export const MainContent = React.memo(MainContentComponent);

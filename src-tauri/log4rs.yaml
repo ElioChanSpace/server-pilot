@@ -8,7 +8,7 @@ appenders:
 
   rolling_file:
     kind: rolling_file
-    path: logs/app.log
+    path: logs/server-pilot.log
     encoder:
       pattern: "{d(%Y-%m-%d %H:%M:%S)} [{l}] [{f}:{L}] {m}{n}"
     policy:

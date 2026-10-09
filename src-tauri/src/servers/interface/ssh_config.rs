@@ -39,7 +39,7 @@ fn ssh_config_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn parse_ssh_config(path: Option<String>) -> Result<Vec<SshConfigHost>, String> {
     let config_path = path
         .filter(|value| !value.trim().is_empty())
@@ -54,8 +54,8 @@ pub fn parse_ssh_config(path: Option<String>) -> Result<Vec<SshConfigHost>, Stri
         })
         .ok_or("未找到 SSH config 文件，请指定路径")?;
 
-    let content = fs::read_to_string(&config_path)
-        .map_err(|err| format!("读取 SSH config 失败: {err}"))?;
+    let content =
+        fs::read_to_string(&config_path).map_err(|err| format!("读取 SSH config 失败: {err}"))?;
 
     let mut results: Vec<SshConfigHost> = Vec::new();
     let mut current_hosts: Vec<String> = Vec::new();
@@ -147,8 +147,14 @@ mod tests {
 
     #[test]
     fn ssh_config_value_matches_case_insensitively() {
-        assert_eq!(ssh_config_value("HostName 1.2.3.4", "hostname"), Some("1.2.3.4"));
-        assert_eq!(ssh_config_value("HOST github.com", "host"), Some("github.com"));
+        assert_eq!(
+            ssh_config_value("HostName 1.2.3.4", "hostname"),
+            Some("1.2.3.4")
+        );
+        assert_eq!(
+            ssh_config_value("HOST github.com", "host"),
+            Some("github.com")
+        );
         assert_eq!(ssh_config_value("Port 2222", "port"), Some("2222"));
         assert_eq!(ssh_config_value("User root", "hostname"), None);
     }

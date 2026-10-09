@@ -25,6 +25,7 @@ pub struct FileTransferResult {
 #[serde(rename_all = "camelCase")]
 pub struct FileTransferProgressEvent {
     pub transfer_id: String,
+    pub server_id: String,
     pub direction: String,
     pub local_path: String,
     pub remote_path: String,
@@ -84,7 +85,10 @@ pub fn resolve_transfer_server(
     };
 
     if !matches!(server.os_type, OsType::Linux) {
-        error!("[Transfer] Unsupported OS type: {:?} for server {}", server.os_type, id);
+        error!(
+            "[Transfer] Unsupported OS type: {:?} for server {}",
+            server.os_type, id
+        );
         return Err("当前版本仅支持 Linux 服务器传输文件".to_string());
     }
 
@@ -99,7 +103,10 @@ pub fn resolve_transfer_server(
     );
 
     if server.auth_method != "key" && password.is_none() {
-        warn!("[Transfer] No password saved for server {} (auth_method={})", id, server.auth_method);
+        warn!(
+            "[Transfer] No password saved for server {} (auth_method={})",
+            id, server.auth_method
+        );
         return Err("文件传输需要已保存的 SSH 密码，请编辑服务器并保存密码".to_string());
     }
 
@@ -142,14 +149,6 @@ fn join_remote_path(base: &str, name: &str) -> String {
     }
 }
 
-/// Create a tokio runtime for async SFTP operations inside spawn_blocking.
-fn create_async_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime")
-}
-
 // ============================================================
 // list_remote_directory
 // ============================================================
@@ -161,13 +160,15 @@ pub async fn list_remote_directory(
     path: Option<String>,
 ) -> Result<RemoteDirectoryListing, String> {
     let requested_path = path.unwrap_or_default().trim().to_string();
-    info!("[Transfer] List directory: server_id={}, path={}", id, requested_path);
+    info!(
+        "[Transfer] List directory: server_id={}, path={}",
+        id, requested_path
+    );
 
     let connection = resolve_transfer_server(&state, &id)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let rt = create_async_runtime();
-        rt.block_on(async {
+        ssh_client::block_on_shared(async {
             let sftp = ssh_client::create_sftp_session(&connection).await?;
 
             // Resolve the target path
@@ -204,10 +205,7 @@ pub async fn list_remote_directory(
                 if name == "." || name == ".." {
                     continue;
                 }
-                let is_dir = entry
-                    .metadata()
-                    .file_type()
-                    .is_dir();
+                let is_dir = entry.metadata().file_type().is_dir();
                 let size = entry.metadata().size.unwrap_or(0);
                 entries.push(RemoteDirectoryEntry {
                     path: join_remote_path(&target_path, &name),
@@ -279,6 +277,7 @@ pub async fn upload_file_to_server(
             Some(tid),
             FileTransferProgressEvent {
                 transfer_id: tid.to_string(),
+                server_id: id.clone(),
                 direction: "upload".to_string(),
                 local_path: local_path.clone(),
                 remote_path: remote_path.clone(),
@@ -294,9 +293,8 @@ pub async fn upload_file_to_server(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<FileTransferResult, String> {
-        let rt = create_async_runtime();
         let overall_start = Instant::now();
-        let result = rt.block_on(async {
+        let result = ssh_client::block_on_shared(async {
             let sftp = ssh_client::create_sftp_session(&connection).await?;
 
             let mut remote_file = sftp
@@ -310,8 +308,8 @@ pub async fn upload_file_to_server(
                 .await
                 .map_err(|e| format!("Failed to open remote file '{}': {}", remote_path, e))?;
 
-            let mut local_file =
-                fs::File::open(&local_path).map_err(|e| format!("Failed to open local file: {}", e))?;
+            let mut local_file = fs::File::open(&local_path)
+                .map_err(|e| format!("Failed to open local file: {}", e))?;
 
             let total = local_metadata.len();
             let mut transferred: u64 = 0;
@@ -350,7 +348,7 @@ pub async fn upload_file_to_server(
                     } else {
                         None
                     };
-                    let eta = if elapsed > 0.0 && transferred > 0 {
+                    let eta = if elapsed > 0.0 && transferred > 0 && total > transferred {
                         Some(((total - transferred) as f64 / (transferred as f64 / elapsed)) as u64)
                     } else {
                         None
@@ -361,7 +359,8 @@ pub async fn upload_file_to_server(
                         transfer_id.as_deref(),
                         FileTransferProgressEvent {
                             transfer_id: transfer_id.clone().unwrap_or_default(),
-                            direction: "upload".to_string(),
+                            server_id: id.clone(),
+                direction: "upload".to_string(),
                             local_path: local_path.clone(),
                             remote_path: remote_path.clone(),
                             status: "progress".to_string(),
@@ -404,7 +403,8 @@ pub async fn upload_file_to_server(
                 Some(tid),
                 FileTransferProgressEvent {
                     transfer_id: tid.to_string(),
-                    direction: "upload".to_string(),
+                    server_id: id.clone(),
+                direction: "upload".to_string(),
                     local_path: local_path_for_result.clone(),
                     remote_path: remote_path_for_result.clone(),
                     status: "completed".to_string(),
@@ -472,6 +472,7 @@ pub async fn upload_directory_to_server(
             Some(tid),
             FileTransferProgressEvent {
                 transfer_id: tid.to_string(),
+                server_id: id.clone(),
                 direction: "upload".to_string(),
                 local_path: local_path.clone(),
                 remote_path: remote_path.clone(),
@@ -487,8 +488,7 @@ pub async fn upload_directory_to_server(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<FileTransferResult, String> {
-        let rt = create_async_runtime();
-        rt.block_on(async {
+        ssh_client::block_on_shared(async {
             let sftp = ssh_client::create_sftp_session(&connection).await?;
 
             // Collect all files and directories
@@ -520,11 +520,24 @@ pub async fn upload_directory_to_server(
                     let local_entry_path = entry.path();
                     let remote_entry_path = format!("{}/{}", remote_dir, file_name);
 
-                    if local_entry_path.is_dir() {
+                    // Use file_type() which does NOT follow symlinks: a symlink
+                    // loop (e.g. `ln -s .. loop`) can never be traversed.
+                    let file_type = entry
+                        .file_type()
+                        .map_err(|e| format!("Failed to stat entry: {}", e))?;
+                    if file_type.is_dir() {
                         dirs.push(remote_entry_path.clone());
                         collect_entries(&local_entry_path, &remote_entry_path, dirs, files)?;
+                    } else if file_type.is_file() {
+                        files.push((
+                            local_entry_path.to_string_lossy().to_string(),
+                            remote_entry_path,
+                        ));
                     } else {
-                        files.push((local_entry_path.to_string_lossy().to_string(), remote_entry_path));
+                        warn!(
+                            "[Transfer] Skipping non-regular file (symlink/device): {}",
+                            local_entry_path.display()
+                        );
                     }
                 }
                 Ok(())
@@ -593,7 +606,8 @@ pub async fn upload_directory_to_server(
                     transfer_id.as_deref(),
                     FileTransferProgressEvent {
                         transfer_id: transfer_id.clone().unwrap_or_default(),
-                        direction: "upload".to_string(),
+                        server_id: id.clone(),
+                direction: "upload".to_string(),
                         local_path: local_path.clone(),
                         remote_path: remote_path.clone(),
                         status: "progress".to_string(),
@@ -621,7 +635,8 @@ pub async fn upload_directory_to_server(
                 Some(tid),
                 FileTransferProgressEvent {
                     transfer_id: tid.to_string(),
-                    direction: "upload".to_string(),
+                    server_id: id.clone(),
+                direction: "upload".to_string(),
                     local_path: local_path_for_result.clone(),
                     remote_path: remote_path_for_result.clone(),
                     status: "completed".to_string(),
@@ -686,6 +701,7 @@ pub async fn download_file_from_server(
             Some(tid),
             FileTransferProgressEvent {
                 transfer_id: tid.to_string(),
+                server_id: id.clone(),
                 direction: "download".to_string(),
                 local_path: local_path.clone(),
                 remote_path: remote_path.clone(),
@@ -701,10 +717,9 @@ pub async fn download_file_from_server(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<FileTransferResult, String> {
-        let rt = create_async_runtime();
         let overall_start = Instant::now();
         let mut final_total_bytes: Option<u64> = None;
-        let result = rt.block_on(async {
+        let result = ssh_client::block_on_shared(async {
             let sftp = ssh_client::create_sftp_session(&connection).await?;
 
             // Get file size for progress
@@ -778,7 +793,8 @@ pub async fn download_file_from_server(
                         transfer_id.as_deref(),
                         FileTransferProgressEvent {
                             transfer_id: transfer_id.clone().unwrap_or_default(),
-                            direction: "download".to_string(),
+                            server_id: id.clone(),
+                direction: "download".to_string(),
                             local_path: local_path.clone(),
                             remote_path: remote_path.clone(),
                             status: "progress".to_string(),
@@ -817,7 +833,8 @@ pub async fn download_file_from_server(
                 Some(tid),
                 FileTransferProgressEvent {
                     transfer_id: tid.to_string(),
-                    direction: "download".to_string(),
+                    server_id: id.clone(),
+                direction: "download".to_string(),
                     local_path: local_path_for_result.clone(),
                     remote_path: remote_path_for_result.clone(),
                     status: "completed".to_string(),
@@ -853,7 +870,10 @@ pub async fn delete_remote_path(
     path: String,
     is_dir: bool,
 ) -> Result<(), String> {
-    info!("[Transfer] Delete path: server_id={}, path={}, is_dir={}", id, path, is_dir);
+    info!(
+        "[Transfer] Delete path: server_id={}, path={}, is_dir={}",
+        id, path, is_dir
+    );
 
     let path = path.trim().to_string();
     if path.is_empty() || path == "/" {
@@ -863,8 +883,7 @@ pub async fn delete_remote_path(
     let connection = resolve_transfer_server(&state, &id)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let rt = create_async_runtime();
-        rt.block_on(async {
+        ssh_client::block_on_shared(async {
             let sftp = ssh_client::create_sftp_session(&connection).await?;
 
             if is_dir {
@@ -896,7 +915,10 @@ pub async fn rename_remote_path(
     path: String,
     new_path: String,
 ) -> Result<(), String> {
-    info!("[Transfer] Rename: server_id={}, {} -> {}", id, path, new_path);
+    info!(
+        "[Transfer] Rename: server_id={}, {} -> {}",
+        id, path, new_path
+    );
 
     let path = path.trim().to_string();
     let new_path = new_path.trim().to_string();
@@ -907,8 +929,7 @@ pub async fn rename_remote_path(
     let connection = resolve_transfer_server(&state, &id)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let rt = create_async_runtime();
-        rt.block_on(async {
+        ssh_client::block_on_shared(async {
             let sftp = ssh_client::create_sftp_session(&connection).await?;
 
             sftp.rename(&path, &new_path)
@@ -933,7 +954,10 @@ pub async fn create_remote_directory(
     id: String,
     path: String,
 ) -> Result<(), String> {
-    info!("[Transfer] Create directory: server_id={}, path={}", id, path);
+    info!(
+        "[Transfer] Create directory: server_id={}, path={}",
+        id, path
+    );
 
     let path = path.trim().to_string();
     if path.is_empty() {
@@ -943,8 +967,7 @@ pub async fn create_remote_directory(
     let connection = resolve_transfer_server(&state, &id)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let rt = create_async_runtime();
-        rt.block_on(async {
+        ssh_client::block_on_shared(async {
             let sftp = ssh_client::create_sftp_session(&connection).await?;
 
             sftp.create_dir(&path)
@@ -983,8 +1006,7 @@ pub async fn test_ssh_connection(
     let connection = resolve_transfer_server(&state, &id)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let rt = create_async_runtime();
-        rt.block_on(async {
+        ssh_client::block_on_shared(async {
             use russh::client;
             use russh_sftp::client::SftpSession;
             use ssh_client::SshClientHandler;
@@ -1002,7 +1024,10 @@ pub async fn test_ssh_connection(
 
             // Step 1: TCP connect
             let addr = (connection.host.as_str(), connection.port);
-            info!("[Test] Step 1: TCP connect to {}:{}", connection.host, connection.port);
+            info!(
+                "[Test] Step 1: TCP connect to {}:{}",
+                connection.host, connection.port
+            );
             let socket = match tokio::time::timeout(
                 Duration::from_secs(10),
                 tokio::net::TcpStream::connect(addr),
@@ -1033,7 +1058,11 @@ pub async fn test_ssh_connection(
             info!("[Test] Step 2: SSH handshake");
             let mut config = client::Config::default();
             config.inactivity_timeout = Some(Duration::from_secs(15));
-            let session = match client::connect_stream(Arc::new(config), socket, SshClientHandler).await {
+            let handler = SshClientHandler {
+                host: connection.host.clone(),
+                port: connection.port,
+            };
+            let session = match client::connect_stream(Arc::new(config), socket, handler).await {
                 Ok(s) => {
                     result.ssh_handshake = true;
                     info!("[Test] SSH handshake OK");
@@ -1046,37 +1075,69 @@ pub async fn test_ssh_connection(
                 }
             };
 
-            // Step 3: Authentication
+            // Step 3: Authentication (key first, then password)
             info!("[Test] Step 3: Authentication");
             let mut session = session;
-            let auth_ok = if let Some(password) = connection.password.as_deref() {
-                if !password.is_empty() {
-                    match session.authenticate_password(&connection.username, password).await {
-                        Ok(true) => {
-                            info!("[Test] Password auth OK");
-                            true
-                        }
-                        Ok(false) => {
-                            result.error_detail = Some("密码认证被拒绝".to_string());
-                            result.elapsed_ms = start.elapsed().as_millis() as u64;
-                            return Ok(result);
-                        }
-                        Err(e) => {
-                            result.error_detail = Some(format!("密码认证错误: {}", e));
-                            result.elapsed_ms = start.elapsed().as_millis() as u64;
-                            return Ok(result);
+            let mut auth_ok = false;
+
+            if let Some(key_path) = connection.key_path.as_deref().filter(|p| !p.is_empty()) {
+                info!("[Test] Trying key auth: {}", key_path);
+                let passphrase = connection.key_passphrase.as_deref().filter(|s| !s.is_empty());
+                match russh::keys::load_secret_key(key_path, passphrase) {
+                    Ok(key_pair) => {
+                        match session
+                            .authenticate_publickey(&connection.username, Arc::new(key_pair))
+                            .await
+                        {
+                            Ok(true) => {
+                                info!("[Test] Key auth OK");
+                                auth_ok = true;
+                            }
+                            Ok(false) => {
+                                info!("[Test] Key auth rejected, falling back to password");
+                            }
+                            Err(e) => {
+                                info!("[Test] Key auth error ({}), falling back to password", e);
+                            }
                         }
                     }
-                } else {
-                    result.error_detail = Some("没有配置密码".to_string());
-                    result.elapsed_ms = start.elapsed().as_millis() as u64;
-                    return Ok(result);
+                    Err(e) => {
+                        info!("[Test] Failed to load key ({}), falling back to password", e);
+                    }
                 }
-            } else {
-                result.error_detail = Some("没有配置密码".to_string());
-                result.elapsed_ms = start.elapsed().as_millis() as u64;
-                return Ok(result);
-            };
+            }
+
+            if !auth_ok {
+                match connection.password.as_deref() {
+                    Some(password) if !password.is_empty() => {
+                        match session
+                            .authenticate_password(&connection.username, password)
+                            .await
+                        {
+                            Ok(true) => {
+                                info!("[Test] Password auth OK");
+                                auth_ok = true;
+                            }
+                            Ok(false) => {
+                                result.error_detail = Some("密码认证被拒绝".to_string());
+                                result.elapsed_ms = start.elapsed().as_millis() as u64;
+                                return Ok(result);
+                            }
+                            Err(e) => {
+                                result.error_detail = Some(format!("密码认证错误: {}", e));
+                                result.elapsed_ms = start.elapsed().as_millis() as u64;
+                                return Ok(result);
+                            }
+                        }
+                    }
+                    _ => {
+                        result.error_detail =
+                            Some("没有配置密码或密钥，无法完成认证".to_string());
+                        result.elapsed_ms = start.elapsed().as_millis() as u64;
+                        return Ok(result);
+                    }
+                }
+            }
 
             if auth_ok {
                 result.authentication = true;

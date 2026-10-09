@@ -18,6 +18,7 @@ import {
 } from 'react-icons/fa';
 import treeStyles from './TreeView.module.css';
 import sidebarStyles from './LeftSidebar.module.css';
+import { isEditableElement, isInsideTerminal } from '../utils/dom-helpers';
 
 const EMPTY_CATEGORIES: Category[] = [];
 const EMPTY_SERVERS: Server[] = [];
@@ -254,7 +255,6 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
   onCategoryContextMenu, onCreateServer, onCreateSubCategory, onEditCategory,
   onConnectServer, onDisconnectServer, onOpenCommandHistory, onServerContextMenu,
 }) => {
-  console.log('[Search] LeftSidebar render');
   const { categories, servers, updateCategoryOrder, moveCategoryToParent } = useServer();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -273,13 +273,25 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
   useLayoutEffect(() => { dropPositionRef.current = dropPosition; }, [dropPosition]);
   useLayoutEffect(() => { activeDragIdRef.current = activeDragId; }, [activeDragId]);
 
-  // 新增分类时自动展开
+  // 新增分类时自动展开（仅展开新增的，用户手动折叠的保持折叠）
+  const knownCategoryIdsRef = useRef<Set<string> | null>(null);
   useEffect(() => {
+    const prevIds = knownCategoryIdsRef.current;
+    knownCategoryIdsRef.current = new Set(categories.map(c => c.id));
     setExpandedCategories(prev => {
       const next = new Set(prev);
       let changed = false;
-      categories.forEach(c => { if (!next.has(c.id)) { next.add(c.id); changed = true; } });
-      next.add('__uncategorized__');
+      categories.forEach(c => {
+        const isNew = prevIds === null || !prevIds.has(c.id);
+        if (isNew && !next.has(c.id)) {
+          next.add(c.id);
+          changed = true;
+        }
+      });
+      if (!next.has('__uncategorized__')) {
+        next.add('__uncategorized__');
+        changed = true;
+      }
       return changed ? next : prev;
     });
   }, [categories]);
@@ -332,7 +344,19 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
     const dragged = categories.find(c => c.id === dragId);
     const target = categories.find(c => c.id === overId);
     if (!dragged || !target) return;
-    if (target.parentId === dragged.id) return; // 防止移入子分类
+
+    // 防止将分类移入自己的任意后代（否则分类树成环）
+    const isDescendantOfDragged = (categoryId: string): boolean => {
+      let cursor: string | null | undefined = categoryId;
+      let depth = 0;
+      while (cursor && depth <= categories.length) {
+        if (cursor === dragId) return true;
+        cursor = categories.find(c => c.id === cursor)?.parentId ?? null;
+        depth += 1;
+      }
+      return false;
+    };
+    if (isDescendantOfDragged(target.id)) return;
 
     if (position === 'inside') {
       if (dragged.parentId === target.id) return;
@@ -460,13 +484,10 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
     return uncategorizedServers.filter(s => matchingServerIds.has(s.id));
   }, [uncategorizedServers, matchingServerIds]);
 
-  console.log(`[Search] render: isSearching=${isSearching} trimmedQuery="${trimmedQuery}" rootCats:${filteredRootCategories.length} uncategorized:${filteredUncategorizedServers.length} expanded:${expandedCategories.size}`);
-
   // 搜索时展开所有匹配的分类
   // 用 trimmedQuery 而非 visibleCategoryIds（Set 引用每次渲染都不同，会导致无限循环）
   useEffect(() => {
     if (!isSearching || !visibleCategoryIds) return;
-    console.log(`[Search] useEffect expand: query="${trimmedQuery}" catIds:${visibleCategoryIds.size} uncategorized:${filteredUncategorizedServers.length}`);
     setExpandedCategories(prev => {
       const next = new Set(prev);
       let added = 0;
@@ -475,16 +496,18 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
         next.add('__uncategorized__');
         added++;
       }
-      console.log(`[Search] setExpandedCategories: prev:${prev.size} added:${added} → next:${next.size} changed:${added > 0}`);
       return added > 0 ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trimmedQuery]);
 
-  // Escape 快捷键聚焦搜索框
+  // Escape 快捷键聚焦搜索框 — 仅当侧栏可见且焦点不在终端/输入框时
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        const target = e.target instanceof Element ? e.target : null;
+        if (isInsideTerminal(target) || isEditableElement(target)) return;
         e.preventDefault();
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
@@ -492,7 +515,7 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isOpen]);
 
   const nodeProps = {
     depth: 0, expandedCategories, toggleCategory, categoryChildrenMap, serversByCategory, categoryServerCounts,
@@ -514,9 +537,7 @@ export const LeftSidebar = memo<LeftSidebarProps>(({
             placeholder="搜索名称、IP..."
             value={searchQuery}
             onChange={e => {
-              const t0 = performance.now();
               setSearchQuery(e.target.value);
-              console.log(`[Search] input onChange → setSearchQuery done in ${(performance.now() - t0).toFixed(1)}ms`);
             }}
             onKeyDown={e => {
               if (e.key === 'Escape') {

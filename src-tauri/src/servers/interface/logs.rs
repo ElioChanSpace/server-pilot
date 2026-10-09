@@ -3,13 +3,13 @@ use log::info;
 use serde::Serialize;
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{self, SeekFrom, Seek};
+use std::io::{self, Seek, SeekFrom};
 use std::path::PathBuf;
 use tauri::AppHandle;
 
-use super::util::shell_quote;
-use super::ssh_client;
 use super::file_transfer::resolve_transfer_server;
+use super::ssh_client;
+use super::util::shell_quote;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,14 +25,16 @@ pub struct RemoteLogResult {
     pub lines: Vec<String>,
 }
 
-fn resolve_app_log_path(_app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|_| "无法获取可执行文件路径".to_string())?;
-    let exe_dir = exe_path
-        .parent()
-        .ok_or_else(|| "无法获取可执行文件目录".to_string())?;
-    let log_dir = exe_dir.join("logs");
-    Ok(log_dir.join("app.log"))
+fn resolve_app_log_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
+    // Logs live in the per-user app data dir (see main.rs): writing next to the
+    // executable breaks the macOS code signature of packaged .app bundles.
+    use tauri::Manager;
+    let log_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|_| "无法获取应用数据目录".to_string())?
+        .join("logs");
+    Ok(log_dir.join("server-pilot.log"))
 }
 
 /// Read the last `max_lines` lines from a file efficiently by seeking from the end.
@@ -68,9 +70,7 @@ fn tail_file(path: &PathBuf, max_lines: usize) -> io::Result<Vec<String>> {
         while remaining > 0 && lines_found.len() < max_lines {
             // Find the last newline in combined[..remaining]
             let search_end = remaining;
-            let newline_pos = combined[..search_end]
-                .iter()
-                .rposition(|&b| b == b'\n');
+            let newline_pos = combined[..search_end].iter().rposition(|&b| b == b'\n');
 
             if let Some(nl_pos) = newline_pos {
                 let line_bytes = &combined[nl_pos + 1..remaining];
@@ -119,8 +119,7 @@ pub async fn read_app_logs(
         });
     }
 
-    let lines = tail_file(&log_path, max_lines)
-        .map_err(|err| format!("读取日志失败: {}", err))?;
+    let lines = tail_file(&log_path, max_lines).map_err(|err| format!("读取日志失败: {}", err))?;
 
     Ok(AppLogSnapshot {
         file_path: log_path.display().to_string(),
@@ -163,11 +162,7 @@ pub async fn read_remote_log(
     let command = format!("tail -n {} -- {}", count, shell_quote(&path));
 
     tauri::async_runtime::spawn_blocking(move || {
-        let output = ssh_client::run_ssh_exec_blocking(
-            &connection,
-            &command,
-            "read remote log",
-        )?;
+        let output = ssh_client::run_ssh_exec_blocking(&connection, &command, "read remote log")?;
         Ok(RemoteLogResult {
             path: path.clone(),
             lines: output.lines().map(str::to_string).collect(),

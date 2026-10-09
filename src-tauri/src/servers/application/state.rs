@@ -9,7 +9,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(repository: Arc<dyn Repository>) -> Self {
-        let data = repository.load().unwrap_or_default();
+        let data = repository.load().unwrap_or_else(|err| {
+            log::error!("[State] Failed to load app data, starting empty: {}", err);
+            Default::default()
+        });
         Self {
             data: Arc::new(Mutex::new(data)),
             repository,

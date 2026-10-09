@@ -17,7 +17,7 @@ pub struct UpdateAppSettingsRequest {
     pub confirm_on_disconnect: Option<bool>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_server(
     state: State<'_, AppState>,
     _app: AppHandle,
@@ -33,7 +33,6 @@ pub fn create_server(
     key_passphrase: Option<String>,
     proxy_jump: Option<String>,
 ) -> Result<Server, String> {
-    let mut data = state.data.lock().map_err(|e| e.to_string())?;
     let mut server = Server::new(
         name,
         host,
@@ -47,6 +46,7 @@ pub fn create_server(
         key_passphrase,
         proxy_jump,
     );
+    // Keychain IPC first, without holding the global data lock.
     if server.has_password {
         if let Some(password) = server.password.clone() {
             credential_store::save_password(&server.id, &password)?;
@@ -59,13 +59,15 @@ pub fn create_server(
     }
     server.password = None;
     server.key_passphrase = None;
-    data.servers.push(server.clone());
-    drop(data);
+    {
+        let mut data = state.data.lock().map_err(|e| e.to_string())?;
+        data.servers.push(server.clone());
+    }
     state.save()?;
     Ok(server)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_server(
     state: State<'_, AppState>,
     id: String,
@@ -81,6 +83,24 @@ pub fn update_server(
     key_passphrase: Option<String>,
     proxy_jump: Option<String>,
 ) -> Result<Server, String> {
+    // Keychain IPC first, without holding the global data lock.
+    let mut password_updated = false;
+    let mut passphrase_updated = false;
+    match password.as_deref() {
+        Some(value) if !value.is_empty() => {
+            credential_store::save_password(&id, value)?;
+            password_updated = true;
+        }
+        _ => {}
+    }
+    match key_passphrase.as_deref() {
+        Some(value) if !value.is_empty() => {
+            credential_store::save_key_passphrase(&id, value)?;
+            passphrase_updated = true;
+        }
+        _ => {}
+    }
+
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
     let server = data
         .servers
@@ -97,19 +117,11 @@ pub fn update_server(
     server.auth_method = auth_method;
     server.key_path = key_path;
     server.proxy_jump = proxy_jump;
-    match password.as_deref() {
-        Some(value) if !value.is_empty() => {
-            credential_store::save_password(&server.id, value)?;
-            server.has_password = true;
-        }
-        _ => {}
+    if password_updated {
+        server.has_password = true;
     }
-    match key_passphrase.as_deref() {
-        Some(value) if !value.is_empty() => {
-            credential_store::save_key_passphrase(&server.id, value)?;
-            server.has_key_passphrase = true;
-        }
-        _ => {}
+    if passphrase_updated {
+        server.has_key_passphrase = true;
     }
     server.password = None;
     server.key_passphrase = None;
@@ -120,7 +132,7 @@ pub fn update_server(
     Ok(updated_server)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_category(
     state: State<'_, AppState>,
     _app: AppHandle,
@@ -135,7 +147,7 @@ pub fn create_category(
     Ok(category)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_server(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
     let idx = data
@@ -158,7 +170,7 @@ pub fn delete_server(state: State<'_, AppState>, id: String) -> Result<(), Strin
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_category(
     state: State<'_, AppState>,
     id: String,
@@ -179,7 +191,7 @@ pub fn update_category(
     Ok(updated)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_category(
     state: State<'_, AppState>,
     id: String,
@@ -191,50 +203,52 @@ pub fn delete_category(
         .iter()
         .position(|c| c.id == id)
         .ok_or("Category not found")?;
+    let deleted_parent = data.categories[idx].parent_id.clone();
 
-    // Remove child categories recursively
-    let child_ids: Vec<String> = data
-        .categories
-        .iter()
-        .filter(|c| c.parent_id.as_deref() == Some(&id))
-        .map(|c| c.id.clone())
-        .collect();
-    for child_id in child_ids {
-        data.categories.retain(|c| c.id != child_id);
-        // Move servers from child categories
-        for server in &mut data.servers {
-            if server.category_id.as_deref() == Some(&child_id) {
-                server.category_id = if move_to_uncategorized {
-                    None
-                } else {
-                    None
-                };
+    // Collect the whole subtree (all descendants, not only direct children)
+    let mut to_remove: Vec<String> = vec![id.clone()];
+    let mut i = 0;
+    while i < to_remove.len() {
+        let current = to_remove[i].clone();
+        for category in &data.categories {
+            if category.parent_id.as_deref() == Some(current.as_str())
+                && !to_remove.contains(&category.id)
+            {
+                to_remove.push(category.id.clone());
             }
+        }
+        i += 1;
+    }
+
+    // Servers in removed categories are either left uncategorized or moved to
+    // the deleted category's parent.
+    for server in &mut data.servers {
+        if server
+            .category_id
+            .as_deref()
+            .is_some_and(|cid| to_remove.iter().any(|r| r == cid))
+        {
+            server.category_id = if move_to_uncategorized {
+                None
+            } else {
+                deleted_parent.clone()
+            };
         }
     }
 
-    // Move servers from this category
-    if move_to_uncategorized {
-        for server in &mut data.servers {
-            if server.category_id.as_deref() == Some(&id) {
-                server.category_id = None;
-            }
-        }
-    }
-
-    data.categories.remove(idx);
+    data.categories.retain(|c| !to_remove.contains(&c.id));
     drop(data);
     state.save()?;
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_servers(state: State<'_, AppState>) -> Result<Vec<Server>, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     Ok(data.servers.clone())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_categories(state: State<'_, AppState>) -> Result<Vec<Category>, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     Ok(data.categories.clone())
@@ -247,7 +261,7 @@ pub struct CategoryOrderItem {
     pub order: u32,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_category_order(
     state: State<'_, AppState>,
     items: Vec<CategoryOrderItem>,
@@ -263,7 +277,7 @@ pub fn update_category_order(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn move_category(
     state: State<'_, AppState>,
     id: String,
@@ -272,9 +286,28 @@ pub fn move_category(
 ) -> Result<(), String> {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
 
-    // 防止将分类移入自身或自己的子分类（简单检查：不能移入自己）
+    // 防止将分类移入自身或自己的后代（否则分类树成环）
     if Some(&id) == new_parent_id.as_ref() {
         return Err("不能将分类移入自身".to_string());
+    }
+    if let Some(new_parent_id) = new_parent_id.as_ref() {
+        let mut cursor = Some(new_parent_id.as_str());
+        let mut depth = 0;
+        while let Some(current) = cursor {
+            if current == id {
+                return Err("不能将分类移入自己的子分类".to_string());
+            }
+            cursor = data
+                .categories
+                .iter()
+                .find(|c| c.id == current)
+                .and_then(|c| c.parent_id.as_deref());
+            depth += 1;
+            if depth > data.categories.len() {
+                // Existing data already contains a cycle — don't make it worse.
+                return Err("分类层级数据异常，无法移动".to_string());
+            }
+        }
     }
 
     if let Some(category) = data.categories.iter_mut().find(|c| c.id == id) {
@@ -287,13 +320,13 @@ pub fn move_category(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     Ok(data.settings.clone())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_app_settings(
     state: State<'_, AppState>,
     payload: UpdateAppSettingsRequest,
@@ -319,9 +352,7 @@ pub fn update_app_settings(
         minimize_to_tray_on_close: payload
             .minimize_to_tray_on_close
             .unwrap_or(current.minimize_to_tray_on_close),
-        theme_preference: payload
-            .theme_preference
-            .unwrap_or(current.theme_preference),
+        theme_preference: payload.theme_preference.unwrap_or(current.theme_preference),
         notifications_enabled: payload
             .notifications_enabled
             .unwrap_or(current.notifications_enabled),
@@ -336,10 +367,8 @@ pub fn update_app_settings(
 }
 
 /// Get custom app themes
-#[tauri::command]
-pub fn get_custom_themes(
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
+#[tauri::command(async)]
+pub fn get_custom_themes(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let data = state.data.lock().map_err(|e| e.to_string())?;
     Ok(serde_json::json!({
         "appThemes": data.custom_themes,
@@ -347,7 +376,7 @@ pub fn get_custom_themes(
 }
 
 /// Save custom app themes (full replacement of the custom_themes field)
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_custom_app_themes(
     state: State<'_, AppState>,
     themes: serde_json::Value,
@@ -359,13 +388,21 @@ pub fn save_custom_app_themes(
 }
 
 /// Get local app stats (memory and CPU usage)
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_app_stats() -> Result<serde_json::Value, String> {
+    use std::sync::{Mutex, OnceLock};
     use sysinfo::System;
-    let mut sys = System::new_all();
-    sys.refresh_all();
+
+    // Keep a single System across calls and refresh only our own process —
+    // `System::new_all()` scans every process/disk on the machine, which is far
+    // too heavy for a 3-second poll.
+    static APP_SYS: OnceLock<Mutex<System>> = OnceLock::new();
+    let sys_mutex = APP_SYS.get_or_init(|| Mutex::new(System::new()));
 
     let pid = sysinfo::get_current_pid().map_err(|e| e.to_string())?;
+    let mut sys = sys_mutex.lock().map_err(|e| e.to_string())?;
+    sys.refresh_process(pid);
+
     let process = sys.process(pid).ok_or("Failed to get current process")?;
 
     // sysinfo returns memory in bytes, convert to MB

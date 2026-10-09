@@ -1,103 +1,137 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { CommandRecord } from "../types/terminal";
 
-const STORAGE_KEY = "server-pilot-command-history";
+const LEGACY_STORAGE_KEY = "server-pilot-command-history";
+const RECENT_DUPLICATE_WINDOW_MS = 1500;
 const MAX_RECORDS = 1000;
 
-function loadFromStorage(): { records: CommandRecord[]; nextId: number } {
+function loadLegacyRecords(): CommandRecord[] {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { records: [], nextId: 0 };
-    const records: CommandRecord[] = JSON.parse(raw);
-    const maxId = records.reduce((max, r) => {
-      const n = parseInt(r.id.replace("cmd-", ""), 10);
-      return isNaN(n) ? max : Math.max(max, n);
-    }, 0);
-    return { records, nextId: maxId + 1 };
+    const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return [];
+    const records = JSON.parse(raw);
+    return Array.isArray(records) ? records : [];
   } catch {
-    return { records: [], nextId: 0 };
+    return [];
   }
 }
 
-function saveToStorage(records: CommandRecord[]) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  } catch { /* quota exceeded — silently ignore */ }
+function isSameCommand(a: CommandRecord, b: Omit<CommandRecord, "id" | "timestamp">) {
+  return (
+    a.sessionId === b.sessionId &&
+    a.displayId === b.displayId &&
+    a.serverId === b.serverId &&
+    a.command === b.command
+  );
 }
 
-const initial = loadFromStorage();
-
 export function useCommandHistory() {
-  const [commands, setCommands] = useState<CommandRecord[]>(initial.records);
-  const idCounterRef = useRef(initial.nextId);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestRef = useRef(commands);
-  latestRef.current = commands;
+  const [commands, setCommands] = useState<CommandRecord[]>([]);
+  const commandsRef = useRef<CommandRecord[]>([]);
+  const mountedRef = useRef(true);
 
-  // Debounced save to avoid writing on every keystroke
-  const scheduleSave = useCallback((records: CommandRecord[]) => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => saveToStorage(records), 300);
+  const setCommandState = useCallback((records: CommandRecord[]) => {
+    commandsRef.current = records;
+    setCommands(records);
   }, []);
 
-  // Flush pending save on unmount
   useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveToStorage(latestRef.current);
+    mountedRef.current = true;
+
+    const load = async () => {
+      try {
+        let records = await invoke<CommandRecord[]>("get_command_history");
+        const legacyRecords = loadLegacyRecords();
+        if (records.length === 0 && legacyRecords.length > 0) {
+          records = await invoke<CommandRecord[]>("replace_command_history", {
+            records: legacyRecords,
+          });
+          window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+        }
+        if (mountedRef.current) {
+          setCommandState(records);
+        }
+      } catch (error) {
+        console.error("加载命令历史失败:", error);
       }
     };
-  }, []);
 
-  const addCommand = useCallback((
+    void load();
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [setCommandState]);
+
+  const addCommand = useCallback(async (
     sessionId: string,
     displayId: string,
     serverId: string,
     serverName: string,
     command: string,
   ) => {
-    idCounterRef.current += 1;
-    const record: CommandRecord = {
-      id: `cmd-${idCounterRef.current}`,
+    const normalizedCommand = command.trim();
+    if (!normalizedCommand) return;
+
+    const pendingRecord = {
       sessionId,
       displayId,
       serverId,
       serverName,
-      command,
-      timestamp: Date.now(),
+      command: normalizedCommand,
     };
-    setCommands(prev => {
-      const next = [...prev, record];
-      // Cap at MAX_RECORDS, trimming oldest
-      const trimmed = next.length > MAX_RECORDS ? next.slice(next.length - MAX_RECORDS) : next;
-      scheduleSave(trimmed);
-      return trimmed;
-    });
-  }, [scheduleSave]);
 
-  const removeCommandsBySession = useCallback((sessionIds: string[]) => {
+    const recentDuplicate = [...commandsRef.current]
+      .reverse()
+      .find(record => Date.now() - record.timestamp <= RECENT_DUPLICATE_WINDOW_MS && isSameCommand(record, pendingRecord));
+    if (recentDuplicate) return;
+
+    try {
+      const record = await invoke<CommandRecord>("add_command_history", pendingRecord);
+      const next = [...commandsRef.current, record].slice(-MAX_RECORDS);
+      setCommandState(next);
+    } catch (error) {
+      console.error("保存命令历史失败:", error);
+    }
+  }, [setCommandState]);
+
+  const removeCommandsBySession = useCallback(async (sessionIds: string[]) => {
     if (sessionIds.length === 0) return;
+    const previous = commandsRef.current;
     const removed = new Set(sessionIds);
-    setCommands(prev => {
-      const next = prev.filter(cmd => !removed.has(cmd.sessionId));
-      scheduleSave(next);
-      return next;
-    });
-  }, [scheduleSave]);
+    const next = previous.filter(cmd => !removed.has(cmd.sessionId));
+    setCommandState(next);
+    try {
+      await invoke("remove_command_history_by_session", { sessionIds });
+    } catch (error) {
+      console.error("删除终端命令历史失败:", error);
+      setCommandState(previous);
+    }
+  }, [setCommandState]);
 
-  const removeCommandsByServer = useCallback((serverId: string) => {
-    setCommands(prev => {
-      const next = prev.filter(cmd => cmd.serverId !== serverId);
-      scheduleSave(next);
-      return next;
-    });
-  }, [scheduleSave]);
+  const removeCommandsByServer = useCallback(async (serverId: string) => {
+    const previous = commandsRef.current;
+    const next = previous.filter(cmd => cmd.serverId !== serverId);
+    setCommandState(next);
+    try {
+      await invoke("remove_command_history_by_server", { serverId });
+    } catch (error) {
+      console.error("删除服务器命令历史失败:", error);
+      setCommandState(previous);
+    }
+  }, [setCommandState]);
 
-  const clearCommands = useCallback(() => {
-    setCommands([]);
-    saveToStorage([]);
-  }, []);
+  const clearCommands = useCallback(async () => {
+    const previous = commandsRef.current;
+    setCommandState([]);
+    try {
+      await invoke("clear_command_history");
+    } catch (error) {
+      console.error("清空命令历史失败:", error);
+      setCommandState(previous);
+    }
+  }, [setCommandState]);
 
   return {
     commands,

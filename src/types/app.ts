@@ -9,10 +9,13 @@ export interface ContextMenuState {
 export interface TerminalOutputState {
   chunks: string[];
   resetToken: number;
+  /** Cumulative count of chunks trimmed from the head of `chunks` (memory cap). */
+  droppedChunks: number;
 }
 
 export interface FileTransferProgressEvent {
   transferId: string;
+  serverId: string;
   direction: string;
   localPath: string;
   remotePath: string;

@@ -1,5 +1,9 @@
 import { useEffect } from "react";
-import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
+import {
+  getCurrentWindow,
+  PhysicalSize,
+  PhysicalPosition,
+} from "@tauri-apps/api/window";
 
 export function useWindowPersistence() {
   useEffect(() => {
@@ -11,12 +15,14 @@ export function useWindowPersistence() {
       const storedSize = window.localStorage.getItem(sizeKey);
       if (storedSize) {
         const { width, height } = JSON.parse(storedSize) as { width: number; height: number };
-        void appWindow.setSize(new LogicalSize(width, height));
+        // innerSize()/outerPosition() return physical pixels — restore in the
+        // same unit, otherwise HiDPI displays would double the window size.
+        void appWindow.setSize(new PhysicalSize(width, height));
       }
       const storedPosition = window.localStorage.getItem(positionKey);
       if (storedPosition) {
         const { x, y } = JSON.parse(storedPosition) as { x: number; y: number };
-        void appWindow.setPosition(new LogicalPosition(x, y));
+        void appWindow.setPosition(new PhysicalPosition(x, y));
       }
     } catch (error) {
       console.error("恢复窗口状态失败:", error);
@@ -42,10 +48,22 @@ export function useWindowPersistence() {
     };
 
     const unlistenFns: Array<() => void> = [];
-    void appWindow.onResized(scheduleSave).then(fn => unlistenFns.push(fn));
-    void appWindow.onMoved(scheduleSave).then(fn => unlistenFns.push(fn));
+    let cleanedUp = false;
+    const registerUnlisten = (promise: Promise<() => void>) => {
+      void promise.then(fn => {
+        if (cleanedUp) {
+          // Effect already cleaned up before the listener was registered.
+          fn();
+        } else {
+          unlistenFns.push(fn);
+        }
+      });
+    };
+    registerUnlisten(appWindow.onResized(scheduleSave));
+    registerUnlisten(appWindow.onMoved(scheduleSave));
 
     return () => {
+      cleanedUp = true;
       unlistenFns.forEach(fn => fn());
       if (saveTimer !== null) {
         window.clearTimeout(saveTimer);

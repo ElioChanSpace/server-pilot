@@ -1,14 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { SearchAddon } from 'xterm-addon-search';
 import { FaChevronDown, FaChevronUp, FaCopy, FaPaste, FaSearch, FaTimes } from 'react-icons/fa';
+import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import 'xterm/css/xterm.css';
 
 interface XtermTerminalProps {
   outputChunks: string[];
+  /** Cumulative chunks trimmed from the head of outputChunks (memory cap). */
+  droppedChunks: number;
   resetToken: number;
   onInput: (data: string) => void;
   onResize: (cols: number, rows: number) => void;
@@ -33,8 +36,119 @@ const arePropsEqual = (prev: XtermTerminalProps, next: XtermTerminalProps) =>
   // 非活动会话的累积输出只在激活时一次性补写，因此跳过重渲染。
   (!prev.isActive || prev.outputChunks === next.outputChunks);
 
+/* ============================================================================
+ * Shell Integration (OSC 133) 命令边界解析
+ * ----------------------------------------------------------------------------
+ * 原理：让远程 shell 在关键节点（提示符开始/结束、命令提交、命令结束）主动
+ * 输出一个专用的、不会与其他内容混淆的转义序列标记：
+ *
+ *   ESC ] 133 ; A BEL   新提示符开始 (precmd)
+ *   ESC ] 133 ; B BEL   提示符结束，用户输入区开始
+ *   ESC ] 133 ; C BEL   命令已提交（回车），命令输出开始 (preexec)
+ *   ESC ] 133 ; D ; N BEL   命令输出结束，N 为退出码
+ *
+ * 前端只需要识别这 4 个固定标记，不需要理解其他任何 ANSI/VT 序列，因此不会
+ * 出现"吃错字符数导致内容异常"的问题。命令的真实文本永远从
+ * `terminal.buffer.active`（即屏幕上实际渲染的内容）里读取，而不是靠本地
+ * 按键流去猜测。
+ *
+ * 远程 shell 需要配合执行一段初始化脚本（bash/zsh），可参考：
+ * https://code.visualstudio.com/docs/terminal/shell-integration#_manual-installation
+ * 建议在 SSH/PTY 连接建立成功后自动注入，或引导用户加进 .bashrc / .zshrc。
+ * ========================================================================== */
+
+const OSC133_RE = /\x1b\]133;([ABCD])(?:;[^\x07\x1b]*)?(?:\x07|\x1b\\)/g;
+
+interface ShellIntegrationHandlers {
+  onCommandExecuted?: (command: string) => void;
+  /**
+   * 从整行文本中剥离 shell 提示符，只保留命令部分。
+   * 默认按常见提示符结尾符号（$ # >）粗略切分，建议按你实际连接的 shell
+   * 类型自定义，或者后续升级为记录 OSC 133;B 触发时的 cursorX 精确切列。
+   */
+  stripPrompt?: (line: string) => string;
+}
+
+function defaultStripPrompt(line: string): string {
+  return line.replace(/^.*?[$#>]\s*/, '').trimEnd();
+}
+
+/**
+ * 维护 shell integration 的状态机，并在收到远程输出 chunk 时：
+ *   1. 正常判断其中是否包含 OSC133 标记
+ *   2. 在命中 "C"（命令已提交）标记时，从 terminal.buffer.active 读取
+ *      真实渲染出的那一行文本作为命令内容上报
+ *
+ * 必须在 terminal.write(chunk, callback) 的 callback 里调用本函数，
+ * 确保 chunk 已经真正渲染进 buffer 之后再读取，否则会读到旧内容。
+ */
+function createShellIntegrationTracker(handlers: ShellIntegrationHandlers) {
+  const stripPrompt = handlers.stripPrompt ?? defaultStripPrompt;
+  let state: 'idle' | 'prompt' | 'input' = 'idle';
+
+  function processChunk(chunk: string, terminal: Terminal) {
+    OSC133_RE.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = OSC133_RE.exec(chunk)) !== null) {
+      const marker = match[1];
+      if (marker === 'A') {
+        state = 'prompt';
+      } else if (marker === 'B') {
+        state = 'input';
+      } else if (marker === 'C') {
+        if (state === 'input') {
+          captureCommandLine(terminal);
+        }
+        state = 'idle';
+      } else if (marker === 'D') {
+        state = 'idle';
+      }
+    }
+  }
+
+  function captureCommandLine(terminal: Terminal) {
+    // 全屏 TUI 程序（vim / htop / less 等）用的是 alternate buffer，
+    // 正常 shell integration 标记不会出现在这类场景里，这里多一层保险。
+    if (terminal.buffer.active.type === 'alternate') {
+      return;
+    }
+
+    const buffer = terminal.buffer.active;
+    // OSC133;C 标记出现时，光标仍停留在用户刚提交的那一行（回车尚未换行）
+    const absY = buffer.baseY + buffer.cursorY;
+
+    // 支持软换行（长命令在窄终端里自动折行）：从当前行往上拼接，
+    // 直到遇到一行 isWrapped === false 为止。
+    let startY = absY;
+    while (startY > 0) {
+      const line = buffer.getLine(startY);
+      if (!line || !line.isWrapped) break;
+      startY--;
+    }
+
+    let text = '';
+    for (let y = startY; y <= absY; y++) {
+      const line = buffer.getLine(y);
+      if (!line) continue;
+      text += line.translateToString(false);
+    }
+
+    const cmd = stripPrompt(text).trim();
+    if (cmd) {
+      handlers.onCommandExecuted?.(cmd);
+    }
+  }
+
+  function reset() {
+    state = 'idle';
+  }
+
+  return { processChunk, reset };
+}
+
 const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   outputChunks,
+  droppedChunks,
   resetToken,
   onInput,
   onResize,
@@ -52,13 +166,43 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const renderedChunkCountRef = useRef(0);
+  const lastDroppedChunksRef = useRef(0);
   const fitFrameRef = useRef<number | null>(null);
-  const inputBufferRef = useRef('');
-  const skipNextCharCountRef = useRef(0); // 跳过 ESC 序列中的后续字符数
+  const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const selectionCopyTimerRef = useRef<number | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [isDropTargetActive, setIsDropTargetActive] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const pendingInputRef = useRef('');
+
+  // onCommandExecuted 会随渲染变化，用 ref 存最新值，避免 tracker 闭包过期，
+  // 也避免把 onCommandExecuted 变化当成需要重建 tracker / 重挂终端的依赖。
+  const onCommandExecutedRef = useRef(onCommandExecuted);
+  useEffect(() => {
+    onCommandExecutedRef.current = onCommandExecuted;
+  }, [onCommandExecuted]);
+
+  // 同理：回调统一走 ref，创建终端的 effect 依赖 []，回调变化不会销毁重建终端。
+  const onInputRef = useRef(onInput);
+  useEffect(() => {
+    onInputRef.current = onInput;
+  }, [onInput]);
+  const onResizeRef = useRef(onResize);
+  useEffect(() => {
+    onResizeRef.current = onResize;
+  }, [onResize]);
+  const onFontSizeChangeRef = useRef(onFontSizeChange);
+  useEffect(() => {
+    onFontSizeChangeRef.current = onFontSizeChange;
+  }, [onFontSizeChange]);
+  const trackLocalInputRef = useRef<(data: string) => void>();
+
+  const shellIntegrationTrackerRef = useRef(
+    createShellIntegrationTracker({
+      onCommandExecuted: (cmd) => onCommandExecutedRef.current?.(cmd),
+    }),
+  );
 
   const isPositionInsideTerminal = (x: number, y: number) => {
     const terminalElement = termRef.current;
@@ -96,6 +240,30 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
 
   const closeContextMenu = () => setContextMenuPosition(null);
 
+  const trackLocalInput = useCallback((data: string) => {
+    const text = data.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+    for (const char of text) {
+      if (char === '\r' || char === '\n') {
+        const command = pendingInputRef.current.trim();
+        pendingInputRef.current = '';
+        if (command) {
+          onCommandExecutedRef.current?.(command);
+        }
+      } else if (char === '\u007f') {
+        pendingInputRef.current = pendingInputRef.current.slice(0, -1);
+      } else if (char === '\x03' || char === '\x04' || char === '\x15') {
+        pendingInputRef.current = '';
+      } else if (char === '\x17') {
+        pendingInputRef.current = pendingInputRef.current.trimEnd().replace(/\S+$/, '');
+      } else if (char >= ' ' && char !== '\x7f') {
+        pendingInputRef.current += char;
+      }
+    }
+  }, []);
+  useEffect(() => {
+    trackLocalInputRef.current = trackLocalInput;
+  }, [trackLocalInput]);
+
   const applyTerminalTheme = (terminal: Terminal) => {
     const style = getComputedStyle(document.documentElement);
     const get = (name: string) => style.getPropertyValue(name).trim();
@@ -123,15 +291,39 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
     };
   };
 
+  const notifyResize = (terminal: Terminal) => {
+    const { cols, rows } = terminal;
+    const last = lastSentSizeRef.current;
+    if (last && last.cols === cols && last.rows === rows) {
+      return;
+    }
+    lastSentSizeRef.current = { cols, rows };
+    onResizeRef.current?.(cols, rows);
+  };
+
   const scheduleFit = (addon: FitAddon, terminal?: Terminal) => {
     if (fitFrameRef.current !== null) {
       cancelAnimationFrame(fitFrameRef.current);
     }
 
     fitFrameRef.current = requestAnimationFrame(() => {
-      addon.fit();
       if (terminal) {
-        terminal.refresh(0, terminal.rows - 1);
+        const beforeCursorY = terminal.buffer.active.cursorY;
+        const beforeBaseY = terminal.buffer.active.baseY;
+        addon.fit();
+        const afterCursorY = terminal.buffer.active.cursorY;
+        const afterBaseY = terminal.buffer.active.baseY;
+        const cursorDelta = afterCursorY - beforeCursorY;
+        const baseDelta = afterBaseY - beforeBaseY;
+        if (cursorDelta > 0) {
+          terminal.scrollLines(cursorDelta);
+        } else if (baseDelta > 0 && cursorDelta === 0) {
+          terminal.scrollLines(baseDelta);
+        }
+        // Keep the remote PTY size in sync with the local terminal.
+        notifyResize(terminal);
+      } else {
+        addon.fit();
       }
       fitFrameRef.current = null;
     });
@@ -163,7 +355,7 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
         if (!selection) {
           return;
         }
-        await navigator.clipboard.writeText(selection);
+        await writeText(selection);
       };
 
       terminal.attachCustomKeyEventHandler((event) => {
@@ -187,13 +379,13 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
           return false;
         }
 
-
         if (isPasteShortcut) {
-          void navigator.clipboard.readText().then(text => {
+          event.preventDefault();
+          void readText().then(text => {
             if (text) {
               terminal.paste(text);
             }
-          });
+          }).catch(() => {});
           return false;
         }
 
@@ -206,89 +398,44 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
         if (!isMac && event.ctrlKey && !event.metaKey && !event.shiftKey) {
           if (key === '=' || key === '+') {
             event.preventDefault();
-            onFontSizeChange(1);
+            onFontSizeChangeRef.current?.(1);
             return false;
           }
           if (key === '-') {
             event.preventDefault();
-            onFontSizeChange(-1);
+            onFontSizeChangeRef.current?.(-1);
             return false;
           }
           if (key === '0') {
             event.preventDefault();
-            onFontSizeChange(0);
+            onFontSizeChangeRef.current?.(0);
             return false;
           }
         }
         return true;
       });
 
-
       terminal.onData(data => {
-        // 命令追踪：维护输入缓冲区
-        for (let i = 0; i < data.length; i++) {
-          const ch = data[i];
-          const code = ch.charCodeAt(0);
-
-          // 跳过 ESC 序列中的后续字符
-          if (skipNextCharCountRef.current > 0) {
-            skipNextCharCountRef.current--;
-            continue;
-          }
-
-          if (code === 27) {
-            // ESC — 开始跳过整个转义序列（ESC [ ... letter）
-            // 计算序列中剩余的字符数
-            let seqLen = 0;
-            for (let j = i + 1; j < data.length; j++) {
-              seqLen++;
-              const c = data[j];
-              if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c === '~') {
-                break;
-              }
-            }
-            skipNextCharCountRef.current = seqLen;
-            continue;
-          }
-
-          if (ch === '\r' || ch === '\n') {
-            // Enter — 记录命令
-            const cmd = inputBufferRef.current.trim();
-            if (cmd && onCommandExecuted) {
-              onCommandExecuted(cmd);
-            }
-            inputBufferRef.current = '';
-          } else if (code === 127 || ch === '\b') {
-            // Backspace
-            inputBufferRef.current = inputBufferRef.current.slice(0, -1);
-          } else if (ch === '\x03') {
-            // Ctrl+C — 清空缓冲区
-            inputBufferRef.current = '';
-          } else if (ch === '\x15') {
-            // Ctrl+U — 清空缓冲区
-            inputBufferRef.current = '';
-          } else if (code >= 32) {
-            // 可打印字符（包括 Unicode）
-            inputBufferRef.current += ch;
-          }
-          // 其他控制字符忽略
-        }
-
-        onInput(data);
+        trackLocalInputRef.current?.(data);
+        onInputRef.current?.(data);
       });
 
-      // 选中自动复制到系统剪贴板
+      // 选中自动复制到系统剪贴板（防抖，避免拖选过程中高频 IPC）
       terminal.onSelectionChange(() => {
-        const selection = terminal.getSelection();
-        if (selection) {
-          void navigator.clipboard.writeText(selection).catch(() => {
-            // 静默失败（例如窗口失焦时可能无权限）
-          });
+        if (selectionCopyTimerRef.current !== null) {
+          window.clearTimeout(selectionCopyTimerRef.current);
         }
+        selectionCopyTimerRef.current = window.setTimeout(() => {
+          selectionCopyTimerRef.current = null;
+          const selection = terminal.getSelection();
+          if (selection) {
+            void writeText(selection).catch(() => {});
+          }
+        }, 200);
       });
 
       terminal.onResize(({ cols, rows }) => {
-        onResize(cols, rows);
+        onResizeRef.current?.(cols, rows);
       });
 
       const resizeObserver = new ResizeObserver(() => {
@@ -296,7 +443,7 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       });
       resizeObserver.observe(termRef.current);
 
-      setTimeout(() => {
+      const mountTimer = window.setTimeout(() => {
         scheduleFit(addon, terminal);
         focusTerminal();
       }, 50);
@@ -313,6 +460,11 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       return () => {
         themeObserver.disconnect();
         resizeObserver.disconnect();
+        window.clearTimeout(mountTimer);
+        if (selectionCopyTimerRef.current !== null) {
+          window.clearTimeout(selectionCopyTimerRef.current);
+          selectionCopyTimerRef.current = null;
+        }
         if (fitFrameRef.current !== null) {
           cancelAnimationFrame(fitFrameRef.current);
           fitFrameRef.current = null;
@@ -321,9 +473,15 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
           termInstance.current.dispose();
           termInstance.current = null;
         }
+        // 终端重建后历史输出需要重新回放
+        renderedChunkCountRef.current = 0;
+        lastSentSizeRef.current = null;
+        lastDroppedChunksRef.current = 0;
       };
     }
-  }, [onFontSizeChange, onInput, onResize]);
+    // Callbacks are read through refs so the terminal is created exactly once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const terminal = termInstance.current;
@@ -454,11 +612,20 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
     terminal.reset();
     applyTerminalTheme(terminal);
     renderedChunkCountRef.current = 0;
-    inputBufferRef.current = '';
-    skipNextCharCountRef.current = 0;
+    lastDroppedChunksRef.current = droppedChunks;
+    pendingInputRef.current = '';
+    shellIntegrationTrackerRef.current.reset();
 
     if (outputChunks.length > 0) {
-      terminal.write(outputChunks.join(''));
+      // 只写入最后 scrollback 行，避免 xterm 静默丢弃导致计数脱节
+      const maxChunks = scrollback + terminal.rows;
+      const startIdx = Math.max(0, outputChunks.length - maxChunks);
+      const chunksToWrite = outputChunks.slice(startIdx);
+      const joined = chunksToWrite.join('');
+      terminal.write(joined, () => {
+        // 重放历史输出时同样喂给 tracker，保持状态机与真实内容一致
+        shellIntegrationTrackerRef.current.processChunk(joined, terminal);
+      });
       renderedChunkCountRef.current = outputChunks.length;
     }
 
@@ -476,24 +643,49 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
     if (addon) {
       scheduleFit(addon, terminal);
     }
+  }, [isActive]);
+
+  useEffect(() => {
+    const terminal = termInstance.current;
+    if (!terminal || !isActive) {
+      return;
+    }
+
+    // When old chunks were trimmed from the head of the array, the local index
+    // of already-rendered chunks shifts — keep the rendered count aligned.
+    const droppedDelta = droppedChunks - lastDroppedChunksRef.current;
+    if (droppedDelta > 0) {
+      renderedChunkCountRef.current = Math.max(
+        0,
+        renderedChunkCountRef.current - droppedDelta,
+      );
+      lastDroppedChunksRef.current = droppedChunks;
+    }
 
     if (outputChunks.length <= renderedChunkCountRef.current) {
       return;
     }
 
     const nextChunks = outputChunks.slice(renderedChunkCountRef.current);
-    terminal.write(nextChunks.join(''));
+    const joined = nextChunks.join('');
+
+    // 关键点：必须在 write 的回调里再解析 OSC133 标记 / 读取 buffer，
+    // 确保这批数据已经真正渲染进 terminal 内部 buffer，否则读到的是
+    // 写入前的旧内容，会导致取到上一条命令或空行。
+    terminal.write(joined, () => {
+      shellIntegrationTrackerRef.current.processChunk(joined, terminal);
+    });
     renderedChunkCountRef.current = outputChunks.length;
-  }, [isActive, outputChunks]);
+  }, [isActive, outputChunks, droppedChunks]);
 
   const contextMenuActions = useMemo<ContextMenuAction[]>(() => [
     {
       label: '复制',
       icon: <FaCopy />,
-      action: async () => {
+      action: () => {
         const selection = termInstance.current?.getSelection();
         if (selection) {
-          await navigator.clipboard.writeText(selection);
+          void writeText(selection).catch(() => {});
         }
         focusTerminal();
       },
@@ -501,10 +693,14 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
     {
       label: '粘贴',
       icon: <FaPaste />,
-      action: async () => {
-        const text = await navigator.clipboard.readText();
-        if (text) {
-          onInput(text);
+      action: () => {
+        const terminal = termInstance.current;
+        if (terminal) {
+          void readText().then(text => {
+            if (text) {
+              terminal.paste(text);
+            }
+          }).catch(() => {});
         }
         focusTerminal();
       },

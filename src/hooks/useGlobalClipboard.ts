@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { isInsideTerminal, isEditableElement, getCopyTextFromTarget, insertTextIntoEditable } from "../utils/dom-helpers";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 export function useGlobalClipboard() {
   useEffect(() => {
@@ -30,7 +31,7 @@ export function useGlobalClipboard() {
         }
 
         event.preventDefault();
-        void navigator.clipboard.writeText(text).catch(error => {
+        void writeText(text).catch(error => {
           console.error("快捷键复制失败:", error);
         });
         return;
@@ -38,7 +39,7 @@ export function useGlobalClipboard() {
 
       if (key === "v" && isEditableElement(target)) {
         event.preventDefault();
-        void navigator.clipboard.readText()
+        void readText()
           .then(text => {
             insertTextIntoEditable(target, text);
           })

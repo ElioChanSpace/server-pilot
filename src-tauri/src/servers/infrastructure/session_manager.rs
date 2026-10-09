@@ -4,8 +4,8 @@ use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySyste
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -25,7 +25,9 @@ pub struct Session {
     pub session_id: String,
     pub server_id: String,
     pub pty: Box<dyn MasterPty + Send>,
-    pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    /// Ordered, non-blocking write queue: the main thread never blocks on a
+    /// stalled PTY while keystrokes keep their order (single writer thread).
+    pub write_tx: std::sync::mpsc::Sender<Vec<u8>>,
     pub child_process: Box<dyn portable_pty::Child + Send>,
     pub alive: Arc<AtomicBool>,
     pub was_connected: bool,
@@ -70,12 +72,7 @@ struct HostKeyPromptEvent {
     fingerprint: String,
 }
 
-fn emit_terminal_session_status(
-    window: &Window,
-    session_id: &str,
-    server_id: &str,
-    status: &str,
-) {
+fn emit_terminal_session_status(window: &Window, session_id: &str, server_id: &str, status: &str) {
     if let Err(err) = window.emit(
         "terminal-session-status-changed",
         TerminalSessionStatusEvent {
@@ -175,7 +172,18 @@ fn strip_ansi_sequences(input: &str) -> String {
     output
 }
 
-fn should_auto_fill_ssh_password(output_tail: &str) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SshPromptKind {
+    LoginPassword,
+    KeyPassphrase,
+}
+
+/// Classify interactive prompts that may accept saved credentials.
+///
+/// Only SSH login prompts are matched on purpose: generic prompts like
+/// "New password:" (passwd), "Enter password:" (mysql) or gpg prompts must
+/// never receive the saved SSH credentials.
+fn classify_ssh_prompt(output_tail: &str) -> Option<SshPromptKind> {
     let sanitized = strip_ansi_sequences(output_tail).to_ascii_lowercase();
     let prompt_line = sanitized
         .rsplit(|ch| ch == '\n' || ch == '\r')
@@ -184,15 +192,24 @@ fn should_auto_fill_ssh_password(output_tail: &str) -> bool {
         .trim();
 
     if prompt_line.contains("sudo") {
-        return false;
+        return None;
     }
 
-    let is_password_prompt = prompt_line.ends_with("password:")
-        && (prompt_line == "password:"
-            || prompt_line.contains("'s password:")
-            || prompt_line.ends_with(" password:"));
-    let is_passphrase_prompt = prompt_line.starts_with("enter passphrase for key");
-    is_password_prompt || is_passphrase_prompt
+    if prompt_line.starts_with("enter passphrase for key") {
+        return Some(SshPromptKind::KeyPassphrase);
+    }
+
+    // `user@host's password:` and bare `password:` (keyboard-interactive)
+    if prompt_line == "password:" || prompt_line.ends_with("'s password:") {
+        return Some(SshPromptKind::LoginPassword);
+    }
+
+    None
+}
+
+#[cfg(test)]
+fn should_auto_fill_ssh_password(output_tail: &str) -> bool {
+    classify_ssh_prompt(output_tail).is_some()
 }
 
 fn should_accept_host_key_prompt(output_tail: &str) -> bool {
@@ -231,6 +248,9 @@ fn extract_host_key_fingerprint(buffer: &str) -> String {
 
 fn append_session_output(session: &Arc<Mutex<Session>>, data: &str) {
     if let Ok(mut guard) = session.lock() {
+        // Receiving output counts as activity so long-running commands
+        // (tail -f, builds, migrations) are not killed by the idle timeout.
+        guard.last_activity_at = Instant::now();
         guard.last_output.push_str(data);
         if guard.last_output.len() > 8192 {
             let keep_from = guard.last_output.len() - 8192;
@@ -302,25 +322,19 @@ fn process_pending_cwd_output(
     let mut display = String::new();
 
     loop {
-        if let Some(command_index) = pending_request
-            .buffer
-            .find(&pending_request.command_text)
-        {
+        if let Some(command_index) = pending_request.buffer.find(&pending_request.command_text) {
             display.push_str(&pending_request.buffer[..command_index]);
             let command_end = command_index + pending_request.command_text.len();
             pending_request.buffer.drain(..command_end);
             continue;
         }
 
-        if let Some(start_index) = pending_request
-            .buffer
-            .find(&pending_request.marker_start)
-        {
+        if let Some(start_index) = pending_request.buffer.find(&pending_request.marker_start) {
             display.push_str(&pending_request.buffer[..start_index]);
 
             let marker_value_start = start_index + pending_request.marker_start.len();
-            if let Some(end_rel) = pending_request.buffer[marker_value_start..]
-                .find(&pending_request.marker_end)
+            if let Some(end_rel) =
+                pending_request.buffer[marker_value_start..].find(&pending_request.marker_end)
             {
                 let marker_value_end = marker_value_start + end_rel;
                 let cwd = pending_request.buffer[marker_value_start..marker_value_end]
@@ -341,16 +355,15 @@ fn process_pending_cwd_output(
                 pending_request.buffer.clear();
 
                 if cwd.is_empty() {
-                    return (
-                        display,
-                        Some(Err("无法读取当前终端目录".to_string())),
-                    );
+                    return (display, Some(Err("无法读取当前终端目录".to_string())));
                 }
 
                 return (display, Some(Ok(cwd)));
             }
 
-            display.push_str(&pending_request.buffer[..start_index]);
+            // End marker not arrived yet: keep only the tail in the buffer. The
+            // pre-marker content was already appended to `display` above and must
+            // not be appended twice.
             pending_request.buffer.drain(..start_index);
             break;
         }
@@ -415,11 +428,28 @@ pub fn start_session(
         pair.master.take_writer().map_err(|e| e.to_string())?,
     ));
 
+    // Single dedicated writer thread per session: writes are queued in order
+    // and a slow/stalled PTY can never block the calling thread (UI).
+    let (write_tx, write_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let writer_for_thread = writer.clone();
+    std::thread::spawn(move || {
+        while let Ok(bytes) = write_rx.recv() {
+            match writer_for_thread.lock() {
+                Ok(mut writer_guard) => {
+                    if writer_guard.write_all(&bytes).and_then(|_| writer_guard.flush()).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
     let session = Arc::new(Mutex::new(Session {
         session_id: session_id.clone(),
         server_id: server_id.clone(),
         pty: pair.master,
-        writer: writer.clone(),
+        write_tx: write_tx.clone(),
         child_process: child,
         alive: Arc::new(AtomicBool::new(true)),
         was_connected: false,
@@ -433,7 +463,7 @@ pub fn start_session(
     session_manager_state
         .0
         .lock()
-        .unwrap()
+        .map_err(|err| err.to_string())?
         .insert(session_id.clone(), session.clone());
 
     emit_terminal_session_status(&window, &session_id, &server_id, "connecting");
@@ -442,12 +472,11 @@ pub fn start_session(
     let reader_window = window.clone();
     let reader_server_id = server_id.clone();
     let reader_session_id = session_id.clone();
-    let reader_writer = writer.clone();
+    let reader_write_tx = write_tx.clone();
     let reader_app_data = app_state.data.clone();
     let reader_session = session.clone();
-    let auto_password = password
-        .or(key_passphrase)
-        .filter(|password| !password.is_empty());
+    let auto_password = password.filter(|password| !password.is_empty());
+    let auto_passphrase = key_passphrase.filter(|passphrase| !passphrase.is_empty());
     tauri::async_runtime::spawn_blocking(move || {
         let mut reader = reader;
         let mut buf = [0u8; 8192];
@@ -468,21 +497,37 @@ pub fn start_session(
                         remainder.clear();
                         &combined
                     };
-                    // Find the last valid UTF-8 boundary
-                    let valid_up_to = match std::str::from_utf8(raw) {
-                        Ok(_) => raw.len(),
-                        Err(e) => e.valid_up_to(),
+                    // Decode UTF-8: only an *incomplete* trailing sequence may be carried
+                    // over to the next read. Invalid bytes must be replaced right away,
+                    // otherwise they poison `remainder` and freeze output forever.
+                    let mut data = match std::str::from_utf8(raw) {
+                        Ok(s) => {
+                            remainder.clear();
+                            s.to_string()
+                        }
+                        Err(err) => match err.error_len() {
+                            Some(_) => {
+                                // Truly invalid byte sequence: lossy-convert everything.
+                                remainder.clear();
+                                String::from_utf8_lossy(raw).to_string()
+                            }
+                            None => {
+                                // Incomplete sequence at the end: cache at most 3 bytes.
+                                let valid_up_to = err.valid_up_to();
+                                let data =
+                                    String::from_utf8_lossy(&raw[..valid_up_to]).to_string();
+                                remainder.clear();
+                                remainder.extend_from_slice(&raw[valid_up_to..]);
+                                data
+                            }
+                        },
                     };
-                    let mut data = String::from_utf8_lossy(&raw[..valid_up_to]).to_string();
-                    // Save any remaining incomplete bytes for next read
-                    if valid_up_to < raw.len() {
-                        remainder.extend_from_slice(&raw[valid_up_to..]);
-                    }
                     append_session_output(&reader_session, &data);
                     password_prompt_buffer.push_str(&data);
                     trim_prompt_buffer(&mut password_prompt_buffer);
 
-                    if !host_key_confirmed && should_accept_host_key_prompt(&password_prompt_buffer) {
+                    if !host_key_confirmed && should_accept_host_key_prompt(&password_prompt_buffer)
+                    {
                         let fingerprint = extract_host_key_fingerprint(&password_prompt_buffer);
                         let (responder, receiver) = mpsc::channel();
                         if let Ok(mut session_guard) = reader_session.lock() {
@@ -500,26 +545,35 @@ pub fn start_session(
 
                         // 独立线程等待用户响应并写入 PTY，避免 reader 阻塞在 read() 时
                         // 无法处理指纹确认结果（否则首次连接会卡死）。
-                        let response_writer = reader_writer.clone();
+                        let response_writer = reader_write_tx.clone();
                         let response_session = reader_session.clone();
-                        thread::spawn(move || {
-                            match receiver.recv() {
-                                Ok(accept) => {
-                                    if let Ok(mut writer) = response_writer.lock() {
-                                        let _ = writer.write_all(if accept { b"yes\r" } else { b"no\r" });
-                                        let _ = writer.flush();
-                                    }
-                                    if let Ok(mut session_guard) = response_session.lock() {
-                                        session_guard.pending_host_key = None;
-                                    }
+                        thread::spawn(move || match receiver.recv() {
+                            Ok(accept) => {
+                                let _ = response_writer
+                                    .send(if accept { b"yes\r".to_vec() } else { b"no\r".to_vec() });
+                                if let Ok(mut session_guard) = response_session.lock() {
+                                    session_guard.pending_host_key = None;
                                 }
-                                Err(_) => {}
                             }
+                            Err(_) => {}
                         });
                     }
 
-                    if !password_sent {
-                        if let Some(password) = auto_password.as_deref() {
+                    // Auto-fill saved credentials only during the login phase and
+                    // only for the matching prompt type: a key passphrase prompt must
+                    // never receive the login password and vice versa.
+                    if !password_sent && !connected_emitted {
+                        let prompt_kind = classify_ssh_prompt(&password_prompt_buffer);
+                        let credential = match prompt_kind {
+                            Some(SshPromptKind::LoginPassword) => {
+                                auto_password.as_deref().or(auto_passphrase.as_deref())
+                            }
+                            Some(SshPromptKind::KeyPassphrase) => {
+                                auto_passphrase.as_deref().or(auto_password.as_deref())
+                            }
+                            None => None,
+                        };
+                        if let Some(password) = credential {
                             let host_key_resolved = if host_key_confirmed {
                                 reader_session
                                     .lock()
@@ -528,31 +582,16 @@ pub fn start_session(
                             } else {
                                 true
                             };
-                            if host_key_resolved && should_auto_fill_ssh_password(&password_prompt_buffer) {
-                                match reader_writer.lock() {
-                                    Ok(mut writer) => {
-                                        if let Err(err) = writer.write_all(password.as_bytes()) {
-                                            warn!(
-                                                "Failed to write saved SSH password for {}: {}",
-                                                reader_server_id, err
-                                            );
-                                        } else if let Err(err) = writer.write_all(b"\r") {
-                                            warn!(
-                                                "Failed to submit saved SSH password for {}: {}",
-                                                reader_server_id, err
-                                            );
-                                        } else if let Err(err) = writer.flush() {
-                                            warn!(
-                                                "Failed to flush saved SSH password for {}: {}",
-                                                reader_server_id, err
-                                            );
-                                        } else {
-                                            password_sent = true;
-                                        }
+                            if host_key_resolved {
+                                let mut payload = password.as_bytes().to_vec();
+                                payload.push(b'\r');
+                                match reader_write_tx.send(payload) {
+                                    Ok(()) => {
+                                        password_sent = true;
                                     }
                                     Err(err) => {
                                         warn!(
-                                            "Failed to lock PTY writer for {}: {}",
+                                            "Failed to queue saved SSH password for {}: {}",
                                             reader_server_id, err
                                         );
                                     }
@@ -563,6 +602,12 @@ pub fn start_session(
 
                     if !connected_emitted {
                         if should_mark_session_connected(&password_prompt_buffer) {
+                            // Lock ordering: never hold app_data and session locks at the
+                            // same time (the monitor thread reads idle timeout via app_data
+                            // while holding the session lock).
+                            if let Ok(mut session_guard) = reader_session.lock() {
+                                session_guard.was_connected = true;
+                            }
                             match reader_app_data.lock() {
                                 Ok(mut app_data) => {
                                     if let Some(server) = app_data
@@ -576,9 +621,6 @@ pub fn start_session(
                                             &reader_server_id,
                                             "connected",
                                         );
-                                        if let Ok(mut session_guard) = reader_session.lock() {
-                                            session_guard.was_connected = true;
-                                        }
                                         server.status = "connected".into();
                                         if let Err(err) = reader_window
                                             .emit("server-status-changed", server.clone())
@@ -604,7 +646,9 @@ pub fn start_session(
 
                     let (display_data, cwd_response) = match reader_session.lock() {
                         Ok(mut session_guard) => {
-                            if let Some(pending_request) = session_guard.pending_cwd_request.as_mut() {
+                            if let Some(pending_request) =
+                                session_guard.pending_cwd_request.as_mut()
+                            {
                                 process_pending_cwd_output(pending_request, &data)
                             } else {
                                 (std::mem::take(&mut data), None)
@@ -622,7 +666,8 @@ pub fn start_session(
                     if let Some(cwd_result) = cwd_response {
                         match reader_session.lock() {
                             Ok(mut session_guard) => {
-                                if let Some(pending_request) = session_guard.pending_cwd_request.take()
+                                if let Some(pending_request) =
+                                    session_guard.pending_cwd_request.take()
                                 {
                                     let _ = pending_request.responder.send(cwd_result);
                                 }
@@ -640,15 +685,19 @@ pub fn start_session(
                         continue;
                     }
 
-                    if let Err(err) = reader_window
-                        .emit("pty-data", (reader_session_id.clone(), display_data.clone()))
-                    {
+                    if let Err(err) = reader_window.emit(
+                        "pty-data",
+                        (reader_session_id.clone(), display_data.clone()),
+                    ) {
                         warn!("Failed to emit PTY data for {}: {}", reader_session_id, err);
                     }
                 }
                 Ok(_) => break,
                 Err(err) => {
-                    warn!("Failed to read PTY output for {}: {}", reader_session_id, err);
+                    warn!(
+                        "Failed to read PTY output for {}: {}",
+                        reader_session_id, err
+                    );
                     break;
                 }
             }
@@ -665,6 +714,9 @@ pub fn start_session(
         let mut close_reason: Option<String> = None;
         let mut should_remove = true;
         loop {
+            // Read the idle timeout before taking the session lock to preserve a
+            // global lock ordering of app_data -> session (see reader thread).
+            let idle_timeout = resolve_idle_timeout(&monitor_app_data);
             let child_status = {
                 let mut session_guard = match session.lock() {
                     Ok(guard) => guard,
@@ -679,7 +731,6 @@ pub fn start_session(
                     break;
                 }
 
-                let idle_timeout = resolve_idle_timeout(&monitor_app_data);
                 if idle_timeout != Duration::MAX
                     && session_guard.last_activity_at.elapsed() >= idle_timeout
                 {
@@ -731,21 +782,32 @@ pub fn start_session(
 
         // 清理工作
         let should_mark_disconnected = {
-            let mut sessions = monitor_session_manager_state.lock().unwrap();
+            let mut sessions = match monitor_session_manager_state.lock() {
+                Ok(guard) => guard,
+                Err(err) => {
+                    warn!("Session manager lock poisoned during cleanup: {}", err);
+                    return;
+                }
+            };
             sessions.remove(&monitor_session_id);
             !sessions.values().any(|session| {
                 session
                     .lock()
                     .map(|guard| {
-                        guard.server_id == monitor_server_id
-                            && guard.alive.load(Ordering::SeqCst)
+                        guard.server_id == monitor_server_id && guard.alive.load(Ordering::SeqCst)
                     })
                     .unwrap_or(false)
             })
         };
 
         if should_mark_disconnected {
-            let mut app_data = monitor_app_data.lock().unwrap();
+            let mut app_data = match monitor_app_data.lock() {
+                Ok(guard) => guard,
+                Err(err) => {
+                    warn!("App data lock poisoned during cleanup: {}", err);
+                    return;
+                }
+            };
             if let Some(s) = app_data
                 .servers
                 .iter_mut()
@@ -809,19 +871,12 @@ pub fn write_to_session(
         .cloned()
         .ok_or_else(|| format!("No active PTY session for session {}", session_id))?;
 
-    let writer = {
-        let session_guard = session.lock().map_err(|e| e.to_string())?;
-        session_guard.writer.clone()
-    };
-
-    let mut writer_guard = writer.lock().map_err(|e| e.to_string())?;
-    writer_guard
-        .write_all(data.as_bytes())
-        .map_err(|e| e.to_string())?;
-    writer_guard.flush().map_err(|e| e.to_string())?;
-    if let Ok(mut session_guard) = session.lock() {
-        session_guard.last_activity_at = Instant::now();
-    }
+    let mut session_guard = session.lock().map_err(|e| e.to_string())?;
+    session_guard
+        .write_tx
+        .send(data.into_bytes())
+        .map_err(|e| format!("PTY writer terminated: {}", e))?;
+    session_guard.last_activity_at = Instant::now();
     Ok(())
 }
 
@@ -864,11 +919,21 @@ mod tests {
 
     #[test]
     fn auto_fill_matches_password_and_passphrase_prompts() {
+        assert_eq!(
+            classify_ssh_prompt("user@host's password: "),
+            Some(SshPromptKind::LoginPassword)
+        );
+        assert_eq!(
+            classify_ssh_prompt("Enter passphrase for key '/root/.ssh/id_ed25519': "),
+            Some(SshPromptKind::KeyPassphrase)
+        );
+        assert_eq!(classify_ssh_prompt("password:"), Some(SshPromptKind::LoginPassword));
         assert!(should_auto_fill_ssh_password("user@host's password: "));
-        assert!(should_auto_fill_ssh_password(
-            "Enter passphrase for key '/root/.ssh/id_ed25519': "
-        ));
         assert!(!should_auto_fill_ssh_password("sudo password: "));
+        // Generic non-SSH prompts must never receive saved credentials
+        assert!(!should_auto_fill_ssh_password("New password: "));
+        assert!(!should_auto_fill_ssh_password("Retype new password: "));
+        assert!(!should_auto_fill_ssh_password("Enter password: "));
     }
 
     #[test]
@@ -893,7 +958,7 @@ pub fn read_session_current_directory(
         .cloned()
         .ok_or_else(|| format!("No active PTY session for session {}", session_id))?;
 
-    let (command_text, responder_rx, writer) = {
+    let (command_text, responder_rx, write_tx) = {
         let mut session_guard = session.lock().map_err(|e| e.to_string())?;
         if session_guard.pending_cwd_request.is_some() {
             return Err("正在读取当前终端目录，请稍后重试".to_string());
@@ -902,10 +967,7 @@ pub fn read_session_current_directory(
         let request_id = Uuid::new_v4().to_string();
         let marker_start = format!("__SERVER_PILOT_CWD_START_{}__", request_id);
         let marker_end = format!("__SERVER_PILOT_CWD_END_{}__", request_id);
-        let command_text = format!(
-            "printf '{}%s{}' \"$PWD\"",
-            marker_start, marker_end
-        );
+        let command_text = format!("printf '{}%s{}' \"$PWD\"", marker_start, marker_end);
         let (responder, receiver) = mpsc::channel();
         session_guard.pending_cwd_request = Some(PendingCwdRequest {
             command_text: command_text.clone(),
@@ -915,16 +977,15 @@ pub fn read_session_current_directory(
             responder,
         });
 
-        (command_text, receiver, session_guard.writer.clone())
+        (command_text, receiver, session_guard.write_tx.clone())
     };
 
     {
-        let mut writer_guard = writer.lock().map_err(|e| e.to_string())?;
-        writer_guard
-            .write_all(command_text.as_bytes())
-            .map_err(|e| e.to_string())?;
-        writer_guard.write_all(b"\r").map_err(|e| e.to_string())?;
-        writer_guard.flush().map_err(|e| e.to_string())?;
+        let mut payload = command_text.into_bytes();
+        payload.push(b'\r');
+        write_tx
+            .send(payload)
+            .map_err(|e| format!("PTY writer terminated: {}", e))?;
     }
 
     match responder_rx.recv_timeout(Duration::from_secs(3)) {
@@ -973,8 +1034,15 @@ pub fn close_session(
     session_manager_state: State<'_, SessionManagerState>,
     session_id: String,
 ) -> Result<(), String> {
-    if let Some(session) = session_manager_state.0.lock().unwrap().get(&session_id).cloned() {
-        let mut session_guard = session.lock().unwrap();
+    let session = {
+        let sessions = session_manager_state
+            .0
+            .lock()
+            .map_err(|err| err.to_string())?;
+        sessions.get(&session_id).cloned()
+    };
+    if let Some(session) = session {
+        let mut session_guard = session.lock().map_err(|err| err.to_string())?;
         session_guard.alive.store(false, Ordering::SeqCst);
         session_guard.close_reason = Some("manual".to_string());
         session_guard.pending_host_key = None;
@@ -1023,7 +1091,10 @@ pub fn has_active_session_for_server(
     session_manager_state: &State<'_, SessionManagerState>,
     server_id: &str,
 ) -> Result<bool, String> {
-    let sessions = session_manager_state.0.lock().map_err(|err| err.to_string())?;
+    let sessions = session_manager_state
+        .0
+        .lock()
+        .map_err(|err| err.to_string())?;
     Ok(sessions.values().any(|session| {
         session
             .lock()

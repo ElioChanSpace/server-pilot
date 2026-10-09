@@ -78,7 +78,8 @@ fn detect_language(path: &str) -> &'static str {
         "lua" => "lua",
         "sql" => "sql",
         "md" | "markdown" => "markdown",
-        "ini" | "cfg" | "service" | "timer" | "socket" | "mount" | "automount" | "target" | "swap" | "path" => "ini",
+        "ini" | "cfg" | "service" | "timer" | "socket" | "mount" | "automount" | "target"
+        | "swap" | "path" => "ini",
         "env" => "shellscript",
         "dockerfile" => "dockerfile",
         "tf" | "hcl" => "terraform",
@@ -99,9 +100,19 @@ fn detect_language(path: &str) -> &'static str {
     }
 }
 
+fn syntax_set() -> &'static SyntaxSet {
+    static SYNTAX_SET: std::sync::OnceLock<SyntaxSet> = std::sync::OnceLock::new();
+    SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
+}
+
+fn theme_set() -> &'static ThemeSet {
+    static THEME_SET: std::sync::OnceLock<ThemeSet> = std::sync::OnceLock::new();
+    THEME_SET.get_or_init(ThemeSet::load_defaults)
+}
+
 fn highlight_to_html(code: &str, syntax_name: &str, theme_mode: &str) -> Result<String, String> {
-    let ss = SyntaxSet::load_defaults_newlines();
-    let ts = ThemeSet::load_defaults();
+    let ss = syntax_set();
+    let ts = theme_set();
 
     let syntax = ss
         .find_syntax_by_name(syntax_name)
@@ -128,9 +139,8 @@ fn highlight_to_html(code: &str, syntax_name: &str, theme_mode: &str) -> Result<
         let ranges = highlighter
             .highlight_line(line, &ss)
             .map_err(|err| format!("高亮失败: {}", err))?;
-        let line_html =
-            styled_line_to_highlighted_html(&ranges, IncludeBackground::No)
-                .map_err(|err| format!("HTML 转换失败: {}", err))?;
+        let line_html = styled_line_to_highlighted_html(&ranges, IncludeBackground::No)
+            .map_err(|err| format!("HTML 转换失败: {}", err))?;
         html.push_str(&line_html);
     }
 
@@ -154,12 +164,17 @@ pub async fn get_file_content(
     let theme_mode = theme_mode.unwrap_or_else(|| "dark".to_string());
 
     tauri::async_runtime::spawn_blocking(move || {
-        // Single SSH command: check size, then cat if within limit
+        // Single SSH command: check size, then cat if within limit.
+        // The size marker embeds a per-request random token so file content can
+        // never be mistaken for the marker.
+        let token = uuid::Uuid::new_v4().to_string();
+        let marker = format!("__SERVER_PILOT_TOO_LARGE_{}__", token);
         let cmd = format!(
             "SIZE=$(stat -c %s -- {p} 2>/dev/null || stat -f %z -- {p} 2>/dev/null); \
-             if [ \"$SIZE\" -gt {limit} ] 2>/dev/null; then echo \"__TOO_LARGE__$SIZE\"; else cat -- {p}; fi",
+             if [ \"$SIZE\" -gt {limit} ] 2>/dev/null; then echo \"{marker}$SIZE\"; else cat -- {p}; fi",
             p = shell_quote(&path),
             limit = EDITOR_FILE_SIZE_LIMIT,
+            marker = marker,
         );
         let output = ssh_client::run_ssh_exec_blocking(
             &connection,
@@ -167,9 +182,10 @@ pub async fn get_file_content(
             "read file content",
         )?;
 
-        // Check if file was too large
-        if let Some(size_str) = output.strip_prefix("__TOO_LARGE__") {
-            let size = size_str.trim().parse::<usize>().unwrap_or(0);
+        // Check if file was too large (marker only valid as the first line)
+        if let Some(rest) = output.strip_prefix(marker.as_str()) {
+            let size_line = rest.split('\n').next().unwrap_or("").trim();
+            let size = size_line.parse::<usize>().unwrap_or(0);
             return Err(format!(
                 "文件过大（{}），超过内嵌编辑器上限（512KB）。请使用外部编辑器打开。",
                 format_file_size(size)
@@ -229,17 +245,9 @@ pub async fn save_remote_file(
         // Use base64 encoding to safely transfer content through shell
         // This avoids issues with special characters, newlines, etc.
         let encoded = base64_encode(&content);
-        let write_cmd = format!(
-            "echo '{}' | base64 -d > {}",
-            encoded,
-            shell_quote(&path)
-        );
+        let write_cmd = format!("echo '{}' | base64 -d > {}", encoded, shell_quote(&path));
 
-        ssh_client::run_ssh_exec_blocking(
-            &connection,
-            &write_cmd,
-            "save file",
-        )?;
+        ssh_client::run_ssh_exec_blocking(&connection, &write_cmd, "save file")?;
 
         Ok(format!("已保存到 {}", path))
     })

@@ -48,13 +48,16 @@ export const CommandHistoryPanel: React.FC<CommandHistoryPanelProps> = ({
   const totalCount = selectedSessionId === 'all' ? commands.length : commands.filter(cmd => cmd.sessionId === selectedSessionId).length;
   const truncatedCount = totalCount - filteredCommands.length;
 
-  // 自动滚动到底部
+  // 自动滚动到底部 — 仅当用户已接近底部时，避免打断阅读
   useEffect(() => {
     if (filteredCommands.length > prevCountRef.current) {
       const el = scrollRef.current;
       if (el) {
         requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight;
+          const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+          if (nearBottom) {
+            el.scrollTop = el.scrollHeight;
+          }
         });
       }
     }

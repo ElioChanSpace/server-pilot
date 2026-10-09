@@ -12,6 +12,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
 tokio = { version = "1", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -32,6 +33,7 @@ russh = "0.44"
 russh-sftp = "2.4"
 async-trait = "0.1"
 sysinfo = "0.30"
+tauri-plugin-clipboard-manager = "2.3.3"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem

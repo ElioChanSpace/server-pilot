@@ -92,7 +92,7 @@ const normalizeRemotePath = (path: string) => {
 
 /* ── Component ── */
 
-export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, server, onClose, onOpenHistory }) => {
+const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, server, onClose, onOpenHistory }) => {
   /* ── State ── */
   const [currentPath, setCurrentPath] = useState("/");
   const [parentPath, setParentPath] = useState<string | null>(null);
@@ -102,6 +102,17 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   const [selected, setSelected] = useState<string | null>(null);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, entry: null });
+
+  // Refs so the long-lived event listeners never need to be re-registered
+  // when the current directory or server object identity changes.
+  const currentPathRef = useRef(currentPath);
+  useEffect(() => {
+    currentPathRef.current = currentPath;
+  }, [currentPath]);
+  const serverRef = useRef(server);
+  useEffect(() => {
+    serverRef.current = server;
+  }, [server]);
 
   // Inline forms
   const [showNewDir, setShowNewDir] = useState(false);
@@ -217,9 +228,18 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
   useEffect(() => {
     if (!isOpen || !server) return;
     let mounted = true;
+    const cleanupTimers: number[] = [];
     const unlistenProgress = listen<FileTransferProgressEvent>("file-transfer-progress", (event) => {
       if (!mounted) return;
       const p = event.payload;
+      if (p.status === "completed" || p.status === "failed") {
+        // Schedule outside the setState updater — updaters must be pure and
+        // run twice under StrictMode, which would register duplicate timers.
+        const timer = window.setTimeout(() => {
+          setTransfers(cur => { const n = new Map(cur); n.delete(p.transferId); return n; });
+        }, 3000);
+        cleanupTimers.push(timer);
+      }
       setTransfers(prev => {
         const next = new Map(prev);
         next.set(p.transferId, {
@@ -227,26 +247,22 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
           status: p.status,
           percent: p.progressPercent,
         });
-        if (p.status === "completed" || p.status === "failed") {
-          setTimeout(() => {
-            setTransfers(cur => { const n = new Map(cur); n.delete(p.transferId); return n; });
-          }, 3000);
-        }
         return next;
       });
     });
     const unlistenEditorSave = listen<{ serverId: string; filePath: string }>("editor-file-saved", (event) => {
       if (!mounted) return;
-      if (event.payload.serverId === server.id) {
-        void loadDirectory(currentPath);
+      if (event.payload.serverId === serverRef.current?.id) {
+        void loadDirectory(currentPathRef.current);
       }
     });
     return () => {
       mounted = false;
+      cleanupTimers.forEach(timer => window.clearTimeout(timer));
       void unlistenProgress.then(fn => fn());
       void unlistenEditorSave.then(fn => fn());
     };
-  }, [isOpen, server, currentPath]);
+  }, [isOpen, server?.id]);
 
   /* ── Context menu dismiss ── */
   useEffect(() => {
@@ -300,7 +316,9 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
       const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       try {
         await invoke<FileTransferResult>("upload_file_to_server", { id: server.id, localPath, remotePath, transferId });
-      } catch { /* tracked via events */ }
+      } catch (err) {
+        setError(getErrorMessage(err));
+      }
     }
     loadDirectory(currentPath);
   };
@@ -314,7 +332,9 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       await invoke<FileTransferResult>("upload_directory_to_server", { id: server.id, localPath: selected, remotePath, transferId });
-    } catch { /* tracked via events */ }
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
     loadDirectory(currentPath);
   };
 
@@ -325,7 +345,9 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       await invoke<FileTransferResult>("download_file_from_server", { id: server.id, remotePath: entry.path, localPath: savePath, transferId });
-    } catch { /* tracked via events */ }
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
   };
 
   const handleCreateDir = async () => {
@@ -693,3 +715,5 @@ export const FileTransferTray: React.FC<FileTransferTrayProps> = ({ isOpen, serv
     </div>
   );
 };
+
+export const FileTransferTray = React.memo(FileTransferTrayComponent);

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { FaKey, FaCopy, FaPlus, FaSync } from "react-icons/fa";
 import styles from "./SshKeyManager.module.css";
 
@@ -69,7 +70,7 @@ export const SshKeyManager: React.FC<SshKeyManagerProps> = ({ onClose, onKeySele
 
   const handleCopyPublicKey = async (publicKey: string, index: number) => {
     try {
-      await navigator.clipboard.writeText(publicKey);
+      await writeText(publicKey);
       setCopiedIndex(index);
       setTimeout(() => setCopiedIndex(null), 2000);
     } catch (err) {

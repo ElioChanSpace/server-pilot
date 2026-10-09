@@ -17,8 +17,7 @@ fn ssh_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("无法获取用户主目录")?;
     let ssh_dir = home.join(".ssh");
     if !ssh_dir.exists() {
-        fs::create_dir_all(&ssh_dir)
-            .map_err(|err| format!("创建 .ssh 目录失败: {err}"))?;
+        fs::create_dir_all(&ssh_dir).map_err(|err| format!("创建 .ssh 目录失败: {err}"))?;
         // Set permissions to 700
         #[cfg(unix)]
         {
@@ -30,7 +29,7 @@ fn ssh_dir() -> Result<PathBuf, String> {
     Ok(ssh_dir)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn generate_ssh_key(
     key_type: Option<String>,
     comment: Option<String>,
@@ -84,8 +83,8 @@ pub fn generate_ssh_key(
             .map_err(|err| format!("设置公钥权限失败: {err}"))?;
     }
 
-    let public_key = fs::read_to_string(&public_key_path)
-        .map_err(|err| format!("读取公钥文件失败: {err}"))?;
+    let public_key =
+        fs::read_to_string(&public_key_path).map_err(|err| format!("读取公钥文件失败: {err}"))?;
 
     // Get fingerprint
     let fp_output = Command::new("ssh-keygen")
@@ -95,7 +94,9 @@ pub fn generate_ssh_key(
         .map_err(|err| format!("获取指纹失败: {err}"))?;
 
     let fingerprint = if fp_output.status.success() {
-        String::from_utf8_lossy(&fp_output.stdout).trim().to_string()
+        String::from_utf8_lossy(&fp_output.stdout)
+            .trim()
+            .to_string()
     } else {
         "无法获取指纹".to_string()
     };
@@ -109,7 +110,7 @@ pub fn generate_ssh_key(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_ssh_keys() -> Result<Vec<SshKeyPair>, String> {
     let ssh_dir = ssh_dir()?;
     let mut keys = Vec::new();
@@ -148,7 +149,7 @@ pub fn list_ssh_keys() -> Result<Vec<SshKeyPair>, String> {
     Ok(keys)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_default_ssh_key_path() -> Result<Option<String>, String> {
     let ssh_dir = ssh_dir()?;
     let key_types = ["ed25519", "rsa", "ecdsa"];

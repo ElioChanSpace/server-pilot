@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { FaSave, FaSpinner, FaUndo, FaEdit, FaTimes } from "react-icons/fa";
 import { getInitialThemeId, getThemeMode } from "../utils/theme-helpers";
 import styles from "./RemoteFileEditor.module.css";
@@ -139,7 +140,14 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originalContentRef = useRef<string>("");
+  // Always holds the latest editor content (including during an in-flight save).
+  const contentRef = useRef<string>("");
   const mountedRef = useRef(true);
+
+  const applyContent = useCallback((value: string) => {
+    contentRef.current = value;
+    setContent(value);
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -166,7 +174,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       });
 
       if (!mountedRef.current) return;
-      setContent(result.raw);
+      applyContent(result.raw);
       setHighlightedHtml(result.html);
       setLanguage(result.language);
       setLineCount(result.lineCount);
@@ -189,9 +197,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
   // Redraw canvas line numbers when lineCount changes
   useEffect(() => {
-    const t0 = performance.now();
     drawLineNumbers();
-    console.log("[Editor] drawLineNumbers (lineCount:", lineCount, ") took", (performance.now() - t0).toFixed(1), "ms");
   }, [lineCount, drawLineNumbers]);
 
   // Debounced re-highlight
@@ -230,7 +236,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
   const handleInput = useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       const value = event.target.value;
-      setContent(value);
+      applyContent(value);
       setIsDirty(value !== originalContentRef.current);
       setLineCount(value.split("\n").length);
       scheduleHighlight(value, language);
@@ -277,17 +283,21 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
   // Save file
   const handleSave = useCallback(async () => {
+    // Snapshot the *latest* content so typing during the save is never lost.
+    const snapshot = contentRef.current;
     setSaveStatus("saving");
     void invoke("log_frontend_action", { module: "Editor", message: `保存文件: ${filePath}` });
     try {
       await invoke<string>("save_remote_file", {
         serverId,
         path: filePath,
-        content,
+        content: snapshot,
       });
       if (!mountedRef.current) return;
-      originalContentRef.current = content;
-      setIsDirty(false);
+      originalContentRef.current = snapshot;
+      // The user may have kept typing while saving — only clear the dirty flag
+      // when the editor still matches what was written to disk.
+      setIsDirty(contentRef.current !== snapshot);
       setSaveStatus("saved");
       onSaved?.();
       void emit("editor-file-saved", { serverId, filePath });
@@ -303,17 +313,35 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => { if (mountedRef.current) setSaveStatus("idle"); }, 3000);
     }
-  }, [serverId, filePath, content, onSaved]);
+  }, [serverId, filePath, onSaved]);
 
   // Reset to original content
   const handleReset = useCallback(() => {
     const original = originalContentRef.current;
-    setContent(original);
+    applyContent(original);
     setIsDirty(false);
     setLineCount(original.split("\n").length);
     scheduleHighlight(original, language);
     void invoke("log_frontend_action", { module: "Editor", message: `重置内容: ${filePath}` });
-  }, [language, scheduleHighlight, filePath]);
+  }, [language, scheduleHighlight, filePath, applyContent]);
+
+  // Close the window, but never silently drop unsaved modifications.
+  const requestClose = useCallback(async () => {
+    if (saveStatus === "saving") {
+      return;
+    }
+    if (contentRef.current !== originalContentRef.current) {
+      const confirmed = await confirm(
+        "文件有未保存的修改，确定要关闭并丢弃这些修改吗？",
+        { title: "未保存的修改", kind: "warning", okLabel: "丢弃并关闭", cancelLabel: "取消" },
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    void invoke("log_frontend_action", { module: "Editor", message: `关闭编辑器: ${filePath}` });
+    await onClose();
+  }, [saveStatus, onClose, filePath]);
 
   // Toggle edit mode — only flips isReadOnly, no DOM rebuild
   const handleToggleEdit = useCallback(() => {
@@ -354,13 +382,13 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
 
       if (event.key === "Escape") {
         event.preventDefault();
-        void onClose();
+        void requestClose();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDirty, saveStatus, handleSave, onClose]);
+  }, [isDirty, saveStatus, handleSave, requestClose]);
 
   // Handle tab key for indentation
   const handleKeyDown = useCallback(
@@ -372,7 +400,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
         const end = textarea.selectionEnd;
         const value = textarea.value;
         const newValue = value.substring(0, start) + "\t" + value.substring(end);
-        setContent(newValue);
+        applyContent(newValue);
         setIsDirty(newValue !== originalContentRef.current);
         scheduleHighlight(newValue, language);
 
@@ -416,13 +444,10 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
     if (e.target instanceof HTMLButtonElement || e.target instanceof SVGElement) {
       return;
     }
-    const t0 = performance.now();
-    console.log("[Editor] startDragging begin");
     try {
       await getCurrentWindow().startDragging();
-      console.log("[Editor] startDragging done in", (performance.now() - t0).toFixed(1), "ms");
     } catch (err) {
-      console.error("[Editor] startDragging failed after", (performance.now() - t0).toFixed(1), "ms:", err);
+      console.error("[Editor] startDragging failed:", err);
     }
   }, []);
 
@@ -474,8 +499,7 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
             type="button"
             className={styles.closeButton}
             onClick={() => {
-              void invoke("log_frontend_action", { module: "Editor", message: `关闭编辑器: ${filePath}` });
-              void onClose();
+              void requestClose();
             }}
             title="关闭 (ESC)"
           >

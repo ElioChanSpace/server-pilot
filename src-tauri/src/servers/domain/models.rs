@@ -100,6 +100,37 @@ impl Category {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandRecord {
+    pub id: String,
+    pub session_id: String,
+    pub display_id: String,
+    pub server_id: String,
+    pub server_name: String,
+    pub command: String,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferRecord {
+    pub id: String,
+    pub direction: String,
+    pub file_name: String,
+    pub local_path: String,
+    pub remote_path: String,
+    pub server_name: String,
+    pub total_bytes: u64,
+    pub transferred_bytes: u64,
+    pub average_speed: f64,
+    pub started_at: u64,
+    pub completed_at: u64,
+    pub duration: u64,
+    pub status: String,
+    pub error: Option<String>,
+}
+
 fn default_terminal_idle_disconnect_enabled() -> bool {
     true
 }
@@ -179,6 +210,8 @@ pub struct AppData {
     pub settings: AppSettings,
     #[serde(default)]
     pub custom_themes: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub command_history: Vec<CommandRecord>,
 }
 
 fn default_schema_version() -> u32 {

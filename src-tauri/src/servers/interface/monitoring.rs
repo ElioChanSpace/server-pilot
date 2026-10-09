@@ -4,12 +4,12 @@ use log::{error, info, warn};
 use serde::Serialize;
 use tauri::State;
 
-use super::util::{
-    read_between_markers,
-    METRICS_OUTPUT_START, METRICS_OUTPUT_END,
-};
 use super::file_transfer::resolve_transfer_server;
 use super::ssh_client;
+use super::util::{
+    read_between_markers, shell_quote, validate_shell_identifier, METRICS_OUTPUT_END,
+    METRICS_OUTPUT_START,
+};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,11 +95,20 @@ ps -eo pid,comm,%cpu,%mem --sort=-%cpu | awk 'NR > 1 && count < 5 { printf "proc
 echo "__SERVER_PILOT_METRICS_END__""#
 }
 
+/// Truncate a string to at most `max_chars` characters for logging without
+/// risking a panic on non-char (byte) boundaries.
+fn truncate_for_log(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
+}
+
 fn parse_metrics_output(output: &str) -> Result<ServerMetricsSnapshot, String> {
     let metrics_block = read_between_markers(output, METRICS_OUTPUT_START, METRICS_OUTPUT_END)
         .map_err(|e| {
             error!("[Monitor] Failed to read metrics markers: {}", e);
-            warn!("[Monitor] Raw output (first 500 chars): {}", &output[..output.len().min(500)]);
+            warn!(
+                "[Monitor] Raw output (first 500 chars): {}",
+                truncate_for_log(output, 500)
+            );
             e
         })?;
 
@@ -249,12 +258,18 @@ pub async fn fetch_server_metrics(
     };
 
     if !matches!(server.os_type, OsType::Linux) {
-        error!("[Monitor] Unsupported OS type: {:?} for server {}", server.os_type, id);
+        error!(
+            "[Monitor] Unsupported OS type: {:?} for server {}",
+            server.os_type, id
+        );
         return Err("当前版本仅支持 Linux 服务器监控".to_string());
     }
 
     let connection = resolve_transfer_server(&state, &id)?;
-    info!("[Monitor] Connection resolved: host={}, port={}, user={}", connection.host, connection.port, connection.username);
+    info!(
+        "[Monitor] Connection resolved: host={}, port={}, user={}",
+        connection.host, connection.port, connection.username
+    );
 
     tauri::async_runtime::spawn_blocking(move || {
         info!("[Monitor] Executing metrics SSH command...");
@@ -264,7 +279,8 @@ pub async fn fetch_server_metrics(
             "collect server metrics",
         )?;
         info!("[Monitor] Metrics command output: {} bytes", output.len());
-        match parse_metrics_output(&output) {
+        let parsed = parse_metrics_output(&output);
+        match parsed {
             Ok(ref metrics) => {
                 info!(
                     "[Monitor] Metrics parsed: cpu={}%, mem={}%, mem_used={}MB, mem_total={}MB, disk={}%",
@@ -274,10 +290,13 @@ pub async fn fetch_server_metrics(
             }
             Err(ref e) => {
                 error!("[Monitor] Failed to parse metrics output: {}", e);
-                warn!("[Monitor] Raw output (first 500 chars): {}", &output[..output.len().min(500)]);
+                warn!(
+                    "[Monitor] Raw output (first 500 chars): {}",
+                    truncate_for_log(&output, 500)
+                );
             }
         }
-        parse_metrics_output(&output)
+        parsed
     })
     .await
     .map_err(|err| err.to_string())?
@@ -297,16 +316,23 @@ pub struct PortInfo {
 
 fn parse_ss_output(output: &str) -> Vec<PortInfo> {
     let mut ports = Vec::new();
-    for line in output.lines().skip(1) { // skip header
+    for line in output.lines().skip(1) {
+        // skip header
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 5 { continue; }
+        if parts.len() < 5 {
+            continue;
+        }
 
         // State Recv-Q Send-Q LocalAddress:Port PeerAddress:Port Process
         let state = parts[0];
-        if state != "LISTEN" { continue; }
+        if state != "LISTEN" {
+            continue;
+        }
 
         let local = parts[3];
         // Extract port from address (last colon-separated part)
@@ -347,16 +373,24 @@ fn parse_netstat_output(output: &str) -> Vec<PortInfo> {
     let mut ports = Vec::new();
     for line in output.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 7 { continue; }
+        if parts.len() < 7 {
+            continue;
+        }
 
         let proto = parts[0];
-        if !proto.starts_with("tcp") { continue; }
+        if !proto.starts_with("tcp") {
+            continue;
+        }
 
         let state = parts[5];
-        if state != "LISTEN" { continue; }
+        if state != "LISTEN" {
+            continue;
+        }
 
         let local = parts[3];
         let (address, port_str) = match local.rfind(':') {
@@ -426,10 +460,14 @@ fn enrich_with_lsof(ports: &mut [PortInfo], lsof_output: &str) {
     // We extract: PID, COMMAND, and the local port from the NAME column
     for line in lsof_output.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with("COMMAND") { continue; }
+        if line.is_empty() || line.starts_with("COMMAND") {
+            continue;
+        }
 
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 9 { continue; }
+        if parts.len() < 9 {
+            continue;
+        }
 
         let command = parts[0];
         let pid: u32 = parts[1].parse().unwrap_or(0);
@@ -455,7 +493,9 @@ fn enrich_with_docker(ports: &mut [PortInfo], docker_output: &str) {
     // docker ps format: "container_name|0.0.0.0:8080->80/tcp, 0.0.0.0:9090->9090/tcp"
     for line in docker_output.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         let (name, port_mappings) = match line.find('|') {
             Some(pos) => (&line[..pos], &line[pos + 1..]),
@@ -632,10 +672,15 @@ pub async fn docker_container_action(
     if !["start", "stop", "restart", "pause", "unpause"].contains(&action.as_str()) {
         return Err(format!("Invalid action: {}", action));
     }
+    let container_id = shell_quote(validate_shell_identifier(&container_id, "container id")?);
     let connection = resolve_transfer_server(&state, &id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let cmd = format!("sudo -n docker {} {} 2>&1", action, container_id);
-        ssh_client::run_ssh_exec_blocking(&connection, &cmd, &format!("docker {} container", action))
+        ssh_client::run_ssh_exec_blocking(
+            &connection,
+            &cmd,
+            &format!("docker {} container", action),
+        )
     })
     .await
     .map_err(|err| err.to_string())?
@@ -648,6 +693,8 @@ pub async fn fetch_docker_logs(
     container_id: String,
     tail: u32,
 ) -> Result<String, String> {
+    let container_id = shell_quote(validate_shell_identifier(&container_id, "container id")?);
+    let tail = tail.clamp(1, 10_000);
     let connection = resolve_transfer_server(&state, &id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let cmd = format!("docker logs --tail {} {} 2>&1", tail, container_id);
@@ -684,14 +731,25 @@ pub async fn fetch_system_services(
         let mut services = Vec::new();
         for line in output.lines() {
             let line = line.trim();
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 4 { continue; }
+            if parts.len() < 4 {
+                continue;
+            }
             let full_name = parts[0]; // e.g. "nginx.service"
             let active = parts[2].to_string();
             let sub = parts[3].to_string();
-            let description = if parts.len() > 4 { parts[4..].join(" ") } else { String::new() };
-            let display_name = full_name.strip_suffix(".service").unwrap_or(full_name).to_string();
+            let description = if parts.len() > 4 {
+                parts[4..].join(" ")
+            } else {
+                String::new()
+            };
+            let display_name = full_name
+                .strip_suffix(".service")
+                .unwrap_or(full_name)
+                .to_string();
             services.push(SystemService {
                 name: full_name.to_string(),
                 display_name,
@@ -716,14 +774,22 @@ pub async fn system_service_action(
     if !["start", "stop", "restart", "enable", "disable", "status"].contains(&action.as_str()) {
         return Err(format!("Invalid action: {}", action));
     }
+    let service_name = shell_quote(validate_shell_identifier(&service_name, "service name")?);
     let connection = resolve_transfer_server(&state, &id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let cmd = if action == "status" {
             format!("sudo -n systemctl {} {} 2>&1", action, service_name)
         } else {
-            format!("sudo -n systemctl {} {} 2>&1 && echo 'OK'", action, service_name)
+            format!(
+                "sudo -n systemctl {} {} 2>&1 && echo 'OK'",
+                action, service_name
+            )
         };
-        ssh_client::run_ssh_exec_blocking(&connection, &cmd, &format!("systemctl {} service", action))
+        ssh_client::run_ssh_exec_blocking(
+            &connection,
+            &cmd,
+            &format!("systemctl {} service", action),
+        )
     })
     .await
     .map_err(|err| err.to_string())?
@@ -736,9 +802,14 @@ pub async fn fetch_service_logs(
     service_name: String,
     tail: u32,
 ) -> Result<String, String> {
+    let service_name = shell_quote(validate_shell_identifier(&service_name, "service name")?);
+    let tail = tail.clamp(1, 10_000);
     let connection = resolve_transfer_server(&state, &id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let cmd = format!("sudo -n journalctl -u {} --no-pager -n {} 2>&1", service_name, tail);
+        let cmd = format!(
+            "sudo -n journalctl -u {} --no-pager -n {} 2>&1",
+            service_name, tail
+        );
         ssh_client::run_ssh_exec_blocking(&connection, &cmd, "fetch service logs")
     })
     .await
@@ -747,8 +818,8 @@ pub async fn fetch_service_logs(
 
 #[cfg(test)]
 mod tests {
+    use super::super::util::{METRICS_OUTPUT_END, METRICS_OUTPUT_START};
     use super::*;
-    use super::super::util::{METRICS_OUTPUT_START, METRICS_OUTPUT_END};
 
     #[test]
     fn parse_metrics_output_extracts_disk_and_load() {
