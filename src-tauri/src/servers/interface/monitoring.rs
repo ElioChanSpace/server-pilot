@@ -635,9 +635,9 @@ pub async fn fetch_docker_containers(
     let connection = resolve_transfer_server(&state, &id)?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let output = ssh_client::run_ssh_exec_blocking(
+        let output = ssh_client::run_ssh_exec_privileged_blocking(
             &connection,
-            "docker ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.Status}}\\t{{.State}}\\t{{.Ports}}\\t{{.CreatedAt}}' 2>/dev/null",
+            "docker ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.Status}}\\t{{.State}}\\t{{.Ports}}\\t{{.CreatedAt}}' 2>&1",
             "fetch docker containers",
         )?;
         let mut containers = Vec::new();
@@ -675,8 +675,8 @@ pub async fn docker_container_action(
     let container_id = shell_quote(validate_shell_identifier(&container_id, "container id")?);
     let connection = resolve_transfer_server(&state, &id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let cmd = format!("sudo -n docker {} {} 2>&1", action, container_id);
-        ssh_client::run_ssh_exec_blocking(
+        let cmd = format!("docker {} {} 2>&1", action, container_id);
+        ssh_client::run_ssh_exec_privileged_blocking(
             &connection,
             &cmd,
             &format!("docker {} container", action),
@@ -698,7 +698,7 @@ pub async fn fetch_docker_logs(
     let connection = resolve_transfer_server(&state, &id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let cmd = format!("docker logs --tail {} {} 2>&1", tail, container_id);
-        ssh_client::run_ssh_exec_blocking(&connection, &cmd, "fetch docker logs")
+        ssh_client::run_ssh_exec_privileged_blocking(&connection, &cmd, "fetch docker logs")
     })
     .await
     .map_err(|err| err.to_string())?
@@ -723,9 +723,9 @@ pub async fn fetch_system_services(
 ) -> Result<Vec<SystemService>, String> {
     let connection = resolve_transfer_server(&state, &id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let output = ssh_client::run_ssh_exec_blocking(
+        let output = ssh_client::run_ssh_exec_privileged_blocking(
             &connection,
-            "systemctl list-units --type=service --all --no-pager --plain --no-legend 2>/dev/null",
+            "systemctl list-units --type=service --all --no-pager --plain --no-legend 2>&1",
             "fetch system services",
         )?;
         let mut services = Vec::new();
@@ -778,14 +778,14 @@ pub async fn system_service_action(
     let connection = resolve_transfer_server(&state, &id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let cmd = if action == "status" {
-            format!("sudo -n systemctl {} {} 2>&1", action, service_name)
+            format!("systemctl {} {} 2>&1", action, service_name)
         } else {
             format!(
-                "sudo -n systemctl {} {} 2>&1 && echo 'OK'",
+                "systemctl {} {} 2>&1 && echo 'OK'",
                 action, service_name
             )
         };
-        ssh_client::run_ssh_exec_blocking(
+        ssh_client::run_ssh_exec_privileged_blocking(
             &connection,
             &cmd,
             &format!("systemctl {} service", action),
@@ -807,10 +807,10 @@ pub async fn fetch_service_logs(
     let connection = resolve_transfer_server(&state, &id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let cmd = format!(
-            "sudo -n journalctl -u {} --no-pager -n {} 2>&1",
+            "journalctl -u {} --no-pager -n {} 2>&1",
             service_name, tail
         );
-        ssh_client::run_ssh_exec_blocking(&connection, &cmd, "fetch service logs")
+        ssh_client::run_ssh_exec_privileged_blocking(&connection, &cmd, "fetch service logs")
     })
     .await
     .map_err(|err| err.to_string())?

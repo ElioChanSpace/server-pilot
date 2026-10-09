@@ -340,13 +340,25 @@ pub(crate) async fn run_ssh_exec(
     command: &str,
     action_label: &str,
 ) -> Result<String, String> {
+    run_ssh_exec_with_stdin(conn, command, action_label, None).await
+}
+
+/// Same as [`run_ssh_exec`] but optionally writes `stdin` to the remote
+/// process (used e.g. to feed `sudo -S` a password — sent over the encrypted
+/// channel, never embedded in the command line).
+pub(crate) async fn run_ssh_exec_with_stdin(
+    conn: &TransferConnection,
+    command: &str,
+    action_label: &str,
+    stdin: Option<&str>,
+) -> Result<String, String> {
     let timeout = SSH_COMMAND_TIMEOUT;
     info!(
         "[SshClient] Executing command: action={:?}, timeout={:?}, cmd={}",
         action_label, timeout, command
     );
 
-    let exec_future = run_ssh_exec_on_pooled(conn, command, action_label);
+    let exec_future = run_ssh_exec_on_pooled(conn, command, action_label, stdin);
     match tokio::time::timeout(timeout, exec_future).await {
         Ok(result) => result,
         Err(_) => {
@@ -363,10 +375,84 @@ pub(crate) async fn run_ssh_exec(
     }
 }
 
+/// Whether an error output looks like a privilege problem (not a real
+/// command failure) so a sudo fallback is worth trying.
+fn is_permission_error(output: &str) -> bool {
+    let lower = output.to_lowercase();
+    lower.contains("permission denied")
+        || lower.contains("需要密码")
+        || lower.contains("a password is required")
+        || lower.contains("authentication is required")
+        || lower.contains("access denied")
+        || lower.contains("must be root")
+        || lower.contains("need to be root")
+        || lower.contains("需要 root")
+        || lower.contains("not allowed to")
+        || lower.contains("insufficient privileges")
+        || lower.contains("operation not permitted")
+}
+
+/// Run a command that may need root privileges, with graceful fallback:
+/// 1. run directly (works for docker-group users etc. — no sudo involved);
+/// 2. retry with `sudo -n` (passwordless sudo);
+/// 3. retry with `sudo -S` feeding the saved password via stdin.
+///
+/// This matches how read-only commands (`docker ps`) already behave, so
+/// operations work whenever listing works.
+pub(crate) async fn run_ssh_exec_privileged(
+    conn: &TransferConnection,
+    command: &str,
+    action_label: &str,
+) -> Result<String, String> {
+    // 1. direct
+    match run_ssh_exec(conn, command, action_label).await {
+        Ok(output) => return Ok(output),
+        Err(err) => {
+            if !is_permission_error(&err) {
+                return Err(err);
+            }
+            info!(
+                "[SshClient] Direct run lacks privileges for {}, retrying with sudo: {}",
+                action_label, err
+            );
+        }
+    }
+
+    // 2. sudo -n
+    let sudo_n_cmd = format!("sudo -n {}", command);
+    match run_ssh_exec(conn, &sudo_n_cmd, action_label).await {
+        Ok(output) => return Ok(output),
+        Err(err) => {
+            if !is_permission_error(&err) {
+                return Err(err);
+            }
+            info!(
+                "[SshClient] Passwordless sudo failed for {}, trying saved password",
+                action_label
+            );
+        }
+    }
+
+    // 3. sudo -S with the saved password on stdin
+    if let Some(password) = conn.password.as_deref().filter(|p| !p.is_empty()) {
+        let sudo_s_cmd = format!("sudo -S -p '' {}", command);
+        let mut stdin = String::from(password);
+        stdin.push('\n');
+        return run_ssh_exec_with_stdin(conn, &sudo_s_cmd, action_label, Some(&stdin)).await;
+    }
+
+    Err(format!(
+        "{} 需要 root 权限：请将用户加入对应组（如 sudo usermod -aG docker $USER 并重新登录），\
+         或配置免密 sudo（如 echo \"$USER ALL=(ALL) NOPASSWD: /usr/bin/docker\" | sudo tee /etc/sudoers.d/docker）后重试",
+        action_label
+    ))
+}
+
 async fn run_ssh_exec_on_pooled(
     conn: &TransferConnection,
     command: &str,
     action_label: &str,
+    stdin: Option<&str>,
 ) -> Result<String, String> {
     let session = acquire_shared_session(conn).await?;
 
@@ -379,6 +465,11 @@ async fn run_ssh_exec_on_pooled(
         .exec(true, command)
         .await
         .map_err(|e| format!("Failed to execute command for {}: {}", action_label, e))?;
+
+    if let Some(stdin_data) = stdin {
+        let _ = channel.data(stdin_data.as_bytes()).await;
+        let _ = channel.eof().await;
+    }
 
     let mut output: Vec<u8> = Vec::new();
     let mut truncated = false;
@@ -434,4 +525,33 @@ pub(crate) fn run_ssh_exec_blocking(
     action_label: &str,
 ) -> Result<String, String> {
     ssh_runtime().block_on(run_ssh_exec(conn, command, action_label))
+}
+
+/// Synchronous wrapper for [`run_ssh_exec_privileged`].
+pub(crate) fn run_ssh_exec_privileged_blocking(
+    conn: &TransferConnection,
+    command: &str,
+    action_label: &str,
+) -> Result<String, String> {
+    ssh_runtime().block_on(run_ssh_exec_privileged(conn, command, action_label))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_permission_errors_for_sudo_fallback() {
+        assert!(is_permission_error(
+            "Command exited with status 1 during docker stop container: sudo: 需要密码"
+        ));
+        assert!(is_permission_error(
+            "permission denied while trying to connect to the Docker daemon socket"
+        ));
+        assert!(is_permission_error("sudo: a password is required"));
+        assert!(is_permission_error("Failed to restart nginx: Access denied"));
+        assert!(!is_permission_error(
+            "Command exited with status 1 during docker stop container: Error: No such container: x"
+        ));
+    }
 }
