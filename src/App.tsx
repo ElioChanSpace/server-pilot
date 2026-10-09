@@ -32,6 +32,7 @@ import { DockerManagerModal } from "./components/DockerManagerModal";
 import { ProcessManagerModal } from "./components/ProcessManagerModal";
 import { DiskAnalysisModal } from "./components/DiskAnalysisModal";
 import { SystemInfoModal } from "./components/SystemInfoModal";
+import { NetConnectionsModal } from "./components/NetConnectionsModal";
 import { ServiceManagerModal } from "./components/ServiceManagerModal";
 import { TransferHistoryModal } from "./components/TransferHistoryModal";
 import { useTransferHistory } from "./hooks/useTransferHistory";
@@ -971,6 +972,13 @@ const AppContent: React.FC = () => {
       )}
       {toolboxTarget?.tool === 'sysinfo' && (
         <SystemInfoModal
+          serverId={toolboxTarget.id}
+          serverName={toolboxTarget.name}
+          onClose={() => setToolboxTarget(null)}
+        />
+      )}
+      {toolboxTarget?.tool === 'net' && (
+        <NetConnectionsModal
           serverId={toolboxTarget.id}
           serverName={toolboxTarget.name}
           onClose={() => setToolboxTarget(null)}

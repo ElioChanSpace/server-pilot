@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaCopy, FaCogs, FaDocker, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
+import { FaCopy, FaCogs, FaDocker, FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
 import { getServerStatusMeta } from '../utils/serverStatus';
 
-export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes' | 'disk' | 'sysinfo';
+export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes' | 'disk' | 'sysinfo' | 'net';
 
 interface TabBarProps {
   sessions: TerminalSession[];
@@ -143,6 +143,14 @@ const TabBarComponent: React.FC<TabBarProps> = ({
               action: () => {
                 const server = servers.find(s => s.id === targetSession.serverId);
                 if (server) onOpenTool('sysinfo', server.id, server.name);
+              },
+            },
+            {
+              label: '网络连接',
+              icon: <FaGlobe />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenTool('net', server.id, server.name);
               },
             },
             {

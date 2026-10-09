@@ -345,6 +345,77 @@ pub async fn fetch_system_info(
     .map_err(|err| err.to_string())?
 }
 
+// ---- Network connections ----
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetConnection {
+    pub proto: String,
+    pub state: String,
+    pub recv_q: u64,
+    pub send_q: u64,
+    pub local: String,
+    pub peer: String,
+    pub process: String,
+    pub pid: Option<u32>,
+}
+
+fn parse_ss_output(output: &str) -> Vec<NetConnection> {
+    let mut connections = Vec::new();
+    for line in output.lines().skip(1) {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 6 {
+            continue;
+        }
+        // ss -tanup: Netid State Recv-Q Send-Q Local Peer [Process]
+        let (proto, state, local, peer) = (fields[0], fields[1], fields[4], fields[5]);
+        let proc_field = fields.get(6).copied().unwrap_or("");
+        // users:(("sshd",pid=123,fd=3)) — extract name and pid
+        let process = proc_field
+            .split('"')
+            .nth(1)
+            .unwrap_or("")
+            .to_string();
+        let pid = proc_field
+            .split("pid=")
+            .nth(1)
+            .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
+            .and_then(|s| s.parse::<u32>().ok());
+        connections.push(NetConnection {
+            proto: proto.to_string(),
+            state: state.to_string(),
+            recv_q: fields[2].parse().unwrap_or(0),
+            send_q: fields[3].parse().unwrap_or(0),
+            local: local.to_string(),
+            peer: peer.to_string(),
+            process,
+            pid,
+        });
+    }
+    connections
+}
+
+#[tauri::command(async)]
+pub async fn fetch_network_connections(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<NetConnection>, String> {
+    let connection = resolve_transfer_server(&state, &id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = ssh_client::run_ssh_exec_blocking(
+            &connection,
+            "ss -tanup 2>/dev/null",
+            "fetch network connections",
+        )?;
+        if output.trim().is_empty() {
+            return Err("服务器未返回网络连接信息（需要 ss 命令）".to_string());
+        }
+        Ok(parse_ss_output(&output))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,5 +464,21 @@ mod tests {
         assert_eq!(kv.get("hostname").unwrap(), "web-01");
         assert_eq!(kv.get("kernel").unwrap(), "Linux 6.1.0");
         assert_eq!(kv.len(), 3);
+    }
+
+    #[test]
+    fn parse_ss_output_extracts_connections() {
+        let output = "Netid State  Recv-Q Send-Q Local Address:Port  Peer Address:Port Process\n\
+                      tcp   LISTEN 0      128    0.0.0.0:22          0.0.0.0:*          users:((\"sshd\",pid=812,fd=3))\n\
+                      tcp   ESTAB  0      0      10.0.0.5:22         203.0.113.7:51422  users:((\"sshd\",pid=1934,fd=4))\n\
+                      udp   UNCONN 0      0      127.0.0.1:323       0.0.0.0:*";
+        let conns = parse_ss_output(output);
+        assert_eq!(conns.len(), 3);
+        assert_eq!(conns[0].proto, "tcp");
+        assert_eq!(conns[0].state, "LISTEN");
+        assert_eq!(conns[0].process, "sshd");
+        assert_eq!(conns[0].pid, Some(812));
+        assert_eq!(conns[1].peer, "203.0.113.7:51422");
+        assert_eq!(conns[2].pid, None);
     }
 }
