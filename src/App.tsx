@@ -33,6 +33,7 @@ import { ProcessManagerModal } from "./components/ProcessManagerModal";
 import { DiskAnalysisModal } from "./components/DiskAnalysisModal";
 import { SystemInfoModal } from "./components/SystemInfoModal";
 import { NetConnectionsModal } from "./components/NetConnectionsModal";
+import { LogStreamModal } from "./components/LogStreamModal";
 import { ServiceManagerModal } from "./components/ServiceManagerModal";
 import { TransferHistoryModal } from "./components/TransferHistoryModal";
 import { useTransferHistory } from "./hooks/useTransferHistory";
@@ -979,6 +980,13 @@ const AppContent: React.FC = () => {
       )}
       {toolboxTarget?.tool === 'net' && (
         <NetConnectionsModal
+          serverId={toolboxTarget.id}
+          serverName={toolboxTarget.name}
+          onClose={() => setToolboxTarget(null)}
+        />
+      )}
+      {toolboxTarget?.tool === 'logstream' && (
+        <LogStreamModal
           serverId={toolboxTarget.id}
           serverName={toolboxTarget.name}
           onClose={() => setToolboxTarget(null)}

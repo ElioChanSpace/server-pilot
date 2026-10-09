@@ -416,6 +416,94 @@ pub async fn fetch_network_connections(
     .map_err(|err| err.to_string())?
 }
 
+// ---- Real-time log tail ----
+
+const LOG_CHUNK_LIMIT: usize = 200 * 1024;
+const LOG_INITIAL_BACK: u64 = 64 * 1024;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogChunk {
+    pub content: String,
+    pub next_offset: u64,
+    pub file_size: u64,
+}
+
+#[tauri::command(async)]
+pub async fn read_log_chunk(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    offset: Option<u64>,
+) -> Result<LogChunk, String> {
+    if path.trim().is_empty() {
+        return Err("日志路径不能为空".to_string());
+    }
+    let connection = resolve_transfer_server(&state, &id)?;
+    let quoted = shell_quote(path.trim());
+    tauri::async_runtime::spawn_blocking(move || {
+        // offset = None → first read: jump to the last 64KB of the file.
+        // offset = Some(n) → incremental read from byte n (1-based tail).
+        let cmd = match offset {
+            None => format!(
+                "SIZE=$(stat -c %s -- {p} 2>/dev/null || echo 0); \
+                 OFF=$SIZE; if [ \"$OFF\" -gt {back} ]; then OFF=$((SIZE-{back})); fi; \
+                 echo \"__META__${{SIZE}}_${{OFF}}\"; tail -c +$((OFF+1)) -- {p} 2>/dev/null | head -c {limit}",
+                p = quoted,
+                back = LOG_INITIAL_BACK,
+                limit = LOG_CHUNK_LIMIT,
+            ),
+            Some(offset) => format!(
+                "SIZE=$(stat -c %s -- {p} 2>/dev/null || echo 0); \
+                 echo \"__SIZE__${{SIZE}}\"; tail -c +{off} -- {p} 2>/dev/null | head -c {limit}",
+                p = quoted,
+                off = offset + 1,
+                limit = LOG_CHUNK_LIMIT,
+            ),
+        };
+        let output = ssh_client::run_ssh_exec_blocking(&connection, &cmd, "read log chunk")?;
+
+        let (file_size, base_offset, content) = match offset {
+            None => {
+                // First line is __META__<size>_<offset>
+                let (meta, rest) = output
+                    .split_once('\n')
+                    .ok_or("读取日志失败：返回内容异常")?;
+                let meta = meta.trim().trim_start_matches("__META__");
+                let (size_str, off_str) = meta.split_once('_').unwrap_or(("0", "0"));
+                (
+                    size_str.parse::<u64>().unwrap_or(0),
+                    off_str.parse::<u64>().unwrap_or(0),
+                    rest.to_string(),
+                )
+            }
+            Some(offset) => {
+                let size = output
+                    .lines()
+                    .next()
+                    .and_then(|l| l.strip_prefix("__SIZE__"))
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                // The size echo is followed by the tail output
+                let content = match output.find('\n') {
+                    Some(idx) => output[idx + 1..].to_string(),
+                    None => String::new(),
+                };
+                (size, offset, content)
+            }
+        };
+
+        let next_offset = base_offset + content.len() as u64;
+        Ok(LogChunk {
+            content,
+            next_offset,
+            file_size,
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
