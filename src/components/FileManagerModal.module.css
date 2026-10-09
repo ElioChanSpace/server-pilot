@@ -55,6 +55,7 @@
   justify-content: center;
   width: 28px;
   height: 28px;
+  padding: 0;
   border-radius: 7px;
   background: transparent;
   border: none;
@@ -149,12 +150,13 @@
   justify-content: center;
   width: 24px;
   height: 24px;
+  padding: 0;
   border-radius: 6px;
   border: 1px solid var(--glass-border);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
 
 .iconBtn:hover:not(:disabled) { color: var(--accent-color); border-color: var(--accent-color); }
@@ -176,6 +178,7 @@
   justify-content: center;
   width: 22px;
   height: 22px;
+  padding: 0;
   border-radius: 6px;
   border: 1px solid var(--glass-border);
   background: transparent;

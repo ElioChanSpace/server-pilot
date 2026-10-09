@@ -441,6 +441,19 @@ button {
     opacity 0.18s ease;
 }
 
+/* 全局 button 默认 padding 会把定尺寸图标按钮（如 24x24、border-box）的
+   内容区挤成 0x0，内部 SVG 被 flex 收缩为零宽 —— 表现为"只剩一个框、
+   图标和文字都不显示"。仅含单个 SVG 的图标按钮豁免默认 padding，
+   且按钮内的 SVG 永不收缩。:where() 保持零特异性，组件自带 padding 的
+   （如 transferBtn）不受影响。 */
+button:where(:has(> svg:only-child)) {
+  padding: 0;
+}
+
+button > svg {
+  flex-shrink: 0;
+}
+
 button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
