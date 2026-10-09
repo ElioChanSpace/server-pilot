@@ -1,4 +1,4 @@
-use crate::servers::domain::{CommandRecord, TransferRecord};
+use crate::servers::domain::{CommandRecord, MetricSample, TransferRecord};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
@@ -283,6 +283,79 @@ impl StateDatabase {
         Ok(records)
     }
 
+    // ---- Metric samples (resource history) ----
+
+    pub fn add_metric_samples(&self, samples: &[MetricSample]) -> Result<(), String> {
+        if samples.is_empty() {
+            return Ok(());
+        }
+        let mut connection = self.connection.lock().map_err(|e| e.to_string())?;
+        let transaction = connection.transaction().map_err(|e| e.to_string())?;
+        for sample in samples {
+            transaction
+                .execute(
+                    "INSERT INTO metric_samples
+                     (server_id, timestamp, cpu, mem_percent, mem_used_mb, mem_total_mb, disk_percent, load1)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        sample.server_id,
+                        sample.timestamp as i64,
+                        sample.cpu,
+                        sample.mem_percent,
+                        sample.mem_used_mb as i64,
+                        sample.mem_total_mb as i64,
+                        sample.disk_percent,
+                        sample.load1,
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        // Keep at most 30 days of samples
+        let cutoff = chrono::Utc::now().timestamp_millis() as u64 - 30 * 24 * 60 * 60 * 1000;
+        transaction
+            .execute(
+                "DELETE FROM metric_samples WHERE timestamp < ?1",
+                params![cutoff as i64],
+            )
+            .map_err(|e| e.to_string())?;
+        transaction.commit().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn metric_history(
+        &self,
+        server_id: &str,
+        since_ms: u64,
+        limit: u32,
+    ) -> Result<Vec<MetricSample>, String> {
+        let connection = self.connection.lock().map_err(|e| e.to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT server_id, timestamp, cpu, mem_percent, mem_used_mb, mem_total_mb, disk_percent, load1
+                 FROM metric_samples
+                 WHERE server_id = ?1 AND timestamp >= ?2
+                 ORDER BY timestamp ASC
+                 LIMIT ?3",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map(params![server_id, since_ms as i64, limit], |row| {
+                Ok(MetricSample {
+                    server_id: row.get(0)?,
+                    timestamp: row.get::<_, i64>(1)? as u64,
+                    cpu: row.get(2)?,
+                    mem_percent: row.get(3)?,
+                    mem_used_mb: row.get::<_, i64>(4)? as u64,
+                    mem_total_mb: row.get::<_, i64>(5)? as u64,
+                    disk_percent: row.get(6)?,
+                    load1: row.get(7)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    }
+
     fn migrate(&self) -> Result<(), String> {
         let connection = self.connection.lock().map_err(|e| e.to_string())?;
         connection
@@ -322,6 +395,19 @@ impl StateDatabase {
                     ON transfer_history(completed_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_transfer_history_server_name
                     ON transfer_history(server_name);
+                CREATE TABLE IF NOT EXISTS metric_samples (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    server_id TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    cpu REAL NOT NULL,
+                    mem_percent REAL NOT NULL,
+                    mem_used_mb INTEGER NOT NULL,
+                    mem_total_mb INTEGER NOT NULL,
+                    disk_percent REAL NOT NULL,
+                    load1 REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_metric_samples_server_timestamp
+                    ON metric_samples(server_id, timestamp);
                 ",
             )
             .map_err(|e| e.to_string())?;

@@ -2,6 +2,8 @@
 // 所有远端命令均通过 run_ssh_exec 执行（带超时/输出上限），用户输入做白名单校验。
 
 use crate::servers::application::AppState;
+use crate::servers::domain::MetricSample;
+use crate::servers::infrastructure::StateDatabase;
 use serde::Serialize;
 use tauri::State;
 
@@ -639,6 +641,26 @@ pub async fn fetch_systemd_timers(
     })
     .await
     .map_err(|err| err.to_string())?
+}
+
+// ---- Metric samples (resource history) ----
+
+#[tauri::command(async)]
+pub fn add_metric_samples(
+    database: State<'_, StateDatabase>,
+    samples: Vec<MetricSample>,
+) -> Result<(), String> {
+    database.add_metric_samples(&samples)
+}
+
+#[tauri::command(async)]
+pub fn get_metric_history(
+    database: State<'_, StateDatabase>,
+    server_id: String,
+    since_ms: u64,
+    limit: Option<u32>,
+) -> Result<Vec<MetricSample>, String> {
+    database.metric_history(&server_id, since_ms, limit.unwrap_or(2000).clamp(1, 10_000))
 }
 
 #[cfg(test)]

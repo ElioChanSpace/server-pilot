@@ -10,7 +10,8 @@ use crate::servers::infrastructure::session_manager::SessionManagerState;
 use crate::servers::infrastructure::FileRepository;
 use crate::servers::infrastructure::StateDatabase;
 use crate::servers::interface::commands::{
-    add_command_history, add_transfer_history, check_port_available, clear_app_logs,
+    add_command_history, add_metric_samples, add_transfer_history, check_port_available,
+    clear_app_logs,
     clear_command_history, clear_transfer_history, close_ssh_tunnel, close_terminal_session,
     connect_server, create_category, create_remote_directory, create_server, create_ssh_tunnel,
     delete_category, delete_remote_path, delete_server, disconnect_server, docker_container_action,
@@ -21,6 +22,7 @@ use crate::servers::interface::commands::{
     fetch_service_logs, fetch_system_info, fetch_system_services, fetch_systemd_timers, generate_ssh_key, get_app_settings, get_app_stats,
     get_categories,
     get_command_history, get_custom_themes, get_default_ssh_key_path, get_file_content,
+    get_metric_history,
     get_servers,
     get_terminal_session_directory, get_transfer_history, highlight_code, import_app_data,
     list_remote_directory, list_ssh_keys, list_ssh_tunnels, log_frontend_action, move_category,
@@ -311,6 +313,8 @@ fn main() {
             read_log_chunk,
             fetch_cron_jobs,
             fetch_systemd_timers,
+            add_metric_samples,
+            get_metric_history,
             list_remote_directory,
             read_app_logs,
             clear_app_logs,

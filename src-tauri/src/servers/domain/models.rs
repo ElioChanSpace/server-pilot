@@ -131,6 +131,19 @@ pub struct TransferRecord {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MetricSample {
+    pub server_id: String,
+    pub timestamp: u64,
+    pub cpu: f64,
+    pub mem_percent: f64,
+    pub mem_used_mb: u64,
+    pub mem_total_mb: u64,
+    pub disk_percent: f64,
+    pub load1: f64,
+}
+
 fn default_terminal_idle_disconnect_enabled() -> bool {
     true
 }
