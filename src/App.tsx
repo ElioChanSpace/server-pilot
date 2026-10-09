@@ -124,6 +124,33 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     terminalOutputsRef.current = terminalOutputs;
   }, [terminalOutputs]);
+
+  // Remote status badges per tab (cwd / git branch / load) — polled while sessions are connected
+  const [tabStatuses, setTabStatuses] = useState<Record<string, import("./components/TabBar").TabRemoteStatus>>({});
+  const tabPollBusyRef = useRef(false);
+  useEffect(() => {
+    const poll = async () => {
+      if (tabPollBusyRef.current) return;
+      tabPollBusyRef.current = true;
+      try {
+        for (const session of sessionsRef.current) {
+          if (session.status !== 'connected') continue;
+          try {
+            const status = await invoke<import("./components/TabBar").TabRemoteStatus>('fetch_tab_status', {
+              id: session.serverId,
+              sessionId: session.id,
+            });
+            setTabStatuses(prev => ({ ...prev, [session.id]: status }));
+          } catch { /* 会话可能刚断开 */ }
+        }
+      } finally {
+        tabPollBusyRef.current = false;
+      }
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), 45_000);
+    return () => clearInterval(timer);
+  }, [sessions]);
   const { notify, notificationsEnabledRef } = useNotifications();
   const { uploadProgressOverlay, setUploadProgressOverlay, handleTerminalFilesDropped, removeSessionCurrentDirectories } = useFileUpload(servers, sessions, notify);
   const { setIsResizingLeftSidebar } = useLeftSidebarResize();
@@ -831,6 +858,7 @@ const AppContent: React.FC = () => {
             sessions={sessions}
             servers={servers}
             currentSessionId={currentSessionId}
+            tabStatuses={tabStatuses}
             terminalOutputs={terminalOutputs}
             onSelectSession={handleSelectSession}
             onCloseSession={handleCloseSession}

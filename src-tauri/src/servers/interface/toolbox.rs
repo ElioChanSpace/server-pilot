@@ -3,6 +3,7 @@
 
 use crate::servers::application::AppState;
 use crate::servers::domain::MetricSample;
+use crate::servers::infrastructure::session_manager::{self, SessionManagerState};
 use crate::servers::infrastructure::StateDatabase;
 use serde::Serialize;
 use tauri::State;
@@ -661,6 +662,72 @@ pub fn get_metric_history(
     limit: Option<u32>,
 ) -> Result<Vec<MetricSample>, String> {
     database.metric_history(&server_id, since_ms, limit.unwrap_or(2000).clamp(1, 10_000))
+}
+
+// ---- Tab status badges (cwd / git branch / load) ----
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TabStatus {
+    pub cwd: Option<String>,
+    pub git_branch: Option<String>,
+    pub load1: f64,
+}
+
+#[tauri::command(async)]
+pub async fn fetch_tab_status(
+    state: State<'_, AppState>,
+    session_manager: State<'_, SessionManagerState>,
+    id: String,
+    session_id: String,
+) -> Result<TabStatus, String> {
+    let connection = resolve_transfer_server(&state, &id)?;
+    let session_state = session_manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // Prefer the cached cwd; only inject a probe command when the terminal
+        // has been idle for a while so we never corrupt typing in progress.
+        let mut cwd = session_manager::session_cached_cwd(&session_state, &session_id);
+        if cwd.is_none()
+            && session_manager::session_is_idle(
+                &session_state,
+                &session_id,
+                std::time::Duration::from_secs(5),
+            )
+        {
+            cwd = session_manager::probe_session_cwd(&session_state, &session_id).ok();
+        }
+
+        let git_cmd = match &cwd {
+            Some(cwd) => format!(
+                "git -C {} rev-parse --abbrev-ref HEAD 2>/dev/null | sed 's/^/__G__/'",
+                shell_quote(cwd)
+            ),
+            None => String::new(),
+        };
+        let cmd = format!(
+            "echo \"__L__$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)\"; {}",
+            git_cmd
+        );
+        let output = ssh_client::run_ssh_exec_blocking(&connection, &cmd, "fetch tab status")?;
+        let mut load1 = 0.0;
+        let mut git_branch = None;
+        for line in output.lines() {
+            if let Some(value) = line.trim().strip_prefix("__L__") {
+                load1 = value.parse().unwrap_or(0.0);
+            } else if let Some(value) = line.trim().strip_prefix("__G__") {
+                if !value.is_empty() {
+                    git_branch = Some(value.to_string());
+                }
+            }
+        }
+        Ok(TabStatus {
+            cwd,
+            git_branch,
+            load1,
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[cfg(test)]

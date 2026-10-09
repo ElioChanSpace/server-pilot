@@ -13,6 +13,7 @@ interface MainContentProps {
   sessions: TerminalSession[];
   servers: Server[];
   currentSessionId: string | null;
+  tabStatuses: Record<string, import('./TabBar').TabRemoteStatus>;
   terminalOutputs: Record<string, TerminalOutputState>;
   onSelectSession: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
@@ -36,6 +37,7 @@ const MainContentComponent: React.FC<MainContentProps> = ({
   sessions,
   servers,
   currentSessionId,
+  tabStatuses,
   terminalOutputs,
   onSelectSession,
   onCloseSession,
@@ -111,6 +113,7 @@ const MainContentComponent: React.FC<MainContentProps> = ({
           sessions={sessions}
           servers={servers}
           currentSessionId={currentSessionId}
+          tabStatuses={tabStatuses}
           onSelectSession={onSelectSession}
           onCloseSession={onCloseSession}
           onDuplicateSession={onDuplicateSession}

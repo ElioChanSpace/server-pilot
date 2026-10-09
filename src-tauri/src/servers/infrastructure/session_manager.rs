@@ -34,6 +34,9 @@ pub struct Session {
     pub last_activity_at: Instant,
     pub close_reason: Option<String>,
     last_output: String,
+    /// Last successfully probed remote working directory (cached so tab badges
+    /// can show it without injecting a probe command into the terminal).
+    pub last_known_cwd: Option<String>,
     pending_cwd_request: Option<PendingCwdRequest>,
     pending_host_key: Option<mpsc::Sender<bool>>,
 }
@@ -41,6 +44,12 @@ pub struct Session {
 // SessionManager 的状态
 #[derive(Default)]
 pub struct SessionManagerState(pub Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>);
+
+impl Clone for SessionManagerState {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 const PASSWORD_PROMPT_BUFFER_LIMIT: usize = 2048;
 const PENDING_CWD_BUFFER_LIMIT: usize = 16384;
@@ -456,6 +465,7 @@ pub fn start_session(
         last_activity_at: Instant::now(),
         close_reason: None,
         last_output: String::new(),
+        last_known_cwd: None,
         pending_cwd_request: None,
         pending_host_key: None,
     }));
@@ -950,11 +960,18 @@ pub fn read_session_current_directory(
     session_manager_state: State<'_, SessionManagerState>,
     session_id: String,
 ) -> Result<String, String> {
+    probe_session_cwd(&session_manager_state, &session_id)
+}
+
+pub fn probe_session_cwd(
+    session_manager_state: &SessionManagerState,
+    session_id: &str,
+) -> Result<String, String> {
     let session = session_manager_state
         .0
         .lock()
         .map_err(|e| e.to_string())?
-        .get(&session_id)
+        .get(session_id)
         .cloned()
         .ok_or_else(|| format!("No active PTY session for session {}", session_id))?;
 
@@ -989,7 +1006,14 @@ pub fn read_session_current_directory(
     }
 
     match responder_rx.recv_timeout(Duration::from_secs(3)) {
-        Ok(result) => result,
+        Ok(result) => {
+            if let Ok(cwd) = &result {
+                if let Ok(mut session_guard) = session.lock() {
+                    session_guard.last_known_cwd = Some(cwd.clone());
+                }
+            }
+            result
+        }
         Err(mpsc::RecvTimeoutError::Timeout) => {
             if let Ok(mut session_guard) = session.lock() {
                 session_guard.pending_cwd_request = None;
@@ -1003,6 +1027,30 @@ pub fn read_session_current_directory(
             Err("读取当前终端目录失败".to_string())
         }
     }
+}
+
+/// Return the cached working directory of a session without probing the PTY.
+pub fn session_cached_cwd(
+    session_manager_state: &SessionManagerState,
+    session_id: &str,
+) -> Option<String> {
+    let sessions = session_manager_state.0.lock().ok()?;
+    let session = sessions.get(session_id)?.lock().ok()?;
+    session.last_known_cwd.clone()
+}
+
+/// Whether the session has been idle (no input/output) for at least `min_idle`.
+/// Probing the terminal while the user is typing would corrupt their input.
+pub fn session_is_idle(
+    session_manager_state: &SessionManagerState,
+    session_id: &str,
+    min_idle: Duration,
+) -> bool {
+    let sessions = session_manager_state.0.lock().ok();
+    let Some(sessions) = sessions else { return false };
+    let Some(session) = sessions.get(session_id) else { return false };
+    let Ok(guard) = session.lock() else { return false };
+    guard.alive.load(Ordering::SeqCst) && guard.last_activity_at.elapsed() >= min_idle
 }
 
 pub fn resize_session(

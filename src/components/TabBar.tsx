@@ -8,10 +8,17 @@ import { getServerStatusMeta } from '../utils/serverStatus';
 
 export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes' | 'disk' | 'sysinfo' | 'net' | 'logstream' | 'cron' | 'metrics' | 'files';
 
+export interface TabRemoteStatus {
+  cwd?: string | null;
+  gitBranch?: string | null;
+  load1: number;
+}
+
 interface TabBarProps {
   sessions: TerminalSession[];
   servers: Server[];
   currentSessionId: string | null;
+  tabStatuses: Record<string, TabRemoteStatus>;
   onSelectSession: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
@@ -34,6 +41,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({
   sessions,
   servers,
   currentSessionId,
+  tabStatuses,
   onSelectSession,
   onCloseSession,
   onDuplicateSession,
@@ -269,6 +277,8 @@ const TabBarComponent: React.FC<TabBarProps> = ({
           const timeStr = session.createdAt ? formatTime(session.createdAt) : '';
           const statusMeta = getServerStatusMeta(session.status);
           const StatusIcon = statusMeta.icon;
+          const remote = tabStatuses[session.id];
+          const cwdName = remote?.cwd ? remote.cwd.split('/').filter(Boolean).pop() ?? '/' : null;
 
           return (
             <div
@@ -293,6 +303,13 @@ const TabBarComponent: React.FC<TabBarProps> = ({
                   {username && <span className={styles.tabUsername}>{username}</span>}
                 </div>
                 <div className={styles.tabSecondary}>
+                  {cwdName && <span className={styles.tabBadgeCwd} title={remote?.cwd ?? ''}>{cwdName}</span>}
+                  {remote?.gitBranch && <span className={styles.tabBadgeGit} title="Git 分支">{remote.gitBranch}</span>}
+                  {remote && remote.load1 > 0 && (
+                    <span className={`${styles.tabBadgeLoad} ${remote.load1 > 2 ? styles.tabBadgeLoadHigh : ''}`} title="负载 (1 分钟)">
+                      {remote.load1.toFixed(2)}
+                    </span>
+                  )}
                   {timeStr && <span className={styles.tabTime}>{timeStr}</span>}
                   <span className={styles.tabDisplayId}>{session.displayId}</span>
                 </div>

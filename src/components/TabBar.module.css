@@ -132,6 +132,42 @@
   letter-spacing: 0.04em;
 }
 
+.tabBadgeCwd,
+.tabBadgeGit,
+.tabBadgeLoad {
+  font-size: 9.5px;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabBadgeCwd {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-family: Menlo, Monaco, "Courier New", monospace;
+}
+
+.tabBadgeGit {
+  background: rgba(103, 194, 58, 0.14);
+  color: #67c23a;
+  font-weight: 600;
+}
+
+.tabBadgeLoad {
+  background: rgba(64, 158, 255, 0.12);
+  color: var(--accent-color);
+}
+
+.tabBadgeLoadHigh {
+  background: rgba(245, 108, 108, 0.14);
+  color: var(--danger-color);
+  font-weight: 700;
+}
+
 .tab[data-active="true"] .tabTime {
   opacity: 0.8;
 }
