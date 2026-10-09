@@ -105,6 +105,8 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, entry: null });
   // 正在编辑的文件路径集合（对应行显示"编辑中"高亮）
   const [editingPaths, setEditingPaths] = useState<Set<string>>(new Set());
+  // 活编辑窗口映射：path -> window（唯一 label，关闭/失效时清理）
+  const editorWindowsRef = useRef<Map<string, WebviewWindow>>(new Map());
 
   // Refs so the long-lived event listeners never need to be re-registered
   // when the current directory or server object identity changes.
@@ -396,20 +398,24 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
 
   const handleEdit = async (entry: RemoteDirectoryEntry) => {
     if (!server) return;
-    const label = `editor-${server.id}-${entry.path.replace(/[^a-zA-Z0-9]/g, "_")}`;
-    const url = `/editor.html?serverId=${encodeURIComponent(server.id)}&filePath=${encodeURIComponent(entry.path)}`;
 
-    // Check if window already exists
-    const existing = await WebviewWindow.getByLabel(label);
-    if (existing) {
-      // 已存在的窗口也要确保可见（防止残留的不可见窗口导致"点了没反应"）
-      await existing.show().catch(() => {});
-      await existing.setFocus();
-      setEditingPaths(prev => new Set(prev).add(entry.path));
-      return;
+    // 已打开的窗口：聚焦即可；句柄失效（已销毁）则清理后重建
+    const existingWin = editorWindowsRef.current.get(entry.path);
+    if (existingWin) {
+      try {
+        await existingWin.show();
+        await existingWin.setFocus();
+        setEditingPaths(prev => new Set(prev).add(entry.path));
+        return;
+      } catch {
+        editorWindowsRef.current.delete(entry.path);
+      }
     }
 
-    // B: 标记"编辑中"行态；A: 透明圆角窗 + 首帧就绪再显示（避免白闪/方角）
+    // label 唯一（时间戳后缀）：关闭后立即重开不会与销毁中的旧窗口撞 label
+    const label = `editor-${server.id}-${entry.path.replace(/[^a-zA-Z0-9]/g, "_")}-${Date.now().toString(36)}`;
+    const url = `/editor.html?serverId=${encodeURIComponent(server.id)}&filePath=${encodeURIComponent(entry.path)}`;
+
     setEditingPaths(prev => new Set(prev).add(entry.path));
     const win = new WebviewWindow(label, {
       url,
@@ -425,13 +431,21 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
       resizable: true,
       center: true,
     });
-    win.once("tauri://error", () => {
+    editorWindowsRef.current.set(entry.path, win);
+
+    const cleanup = () => {
+      if (editorWindowsRef.current.get(entry.path) === win) {
+        editorWindowsRef.current.delete(entry.path);
+      }
       setEditingPaths(prev => {
+        if (!prev.has(entry.path)) return prev;
         const next = new Set(prev);
         next.delete(entry.path);
         return next;
       });
-    });
+    };
+    win.once("tauri://error", cleanup);
+    win.once("tauri://destroyed", cleanup);
   };
 
   // 编辑窗口关闭后复位行态（编辑器在关闭前 emit "editor-closed"）
@@ -440,6 +454,7 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
     let unlisten: (() => void) | undefined;
     void listen<{ path: string }>("editor-closed", event => {
       if (disposed) return;
+      editorWindowsRef.current.delete(event.payload.path);
       setEditingPaths(prev => {
         if (!prev.has(event.payload.path)) return prev;
         const next = new Set(prev);
