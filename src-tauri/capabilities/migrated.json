@@ -33,12 +33,16 @@
     "fs:allow-remove",
     "fs:allow-rename",
     "fs:allow-exists",
+    "fs:allow-stat",
+    "fs:allow-lstat",
     {
       "identifier": "fs:scope",
       "allow": [
         "$APP/*",
         "$DESKTOP/*",
-        "$DOWNLOAD/*"
+        "$DOWNLOAD/*",
+        "$HOME/**",
+        "$TMP/**"
       ]
     },
     "shell:allow-open",

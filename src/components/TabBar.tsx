@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaBolt, FaCalendarAlt, FaChartLine, FaCopy, FaCogs, FaDocker, FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
+import { FaBolt, FaCalendarAlt, FaChartLine, FaColumns, FaCopy, FaCogs, FaDocker, FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
 import { getServerStatusMeta } from '../utils/serverStatus';
 
-export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes' | 'disk' | 'sysinfo' | 'net' | 'logstream' | 'cron' | 'metrics';
+export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes' | 'disk' | 'sysinfo' | 'net' | 'logstream' | 'cron' | 'metrics' | 'files';
 
 interface TabBarProps {
   sessions: TerminalSession[];
@@ -175,6 +175,14 @@ const TabBarComponent: React.FC<TabBarProps> = ({
               action: () => {
                 const server = servers.find(s => s.id === targetSession.serverId);
                 if (server) onOpenTool('metrics', server.id, server.name);
+              },
+            },
+            {
+              label: '文件管理器',
+              icon: <FaColumns />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenTool('files', server.id, server.name);
               },
             },
             {

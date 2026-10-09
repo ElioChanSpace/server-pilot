@@ -36,6 +36,7 @@ import { NetConnectionsModal } from "./components/NetConnectionsModal";
 import { LogStreamModal } from "./components/LogStreamModal";
 import { ScheduledTasksModal } from "./components/ScheduledTasksModal";
 import { MetricsHistoryModal } from "./components/MetricsHistoryModal";
+import { FileManagerModal } from "./components/FileManagerModal";
 import { ServiceManagerModal } from "./components/ServiceManagerModal";
 import { TransferHistoryModal } from "./components/TransferHistoryModal";
 import { useTransferHistory } from "./hooks/useTransferHistory";
@@ -1003,6 +1004,13 @@ const AppContent: React.FC = () => {
       )}
       {toolboxTarget?.tool === 'metrics' && (
         <MetricsHistoryModal
+          serverId={toolboxTarget.id}
+          serverName={toolboxTarget.name}
+          onClose={() => setToolboxTarget(null)}
+        />
+      )}
+      {toolboxTarget?.tool === 'files' && (
+        <FileManagerModal
           serverId={toolboxTarget.id}
           serverName={toolboxTarget.name}
           onClose={() => setToolboxTarget(null)}
