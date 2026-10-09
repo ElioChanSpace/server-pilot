@@ -11,5 +11,6 @@ pub mod ssh_client;
 pub mod ssh_config;
 pub mod ssh_keys;
 pub mod ssh_tunnel;
+pub mod toolbox;
 pub mod transfer_history;
 pub mod util;

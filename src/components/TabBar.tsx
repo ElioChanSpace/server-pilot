@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaCopy, FaCogs, FaDocker, FaHistory, FaNetworkWired, FaRedo, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
+import { FaCopy, FaCogs, FaDocker, FaHistory, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
 import { getServerStatusMeta } from '../utils/serverStatus';
+
+export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes';
 
 interface TabBarProps {
   sessions: TerminalSession[];
@@ -18,9 +20,7 @@ interface TabBarProps {
   onCloseServerSessions: (sessionId: string) => void;
   onCloseAllSessions: () => void;
   onReconnectSession: (sessionId: string) => void;
-  onOpenPortMonitor: (serverId: string, serverName: string) => void;
-  onOpenDockerManager: (serverId: string, serverName: string) => void;
-  onOpenServiceManager: (serverId: string, serverName: string) => void;
+  onOpenTool: (tool: ToolboxTool, serverId: string, serverName: string) => void;
   onOpenTransferHistory: () => void;
 }
 
@@ -42,9 +42,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({
   onCloseServerSessions,
   onCloseAllSessions,
   onReconnectSession,
-  onOpenPortMonitor,
-  onOpenDockerManager,
-  onOpenServiceManager,
+  onOpenTool,
   onOpenTransferHistory,
 }) => {
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -124,11 +122,19 @@ const TabBarComponent: React.FC<TabBarProps> = ({
           icon: <FaTools />,
           children: [
             {
+              label: '进程管理',
+              icon: <FaMicrochip />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenTool('processes', server.id, server.name);
+              },
+            },
+            {
               label: '端口监测',
               icon: <FaNetworkWired />,
               action: () => {
                 const server = servers.find(s => s.id === targetSession.serverId);
-                if (server) onOpenPortMonitor(server.id, server.name);
+                if (server) onOpenTool('ports', server.id, server.name);
               },
             },
             {
@@ -136,7 +142,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({
               icon: <FaDocker />,
               action: () => {
                 const server = servers.find(s => s.id === targetSession.serverId);
-                if (server) onOpenDockerManager(server.id, server.name);
+                if (server) onOpenTool('docker', server.id, server.name);
               },
             },
             {
@@ -144,7 +150,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({
               icon: <FaCogs />,
               action: () => {
                 const server = servers.find(s => s.id === targetSession.serverId);
-                if (server) onOpenServiceManager(server.id, server.name);
+                if (server) onOpenTool('services', server.id, server.name);
               },
             },
             { type: 'separator' },

@@ -12,4 +12,5 @@ pub use super::session::*;
 pub use super::ssh_config::*;
 pub use super::ssh_keys::*;
 pub use super::ssh_tunnel::*;
+pub use super::toolbox::*;
 pub use super::transfer_history::*;

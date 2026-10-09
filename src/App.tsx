@@ -29,6 +29,7 @@ import { HostKeyPromptModal } from "./components/HostKeyPromptModal";
 import { CommandHistoryModal } from "./components/CommandHistoryModal";
 import { PortMonitorModal } from "./components/PortMonitorModal";
 import { DockerManagerModal } from "./components/DockerManagerModal";
+import { ProcessManagerModal } from "./components/ProcessManagerModal";
 import { ServiceManagerModal } from "./components/ServiceManagerModal";
 import { TransferHistoryModal } from "./components/TransferHistoryModal";
 import { useTransferHistory } from "./hooks/useTransferHistory";
@@ -106,9 +107,7 @@ const AppContent: React.FC = () => {
   const [showFullscreenHint, setShowFullscreenHint] = useState(false);
   const confirmOnDisconnectRef = useRef(true);
   const [commandHistoryServer, setCommandHistoryServer] = useState<Server | null | undefined>(undefined); // undefined=关闭, null=全部, Server=指定
-  const [portMonitorServer, setPortMonitorServer] = useState<{ id: string; name: string } | null>(null);
-  const [dockerManagerServer, setDockerManagerServer] = useState<{ id: string; name: string } | null>(null);
-  const [serviceManagerServer, setServiceManagerServer] = useState<{ id: string; name: string } | null>(null);
+  const [toolboxTarget, setToolboxTarget] = useState<{ tool: import("./components/TabBar").ToolboxTool; id: string; name: string } | null>(null);
 
   const { connectToServer, disconnectServer, closeTerminalSession, servers, categories, refreshCategories, refreshServers } = useServer();
 
@@ -744,14 +743,8 @@ const AppContent: React.FC = () => {
   const handleOpenCommandHistory = useCallback((server?: Server) => {
     setCommandHistoryServer(server ?? null);
   }, []);
-  const handleOpenPortMonitor = useCallback((serverId: string, serverName: string) => {
-    setPortMonitorServer({ id: serverId, name: serverName });
-  }, []);
-  const handleOpenDockerManager = useCallback((serverId: string, serverName: string) => {
-    setDockerManagerServer({ id: serverId, name: serverName });
-  }, []);
-  const handleOpenServiceManager = useCallback((serverId: string, serverName: string) => {
-    setServiceManagerServer({ id: serverId, name: serverName });
+  const handleOpenTool = useCallback((tool: import("./components/TabBar").ToolboxTool, serverId: string, serverName: string) => {
+    setToolboxTarget({ tool, id: serverId, name: serverName });
   }, []);
   const handleOpenTransferHistory = useCallback(() => {
     setIsTransferHistoryOpen(true);
@@ -841,9 +834,7 @@ const AppContent: React.FC = () => {
             onCloseAllSessions={handleCloseAllSessions}
             onTerminalFilesDropped={handleTerminalFilesDropped}
             onTerminalCommandExecuted={handleTerminalCommandExecuted}
-            onOpenPortMonitor={handleOpenPortMonitor}
-            onOpenDockerManager={handleOpenDockerManager}
-            onOpenServiceManager={handleOpenServiceManager}
+            onOpenTool={handleOpenTool}
             onOpenTransferHistory={handleOpenTransferHistory}
             terminalFontSize={appSettings?.terminalFontSize ?? 14}
             terminalScrollback={appSettings?.terminalScrollback ?? 5000}
@@ -941,25 +932,32 @@ const AppContent: React.FC = () => {
         />
       )}
       {contextMenu && <ContextMenu {...contextMenu} menuRef={contextMenuRef} onClose={closeContextMenu} />}
-      {portMonitorServer && (
+      {toolboxTarget?.tool === 'ports' && (
         <PortMonitorModal
-          serverId={portMonitorServer.id}
-          serverName={portMonitorServer.name}
-          onClose={() => setPortMonitorServer(null)}
+          serverId={toolboxTarget.id}
+          serverName={toolboxTarget.name}
+          onClose={() => setToolboxTarget(null)}
         />
       )}
-      {dockerManagerServer && (
+      {toolboxTarget?.tool === 'docker' && (
         <DockerManagerModal
-          serverId={dockerManagerServer.id}
-          serverName={dockerManagerServer.name}
-          onClose={() => setDockerManagerServer(null)}
+          serverId={toolboxTarget.id}
+          serverName={toolboxTarget.name}
+          onClose={() => setToolboxTarget(null)}
         />
       )}
-      {serviceManagerServer && (
+      {toolboxTarget?.tool === 'services' && (
         <ServiceManagerModal
-          serverId={serviceManagerServer.id}
-          serverName={serviceManagerServer.name}
-          onClose={() => setServiceManagerServer(null)}
+          serverId={toolboxTarget.id}
+          serverName={toolboxTarget.name}
+          onClose={() => setToolboxTarget(null)}
+        />
+      )}
+      {toolboxTarget?.tool === 'processes' && (
+        <ProcessManagerModal
+          serverId={toolboxTarget.id}
+          serverName={toolboxTarget.name}
+          onClose={() => setToolboxTarget(null)}
         />
       )}
       <TransferHistoryModal

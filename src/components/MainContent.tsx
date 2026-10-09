@@ -23,9 +23,7 @@ interface MainContentProps {
   onCloseAllSessions: () => void;
   onTerminalFilesDropped: (sessionId: string, paths: string[]) => void;
   onTerminalCommandExecuted: (sessionId: string, command: string) => void;
-  onOpenPortMonitor: (serverId: string, serverName: string) => void;
-  onOpenDockerManager: (serverId: string, serverName: string) => void;
-  onOpenServiceManager: (serverId: string, serverName: string) => void;
+  onOpenTool: (tool: import('./TabBar').ToolboxTool, serverId: string, serverName: string) => void;
   onOpenTransferHistory: () => void;
   terminalFontSize: number;
   terminalScrollback: number;
@@ -48,9 +46,7 @@ const MainContentComponent: React.FC<MainContentProps> = ({
   onCloseAllSessions,
   onTerminalFilesDropped,
   onTerminalCommandExecuted,
-  onOpenPortMonitor,
-  onOpenDockerManager,
-  onOpenServiceManager,
+  onOpenTool,
   onOpenTransferHistory,
   terminalFontSize,
   terminalScrollback,
@@ -123,9 +119,7 @@ const MainContentComponent: React.FC<MainContentProps> = ({
           onCloseServerSessions={onCloseServerSessions}
           onCloseAllSessions={onCloseAllSessions}
           onReconnectSession={onReconnectSession}
-          onOpenPortMonitor={onOpenPortMonitor}
-          onOpenDockerManager={onOpenDockerManager}
-          onOpenServiceManager={onOpenServiceManager}
+          onOpenTool={onOpenTool}
           onOpenTransferHistory={onOpenTransferHistory}
         />
       )}
