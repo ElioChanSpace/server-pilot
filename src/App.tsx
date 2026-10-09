@@ -34,6 +34,7 @@ import { DiskAnalysisModal } from "./components/DiskAnalysisModal";
 import { SystemInfoModal } from "./components/SystemInfoModal";
 import { NetConnectionsModal } from "./components/NetConnectionsModal";
 import { LogStreamModal } from "./components/LogStreamModal";
+import { ScheduledTasksModal } from "./components/ScheduledTasksModal";
 import { ServiceManagerModal } from "./components/ServiceManagerModal";
 import { TransferHistoryModal } from "./components/TransferHistoryModal";
 import { useTransferHistory } from "./hooks/useTransferHistory";
@@ -987,6 +988,13 @@ const AppContent: React.FC = () => {
       )}
       {toolboxTarget?.tool === 'logstream' && (
         <LogStreamModal
+          serverId={toolboxTarget.id}
+          serverName={toolboxTarget.name}
+          onClose={() => setToolboxTarget(null)}
+        />
+      )}
+      {toolboxTarget?.tool === 'cron' && (
+        <ScheduledTasksModal
           serverId={toolboxTarget.id}
           serverName={toolboxTarget.name}
           onClose={() => setToolboxTarget(null)}

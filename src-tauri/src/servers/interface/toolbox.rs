@@ -504,6 +504,143 @@ pub async fn read_log_chunk(
     .map_err(|err| err.to_string())?
 }
 
+// ---- Scheduled tasks (cron + systemd timers) ----
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CronJob {
+    pub source: String,
+    pub schedule: String,
+    pub user: String,
+    pub command: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemdTimer {
+    pub unit: String,
+    pub activates: String,
+    pub next: String,
+    pub left: String,
+}
+
+fn parse_cron_sections(output: &str) -> Vec<CronJob> {
+    let mut jobs = Vec::new();
+    let mut source = String::new();
+    for line in output.lines() {
+        if let Some(src) = line.trim().strip_prefix("__SRC__") {
+            source = src.trim().to_string();
+            continue;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        // Skip env assignments (KEY=value) in /etc/crontab & cron.d
+        if !trimmed.starts_with('@') && trimmed.split_whitespace().next().is_some_and(|f| f.contains('=') && !f.starts_with(|c: char| c.is_ascii_digit())) {
+            continue;
+        }
+        let is_system = source.starts_with("/etc/");
+        let mut fields = trimmed.split_whitespace();
+        let schedule = if trimmed.starts_with('@') {
+            fields.next().unwrap_or("").to_string()
+        } else {
+            (0..5).filter_map(|_| fields.next()).collect::<Vec<_>>().join(" ")
+        };
+        if schedule.is_empty() {
+            continue;
+        }
+        let user = if is_system {
+            fields.next().unwrap_or("-").to_string()
+        } else {
+            "-".to_string()
+        };
+        let command = fields.collect::<Vec<_>>().join(" ");
+        if command.is_empty() {
+            continue;
+        }
+        jobs.push(CronJob {
+            source: source.clone(),
+            schedule,
+            user,
+            command,
+        });
+    }
+    jobs
+}
+
+fn parse_timers_output(output: &str) -> Vec<SystemdTimer> {
+    let mut timers = Vec::new();
+    for line in output.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 2 {
+            continue;
+        }
+        // UNIT and ACTIVATES are the last two columns; everything before is
+        // NEXT/LEFT/LAST/PASSED display text (dates contain spaces).
+        let activates = fields[fields.len() - 1].to_string();
+        let unit = fields[fields.len() - 2].to_string();
+        if !unit.ends_with(".timer") {
+            continue;
+        }
+        let head = fields[..fields.len() - 2].join(" ");
+        // "next left" — next is usually the leading date/time, left the duration
+        // right before the unit column. Split loosely on double-space if present.
+        let (next, left) = match head.rsplit_once(' ') {
+            Some((n, l)) => (n.trim().to_string(), l.trim().to_string()),
+            None => (head, String::new()),
+        };
+        timers.push(SystemdTimer {
+            unit,
+            activates,
+            next,
+            left,
+        });
+    }
+    timers
+}
+
+#[tauri::command(async)]
+pub async fn fetch_cron_jobs(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<CronJob>, String> {
+    let connection = resolve_transfer_server(&state, &id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = uuid::Uuid::new_v4().to_string();
+        let marker = format!("__SRC_{}__", token);
+        let cmd = format!(
+            "{{ echo \"{m}user-crontab\"; crontab -l 2>/dev/null; \
+               echo \"{m}/etc/crontab\"; cat /etc/crontab 2>/dev/null; \
+               for f in /etc/cron.d/*; do echo \"{m}$f\"; cat \"$f\" 2>/dev/null; done; \
+               echo \"{m}root-crontab\"; sudo -n crontab -l 2>/dev/null; }} | sed 's/^{m}/__SRC__/'",
+            m = marker
+        );
+        let output = ssh_client::run_ssh_exec_blocking(&connection, &cmd, "fetch cron jobs")?;
+        Ok(parse_cron_sections(&output))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+#[tauri::command(async)]
+pub async fn fetch_systemd_timers(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<SystemdTimer>, String> {
+    let connection = resolve_transfer_server(&state, &id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = ssh_client::run_ssh_exec_blocking(
+            &connection,
+            "systemctl list-timers --all --no-pager --no-legend 2>/dev/null",
+            "fetch systemd timers",
+        )?;
+        Ok(parse_timers_output(&output))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,5 +705,35 @@ mod tests {
         assert_eq!(conns[0].pid, Some(812));
         assert_eq!(conns[1].peer, "203.0.113.7:51422");
         assert_eq!(conns[2].pid, None);
+    }
+
+    #[test]
+    fn parse_cron_sections_handles_sources() {
+        let output = "__SRC__user-crontab\n\
+                      0 3 * * * /home/u/backup.sh\n\
+                      @reboot /home/u/start.sh\n\
+                      __SRC__/etc/crontab\n\
+                      SHELL=/bin/sh\n\
+                      17 * * * * root /usr/bin/run-parts /etc/cron.hourly\n\
+                      __SRC__root-crontab\n\
+                      # comment line";
+        let jobs = parse_cron_sections(output);
+        assert_eq!(jobs.len(), 3);
+        assert_eq!(jobs[0].schedule, "0 3 * * *");
+        assert_eq!(jobs[0].command, "/home/u/backup.sh");
+        assert_eq!(jobs[1].schedule, "@reboot");
+        assert_eq!(jobs[2].user, "root");
+        assert_eq!(jobs[2].source, "/etc/crontab");
+    }
+
+    #[test]
+    fn parse_timers_output_extracts_units() {
+        let output = "Wed 2026-10-09 10:00:00 CST  43min left  Wed 2026-10-09 09:00:00 CST  4min ago   apt-daily.timer              apt-daily.service\n\
+                      n/a                          n/a         n/a                          n/a        fstrim.timer                 fstrim.service";
+        let timers = parse_timers_output(output);
+        assert_eq!(timers.len(), 2);
+        assert_eq!(timers[0].unit, "apt-daily.timer");
+        assert_eq!(timers[0].activates, "apt-daily.service");
+        assert_eq!(timers[1].unit, "fstrim.timer");
     }
 }

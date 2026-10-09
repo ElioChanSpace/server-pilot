@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaBolt, FaCopy, FaCogs, FaDocker, FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
+import { FaBolt, FaCalendarAlt, FaCopy, FaCogs, FaDocker, FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
 import { getServerStatusMeta } from '../utils/serverStatus';
 
-export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes' | 'disk' | 'sysinfo' | 'net' | 'logstream';
+export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes' | 'disk' | 'sysinfo' | 'net' | 'logstream' | 'cron';
 
 interface TabBarProps {
   sessions: TerminalSession[];
@@ -159,6 +159,14 @@ const TabBarComponent: React.FC<TabBarProps> = ({
               action: () => {
                 const server = servers.find(s => s.id === targetSession.serverId);
                 if (server) onOpenTool('logstream', server.id, server.name);
+              },
+            },
+            {
+              label: '定时任务',
+              icon: <FaCalendarAlt />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenTool('cron', server.id, server.name);
               },
             },
             {
