@@ -600,3 +600,173 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ==================== 面包屑 ==================== */
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 14px;
+  background: var(--bg-secondary-opaque, var(--bg-secondary, #181825));
+  border-bottom: 1px solid var(--border-color, #313244);
+  flex-shrink: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.breadcrumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.crumb {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.crumb:hover {
+  background: var(--surface-hover);
+  color: var(--accent-color);
+}
+
+.crumbSep {
+  color: var(--text-muted);
+  opacity: 0.5;
+  font-size: 10px;
+}
+
+/* ==================== 快速打开 / 命令面板 ==================== */
+.panelOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding-top: 64px;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fadeIn 0.12s ease;
+}
+
+.panel {
+  width: min(520px, 84%);
+  max-height: 380px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: var(--bg-elevated-opaque, var(--bg-elevated, #233650));
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: dialogIn 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.panelInput {
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.panelInput:focus {
+  outline: none;
+}
+
+.panelInput::placeholder {
+  color: var(--text-muted);
+}
+
+.panelList {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.panelItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 16px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.panelItem[data-active="true"] {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.panelIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.panelLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panelSub {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+
+.panelEmpty {
+  padding: 18px 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ==================== vim 指示 / 状态栏开关 ==================== */
+.vimStatus {
+  min-width: 52px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(137, 180, 250, 0.12);
+  color: var(--info-color, #89b4fa);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', Menlo, monospace;
+}
+
+.statusToggle {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.statusToggle:hover {
+  color: var(--text-secondary);
+  background: var(--surface-hover);
+}
+
+.statusToggleOn {
+  color: var(--accent-color);
+  background: rgba(106, 168, 143, 0.12);
+  border-color: rgba(106, 168, 143, 0.3);
+}

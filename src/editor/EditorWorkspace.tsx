@@ -4,10 +4,12 @@ import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   FaSave, FaSpinner, FaEdit, FaTimes, FaLock, FaSearch, FaRedo,
-  FaExclamationTriangle,
+  FaExclamationTriangle, FaFolderOpen, FaTerminal,
 } from "react-icons/fa";
+import { initVimMode } from "monaco-vim";
 import { monaco } from "./monaco-env";
 import { toMonacoLanguage } from "./monaco-language";
 import { applyMonacoTheme } from "./monaco-theme";
@@ -91,8 +93,24 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
   // Model 创建/切换后的重同步（触发 setModel 的 effect）
   const [modelsVersion, setModelsVersion] = useState(0);
 
+  // M3：快速打开 / 命令面板 / vim / 编辑器偏好
+  const [panel, setPanel] = useState<null | "files" | "commands">(null);
+  const [panelQuery, setPanelQuery] = useState("");
+  const [panelIndex, setPanelIndex] = useState(0);
+  const [vimEnabled, setVimEnabled] = useState(
+    () => window.localStorage.getItem("server-pilot-editor-vim") === "1",
+  );
+  const [wrapEnabled, setWrapEnabled] = useState(
+    () => window.localStorage.getItem("server-pilot-editor-wrap") === "1",
+  );
+  const [minimapEnabled, setMinimapEnabled] = useState(
+    () => window.localStorage.getItem("server-pilot-editor-minimap") !== "0",
+  );
+
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const vimStatusRef = useRef<HTMLDivElement | null>(null);
+  const vimModeRef = useRef<{ dispose(): void } | null>(null);
   const modelsRef = useRef(new Map<string, monaco.editor.ITextModel>());
   const viewStatesRef = useRef(new Map<string, monaco.editor.ICodeEditorViewState | null>());
   const prevActiveKeyRef = useRef<string | null>(null);
@@ -303,6 +321,32 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── M3：vim 键位模式（monaco-vim） ──
+  useEffect(() => {
+    const editor = editorRef.current;
+    const statusEl = vimStatusRef.current;
+    if (!editor || !statusEl) return;
+    if (!vimEnabled) return;
+    const mode = initVimMode(editor, statusEl);
+    vimModeRef.current = mode;
+    return () => {
+      mode.dispose();
+      vimModeRef.current = null;
+    };
+  }, [vimEnabled]);
+
+  useEffect(() => {
+    window.localStorage.setItem("server-pilot-editor-vim", vimEnabled ? "1" : "0");
+  }, [vimEnabled]);
+  useEffect(() => {
+    window.localStorage.setItem("server-pilot-editor-wrap", wrapEnabled ? "1" : "0");
+    editorRef.current?.updateOptions({ wordWrap: wrapEnabled ? "on" : "off" });
+  }, [wrapEnabled]);
+  useEffect(() => {
+    window.localStorage.setItem("server-pilot-editor-minimap", minimapEnabled ? "1" : "0");
+    editorRef.current?.updateOptions({ minimap: { enabled: minimapEnabled } });
+  }, [minimapEnabled]);
+
   // 激活标签切换 → 换 Model（保留每文件 undo 与视图状态）
   useEffect(() => {
     const editor = editorRef.current;
@@ -502,8 +546,18 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
         if (activeKey) requestCloseTab(activeKey);
         return;
       }
+      if (primary && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        setPanelQuery("");
+        setPanelIndex(0);
+        setPanel(event.shiftKey ? "commands" : "files");
+        return;
+      }
       if (event.key === "Escape") {
-        if (conflictState) {
+        if (panel) {
+          event.preventDefault();
+          setPanel(null);
+        } else if (conflictState) {
           event.preventDefault();
           setConflictState(null);
         } else if (dialog) {
@@ -514,7 +568,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeKey, persistSave, requestCloseTab, dialog, conflictState]);
+  }, [activeKey, persistSave, requestCloseTab, dialog, conflictState, panel]);
 
   // ── 工具栏动作 ──
   const handleReset = useCallback(() => {
@@ -556,6 +610,144 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
       });
     }
   }, [updateTab]);
+
+  // ── M3：命令面板 / 快速打开 ──
+  const reloadTab = useCallback(
+    (key: string) => {
+      const tab = tabsRef.current.find((t) => t.key === key);
+      if (!tab) return;
+      modelsRef.current.get(key)?.dispose();
+      modelsRef.current.delete(key);
+      setTabs((prev) => prev.filter((t) => t.key !== key));
+      void openFile(tab.serverId, tab.filePath);
+    },
+    [openFile],
+  );
+
+  interface PanelItem {
+    id: string;
+    label: string;
+    sub?: string;
+    run: () => void;
+  }
+
+  const panelItems = useMemo<PanelItem[]>(() => {
+    const q = panelQuery.trim().toLowerCase();
+    if (panel === "files") {
+      return tabs
+        .filter(
+          (t) =>
+            !q ||
+            t.fileName.toLowerCase().includes(q) ||
+            t.filePath.toLowerCase().includes(q),
+        )
+        .map((t) => ({
+          id: t.key,
+          label: t.fileName,
+          sub: t.filePath,
+          run: () => setActiveKey(t.key),
+        }));
+    }
+    if (panel === "commands") {
+      const items: PanelItem[] = [
+        {
+          id: "save",
+          label: "保存当前文件",
+          sub: "⌘S",
+          run: () => activeKey && void persistSave(activeKey),
+        },
+        {
+          id: "close-tab",
+          label: "关闭当前标签",
+          sub: "⌘W",
+          run: () => activeKey && requestCloseTab(activeKey),
+        },
+        {
+          id: "close-all",
+          label: "关闭全部标签（关闭窗口）",
+          run: requestCloseWindow,
+        },
+        {
+          id: "toggle-readonly",
+          label: activeTab?.readOnly ? "进入编辑模式" : "切换为只读",
+          run: handleToggleEdit,
+        },
+        { id: "reset", label: "重置为原始内容", run: handleReset },
+        {
+          id: "toggle-wrap",
+          label: wrapEnabled ? "关闭自动换行" : "开启自动换行",
+          run: () => setWrapEnabled((v) => !v),
+        },
+        {
+          id: "toggle-minimap",
+          label: minimapEnabled ? "隐藏 Minimap" : "显示 Minimap",
+          run: () => setMinimapEnabled((v) => !v),
+        },
+        {
+          id: "toggle-vim",
+          label: vimEnabled ? "关闭 Vim 模式" : "开启 Vim 模式",
+          run: () => setVimEnabled((v) => !v),
+        },
+        {
+          id: "reload",
+          label: "重新加载当前文件",
+          run: () => activeKey && reloadTab(activeKey),
+        },
+        {
+          id: "export",
+          label: "导出到本地",
+          run: () => activeKey && void handleExportLocal(activeKey),
+        },
+      ];
+      return items.filter((c) => !q || c.label.toLowerCase().includes(q));
+    }
+    return [];
+  }, [
+    panel,
+    panelQuery,
+    tabs,
+    activeKey,
+    activeTab,
+    persistSave,
+    requestCloseTab,
+    requestCloseWindow,
+    handleToggleEdit,
+    handleReset,
+    wrapEnabled,
+    minimapEnabled,
+    vimEnabled,
+    reloadTab,
+    handleExportLocal,
+  ]);
+
+  // 面板键盘导航
+  const handlePanelKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setPanelIndex((i) => Math.min(i + 1, panelItems.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setPanelIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const item = panelItems[panelIndex];
+      setPanel(null);
+      item?.run();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setPanel(null);
+    }
+  };
+
+  // ── M3：面包屑 ──
+  const breadcrumbParts = useMemo(() => {
+    if (!activeTab) return [] as Array<{ label: string; path: string }>;
+    const segs = activeTab.filePath.split("/").filter(Boolean);
+    return segs.map((seg, i) => ({
+      label: seg,
+      path: "/" + segs.slice(0, i + 1).join("/"),
+    }));
+  }, [activeTab]);
 
   // 对话框动作：保存并关闭（单标签/全窗）
   const saveAndCloseTab = useCallback(
@@ -731,6 +923,27 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
         </div>
       </div>
 
+      {/* ── 面包屑（路径分段，点击复制该段路径） ── */}
+      {activeTab && breadcrumbParts.length > 0 && (
+        <div className={styles.breadcrumbs}>
+          {breadcrumbParts.map((part, i) => (
+            <React.Fragment key={part.path}>
+              {i > 0 && <span className={styles.crumbSep}>/</span>}
+              <button
+                type="button"
+                className={styles.crumb}
+                title={`复制路径 ${part.path}`}
+                onClick={() => {
+                  void writeText(part.path).catch(() => {});
+                }}
+              >
+                {part.label}
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+
       {/* ── 编辑区 ── */}
       <div className={styles.editorBody}>
         <div ref={hostRef} className={styles.monacoHost} />
@@ -767,6 +980,24 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
           {activeTab ? `${activeTab.fileName} — ${activeTab.filePath}` : "无打开的文件"}
         </span>
         <div className={styles.statusRight}>
+          {/* vim 模式指示（monaco-vim 写入） */}
+          {vimEnabled && <div ref={vimStatusRef} className={styles.vimStatus} />}
+          <button
+            type="button"
+            className={`${styles.statusToggle} ${wrapEnabled ? styles.statusToggleOn : ""}`}
+            title="自动换行"
+            onClick={() => setWrapEnabled((v) => !v)}
+          >
+            换行
+          </button>
+          <button
+            type="button"
+            className={`${styles.statusToggle} ${minimapEnabled ? styles.statusToggleOn : ""}`}
+            title="Minimap"
+            onClick={() => setMinimapEnabled((v) => !v)}
+          >
+            缩略图
+          </button>
           {activeTab?.saveStatus === "error" && (
             <button
               type="button"
@@ -822,6 +1053,50 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
           </span>
         </div>
       </div>
+
+      {/* ── M3：⌘P 快速打开 / ⌘⇧P 命令面板 ── */}
+      {panel && (
+        <div className={styles.panelOverlay} onClick={() => setPanel(null)}>
+          <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
+            <input
+              autoFocus
+              className={styles.panelInput}
+              placeholder={panel === "files" ? "快速打开（已打开的文件）…" : "命令面板…"}
+              value={panelQuery}
+              onChange={(e) => {
+                setPanelQuery(e.target.value);
+                setPanelIndex(0);
+              }}
+              onKeyDown={handlePanelKeyDown}
+            />
+            <div className={styles.panelList}>
+              {panelItems.length === 0 && (
+                <div className={styles.panelEmpty}>无匹配项</div>
+              )}
+              {panelItems.map((item, i) => (
+                <div
+                  key={item.id}
+                  className={styles.panelItem}
+                  data-active={i === panelIndex}
+                  onMouseEnter={() => setPanelIndex(i)}
+                  onClick={() => {
+                    setPanel(null);
+                    item.run();
+                  }}
+                >
+                  {panel === "files" ? (
+                    <FaFolderOpen size={11} className={styles.panelIcon} />
+                  ) : (
+                    <FaTerminal size={11} className={styles.panelIcon} />
+                  )}
+                  <span className={styles.panelLabel}>{item.label}</span>
+                  {item.sub && <span className={styles.panelSub}>{item.sub}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 对话框：关闭标签 / 关闭窗口 / 保存失败 ── */}
       {dialog && (
@@ -975,15 +1250,9 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
                 type="button"
                 className={styles.dialogPrimary}
                 onClick={() => {
-                  const tab = tabsRef.current.find((t) => t.key === conflictState.key);
+                  const key = conflictState.key;
                   setConflictState(null);
-                  if (tab) {
-                    // 重新加载：销毁 Model 由 openFile 重建
-                    modelsRef.current.get(tab.key)?.dispose();
-                    modelsRef.current.delete(tab.key);
-                    setTabs((prev) => prev.filter((t) => t.key !== tab.key));
-                    void openFile(tab.serverId, tab.filePath);
-                  }
+                  reloadTab(key);
                 }}
               >
                 放弃修改并重新加载
