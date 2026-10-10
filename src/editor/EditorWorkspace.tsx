@@ -511,6 +511,8 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
     for (const t of tabsRef.current) {
       void emit("editor-closed", { serverId: t.serverId, filePath: t.filePath });
     }
+    // 整窗关闭专用事件：托盘清全部行态并把焦点拉回主窗口
+    void emit("editor-window-closed", {});
     setTimeout(() => {
       const win = getCurrentWindow();
       win.destroy().catch(() => {

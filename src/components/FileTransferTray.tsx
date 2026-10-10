@@ -502,11 +502,12 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
     createWindow();
   };
 
-  // 编辑窗口关闭后复位行态（编辑器在关闭前 emit "editor-closed"）。
-  // 注意 payload 字段是 filePath（与 EditorWorkspace 的 emit 保持一致）。
+  // 编辑窗口关闭/单标签关闭后复位行态。
+  // 注意 payload 字段是 filePath（与 EditorWorkspace 的 emit 保持一致）；
+  // 单标签关闭不能拉走焦点，否则编辑窗会被主窗盖住（看起来"被隐藏"）。
   useEffect(() => {
     let disposed = false;
-    let unlisten: (() => void) | undefined;
+    const unlisteners: Array<() => void> = [];
     void listen<{ serverId: string; filePath: string }>("editor-closed", event => {
       if (disposed) return;
       const path = event.payload.filePath;
@@ -517,15 +518,22 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
         next.delete(path);
         return next;
       });
-      // 编辑窗口关闭后把键盘焦点拉回主窗口，避免按键掉进虚空
+    }).then(fn => {
+      if (disposed) fn();
+      else unlisteners.push(fn);
+    });
+    // 整个编辑工作区关闭：清全部行态并把键盘焦点拉回主窗口
+    void listen("editor-window-closed", () => {
+      if (disposed) return;
+      setEditingPaths(new Set());
       void getCurrentWindow().setFocus().catch(() => {});
     }).then(fn => {
       if (disposed) fn();
-      else unlisten = fn;
+      else unlisteners.push(fn);
     });
     return () => {
       disposed = true;
-      unlisten?.();
+      unlisteners.forEach(fn => fn());
     };
   }, []);
 
