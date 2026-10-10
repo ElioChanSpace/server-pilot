@@ -401,7 +401,8 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
   const handleEdit = async (entry: RemoteDirectoryEntry) => {
     if (!server) return;
 
-    // 编辑工作区：单窗口多标签。已存在 → 发 editor-open 事件增标签并前置
+    // 编辑工作区：单窗口多标签。已存在 → 发 editor-open 增标签并前置；
+    // 句柄失效（死窗残留）则销毁后重建，绝不静默返回
     const existing = await WebviewWindow.getByLabel(WORKSPACE_LABEL).catch(() => null);
     if (existing) {
       try {
@@ -414,36 +415,87 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
         setEditingPaths(prev => new Set(prev).add(entry.path));
         return;
       } catch {
-        // 句柄失效 → 落到重建流程
+        try {
+          await existing.close();
+        } catch {
+          /* 忽略 */
+        }
       }
     }
 
     setEditingPaths(prev => new Set(prev).add(entry.path));
-    const url = `/editor.html?serverId=${encodeURIComponent(server.id)}&filePath=${encodeURIComponent(entry.path)}`;
-    const win = new WebviewWindow(WORKSPACE_LABEL, {
-      url,
-      title: `编辑 - ${server.name}`,
-      width: 1100,
-      height: 760,
-      minWidth: 640,
-      minHeight: 420,
-      decorations: false,
-      transparent: true,
-      shadow: true,
-      resizable: true,
-      center: true,
-    });
 
-    const cleanup = () => {
-      // 窗口整体销毁：清掉该服务器所有"编辑中"行态
-      setEditingPaths(new Set());
+    const failVisible = (msg: string) => {
+      setEditingPaths(prev => {
+        const next = new Set(prev);
+        next.delete(entry.path);
+        return next;
+      });
+      setError(msg);
     };
-    win.once("tauri://error", cleanup);
-    win.once("tauri://destroyed", cleanup);
-    win.once("tauri://created", () => {
-      void win.show().catch(() => {});
-      void win.setFocus().catch(() => {});
-    });
+
+    const url = `/editor.html?serverId=${encodeURIComponent(server.id)}&filePath=${encodeURIComponent(entry.path)}`;
+    let retried = false;
+    const createWindow = () => {
+      const win = new WebviewWindow(WORKSPACE_LABEL, {
+        url,
+        title: `编辑 - ${server.name}`,
+        width: 1100,
+        height: 760,
+        minWidth: 640,
+        minHeight: 420,
+        decorations: false,
+        transparent: true,
+        shadow: true,
+        resizable: true,
+        center: true,
+      });
+
+      let settled = false;
+      const bringToFront = () => {
+        void win.show().catch(() => {});
+        void win.setFocus().catch(() => {});
+      };
+
+      win.once("tauri://created", () => {
+        if (settled) return;
+        settled = true;
+        bringToFront();
+        // 前置加固：透明窗创建后可能被主窗挡住，350ms 后再拉一次焦点
+        setTimeout(bringToFront, 350);
+      });
+
+      win.once("tauri://error", e => {
+        if (settled) return;
+        settled = true;
+        const msg = String(e.payload ?? e);
+        if (!retried) {
+          // 创建失败（如 label 残留）：销毁残留后重试一次
+          retried = true;
+          void (async () => {
+            const stale = await WebviewWindow.getByLabel(WORKSPACE_LABEL).catch(() => null);
+            if (stale) {
+              try {
+                await stale.close();
+              } catch {
+                /* 忽略 */
+              }
+            }
+            await new Promise(resolve => setTimeout(resolve, 250));
+            createWindow();
+          })();
+        } else {
+          failVisible(`打开编辑器失败: ${msg}`);
+        }
+      });
+
+      win.once("tauri://destroyed", () => {
+        // 窗口整体销毁：清掉所有"编辑中"行态
+        setEditingPaths(new Set());
+      });
+    };
+
+    createWindow();
   };
 
   // 编辑窗口关闭后复位行态（编辑器在关闭前 emit "editor-closed"）。

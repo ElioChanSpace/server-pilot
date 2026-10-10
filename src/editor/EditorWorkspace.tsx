@@ -9,10 +9,12 @@ import {
   FaSave, FaSpinner, FaEdit, FaTimes, FaLock, FaSearch, FaRedo,
   FaExclamationTriangle, FaFolderOpen, FaTerminal,
 } from "react-icons/fa";
-import { initVimMode } from "monaco-vim";
-import { monaco } from "./monaco-env";
+// 仅类型导入（编译期擦除）：monaco / monaco-vim / monaco-theme 在运行时
+// 动态加载 —— 这样窗口外壳（标签栏/工具栏/状态栏）立即可见，
+// 编辑器内核随后填充，大幅缩短"窗口出现"的感知时间。
+import type * as monaco from "monaco-editor";
+import type { initVimMode as InitVimMode } from "monaco-vim";
 import { toMonacoLanguage } from "./monaco-language";
-import { applyMonacoTheme } from "./monaco-theme";
 import {
   getInitialThemeId,
   getThemeMode,
@@ -119,11 +121,21 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
   const initialOpenedRef = useRef(false);
   const mountedRef = useRef(true);
 
+  // Monaco 运行时（动态加载）
+  const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
+  const applyMonacoThemeRef = useRef<((t: (typeof APP_THEMES)[string]) => string) | null>(null);
+  const initVimModeRef = useRef<typeof InitVimMode | null>(null);
+  const readyPromiseRef = useRef<Promise<void>>(Promise.resolve());
+  const [editorReady, setEditorReady] = useState(false);
+  const [editorLoadError, setEditorLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+
   const theme = useMemo(
     () => APP_THEMES[themeId] ?? APP_THEMES[DEFAULT_THEME],
     [themeId],
   );
-  const themeName = useMemo(() => applyMonacoTheme(theme), [theme]);
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
   const themeMode = useMemo(() => getThemeMode(themeId), [themeId]);
 
   useEffect(() => {
@@ -155,9 +167,13 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
     };
   }, [themeId]);
 
+  // 主题切换（Monaco 加载后生效）
   useEffect(() => {
-    monaco.editor.setTheme(themeName);
-  }, [themeName]);
+    const applyFn = applyMonacoThemeRef.current;
+    const m = monacoRef.current;
+    if (!applyFn || !m) return;
+    m.editor.setTheme(applyFn(theme));
+  }, [theme]);
 
   // ── 打开文件（幂等：已存在则激活） ──
   const openFile = useCallback(
@@ -197,11 +213,15 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
           themeMode,
         });
         if (!mountedRef.current) return;
+        // 等待 Monaco 内核动态加载完成（窗口外壳已先行显示）
+        await readyPromiseRef.current;
+        const m = monacoRef.current;
+        if (!mountedRef.current || !m) return;
 
-        const model = monaco.editor.createModel(
+        const model = m.editor.createModel(
           result.raw,
           toMonacoLanguage(result.language, filePath),
-          monaco.Uri.parse(`server-pilot://${serverId}${filePath}`),
+          m.Uri.parse(`server-pilot://${serverId}${filePath}`),
         );
         model.onDidChangeContent(() => {
           const value = model.getValue();
@@ -283,57 +303,93 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
     };
   }, [openFile]);
 
-  // ── 编辑器实例（一次性创建） ──
+  // ── 编辑器实例（动态加载 Monaco 内核后创建；外壳先行显示） ──
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const editor = monaco.editor.create(host, {
-      automaticLayout: true,
-      theme: themeName,
-      minimap: { enabled: true, size: "proportional" },
-      bracketPairColorization: { enabled: true },
-      guides: {
-        indentation: true,
-        bracketPairs: true,
-        highlightActiveIndentation: true,
-      },
-      renderLineHighlight: "all",
-      wordWrap: "off",
-      folding: true,
-      smoothScrolling: true,
-      stickyScroll: { enabled: true },
-      fontSize: 13,
-      lineHeight: 21,
-      fontFamily:
-        "'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace",
-      padding: { top: 12, bottom: 12 },
-      scrollBeyondLastLine: false,
-    });
-    editorRef.current = editor;
-    const cursorSub = editor.onDidChangeCursorPosition((e) => {
-      setCursor({ line: e.position.lineNumber, column: e.position.column });
-    });
+    let disposed = false;
+    let cursorSub: { dispose(): void } | null = null;
+
+    readyPromiseRef.current = (async () => {
+      try {
+        setEditorLoadError(null);
+        // monaco / 主题 / vim 均按需加载，不阻塞窗口首帧
+        const [monacoMod, themeMod, vimMod] = await Promise.all([
+          import("./monaco-env"),
+          import("./monaco-theme"),
+          import("monaco-vim"),
+        ]);
+        if (disposed) return;
+        const m = monacoMod.monaco;
+        monacoRef.current = m;
+        applyMonacoThemeRef.current = themeMod.applyMonacoTheme;
+        initVimModeRef.current = vimMod.initVimMode;
+
+        const name = themeMod.applyMonacoTheme(themeRef.current);
+
+        const editor = m.editor.create(host, {
+          automaticLayout: true,
+          theme: name,
+          minimap: { enabled: true, size: "proportional" },
+          bracketPairColorization: { enabled: true },
+          guides: {
+            indentation: true,
+            bracketPairs: true,
+            highlightActiveIndentation: true,
+          },
+          renderLineHighlight: "all",
+          wordWrap: "off",
+          folding: true,
+          smoothScrolling: true,
+          stickyScroll: { enabled: true },
+          fontSize: 13,
+          lineHeight: 21,
+          fontFamily:
+            "'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace",
+          padding: { top: 12, bottom: 12 },
+          scrollBeyondLastLine: false,
+        });
+        if (disposed) {
+          editor.dispose();
+          return;
+        }
+        editorRef.current = editor;
+        cursorSub = editor.onDidChangeCursorPosition((e) => {
+          setCursor({ line: e.position.lineNumber, column: e.position.column });
+        });
+        setEditorReady(true);
+      } catch (err) {
+        if (!disposed) {
+          setEditorLoadError(
+            `编辑器内核加载失败: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    })();
+
     return () => {
-      cursorSub.dispose();
-      editor.dispose();
+      disposed = true;
+      cursorSub?.dispose();
+      editorRef.current?.dispose();
       editorRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reloadToken]);
 
-  // ── M3：vim 键位模式（monaco-vim） ──
+  // ── M3：vim 键位模式（monaco-vim 随内核动态加载） ──
   useEffect(() => {
-    const editor = editorRef.current;
     const statusEl = vimStatusRef.current;
-    if (!editor || !statusEl) return;
-    if (!vimEnabled) return;
-    const mode = initVimMode(editor, statusEl);
+    if (!editorReady || !vimEnabled || !statusEl) return;
+    const initVim = initVimModeRef.current;
+    const editor = editorRef.current;
+    if (!initVim || !editor) return;
+    const mode = initVim(editor, statusEl);
     vimModeRef.current = mode;
     return () => {
       mode.dispose();
       vimModeRef.current = null;
     };
-  }, [vimEnabled]);
+  }, [vimEnabled, editorReady]);
 
   useEffect(() => {
     window.localStorage.setItem("server-pilot-editor-vim", vimEnabled ? "1" : "0");
@@ -365,7 +421,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
       editor.setModel(null);
     }
     prevActiveKeyRef.current = activeKey;
-  }, [activeKey, modelsVersion]);
+  }, [activeKey, modelsVersion, editorReady]);
 
   const activeTab = useMemo(
     () => tabs.find((t) => t.key === activeKey) ?? null,
@@ -460,7 +516,17 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
       void emit("editor-closed", { serverId: t.serverId, filePath: t.filePath });
     }
     setTimeout(() => {
-      void getCurrentWindow().close().catch(() => {});
+      const win = getCurrentWindow();
+      win.close().catch(() => {
+        // 关闭失败不能留下隐形窗（data-closing 是 opacity:0）：
+        // 重试一次；仍失败则回滚视觉，避免"再也打不开编辑器"
+        setTimeout(() => {
+          win.close().catch(() => {
+            forceCloseRef.current = false;
+            setClosing(false);
+          });
+        }, 300);
+      });
     }, 150);
   }, []);
 
@@ -947,10 +1013,29 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
       {/* ── 编辑区 ── */}
       <div className={styles.editorBody}>
         <div ref={hostRef} className={styles.monacoHost} />
-        {(!activeTab || activeTab.isLoading) && (
+        {editorLoadError ? (
+          <div className={styles.loading}>
+            <FaExclamationTriangle size={20} className={styles.errorIcon} />
+            <span>{editorLoadError}</span>
+            <button
+              type="button"
+              className={styles.retryInline}
+              onClick={() => {
+                setEditorReady(false);
+                setReloadToken((t) => t + 1);
+              }}
+            >
+              重试
+            </button>
+          </div>
+        ) : (!editorReady || !activeTab || activeTab.isLoading) && (
           <div className={styles.loading}>
             <FaSpinner size={22} className={styles.spin} />{" "}
-            {activeTab ? "正在加载文件…" : "双击文件管理器中的文件开始编辑"}
+            {!editorReady
+              ? "正在启动编辑器…"
+              : activeTab
+                ? "正在加载文件…"
+                : "双击文件管理器中的文件开始编辑"}
           </div>
         )}
         {activeTab && !activeTab.isLoading && activeTab.error && (

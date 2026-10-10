@@ -829,3 +829,7 @@
 .monacoHost :global(.monaco-editor .find-widget:not(.visible)) {
   transform: translateY(calc(-100% - 46px)) !important;
 }
+
+.errorIcon {
+  color: var(--error-color, #f38ba8);
+}
