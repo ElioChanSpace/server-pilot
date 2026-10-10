@@ -819,7 +819,13 @@
 
 /* ==================== Monaco 查找控件位置修正 ==================== */
 /* .find-widget 默认贴编辑区顶部，其按钮的悬浮提示向上弹出时会顶进
-   标题栏被遮住；整体下移 36px 让出提示空间。 */
+   标题栏被遮住；整体下移 36px 让出提示空间。
+   注意：Monaco 隐藏控件靠 transform 滑出容器顶部裁剪（translateY(-100% - 10px)），
+   下移后隐藏态会残留 26px 在容器内 —— 必须同步加大隐藏位移（+36px）。 */
 .monacoHost :global(.monaco-editor .find-widget) {
   top: 36px !important;
+}
+
+.monacoHost :global(.monaco-editor .find-widget:not(.visible)) {
+  transform: translateY(calc(-100% - 46px)) !important;
 }
