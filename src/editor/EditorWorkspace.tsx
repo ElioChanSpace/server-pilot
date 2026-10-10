@@ -868,7 +868,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
                 className={styles.toolbarButton}
                 onClick={handleReset}
                 disabled={activeTab.content === activeTab.originalContent}
-                title="重置为原始内容"
+                data-tip="重置为原始内容" aria-label="重置为原始内容"
               >
                 <FaRedo size={11} /> 重置
               </button>
@@ -880,7 +880,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
                   activeTab.content === activeTab.originalContent ||
                   activeTab.saveStatus === "saving"
                 }
-                title="保存 (⌘S)"
+                data-tip="保存 (⌘S)" aria-label="保存"
               >
                 {activeTab.saveStatus === "saving" ? (
                   <FaSpinner size={11} className={styles.spin} />
@@ -898,7 +898,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
               type="button"
               className={`${styles.toolbarButton} ${activeTab.readOnly ? styles.toggleOn : ""}`}
               onClick={handleToggleEdit}
-              title={activeTab.readOnly ? "进入编辑模式" : "切换为只读"}
+              data-tip={activeTab.readOnly ? "进入编辑模式" : "切换为只读"} aria-label={activeTab.readOnly ? "进入编辑模式" : "切换为只读"}
             >
               <FaEdit size={11} /> {activeTab.readOnly ? "编辑" : "只读"}
             </button>
@@ -907,7 +907,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
             type="button"
             className={styles.toolbarButton}
             onClick={openFind}
-            title="查找 (⌘F)"
+            data-tip="查找 (⌘F)" aria-label="查找"
             disabled={!activeTab}
           >
             <FaSearch size={11} />
@@ -916,7 +916,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
             type="button"
             className={styles.closeButton}
             onClick={requestCloseWindow}
-            title="关闭窗口"
+            data-tip="关闭窗口" aria-label="关闭窗口"
           >
             <FaTimes size={12} />
           </button>
@@ -985,7 +985,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
           <button
             type="button"
             className={`${styles.statusToggle} ${wrapEnabled ? styles.statusToggleOn : ""}`}
-            title="自动换行"
+            data-tip="自动换行" aria-label="自动换行"
             onClick={() => setWrapEnabled((v) => !v)}
           >
             换行
@@ -993,7 +993,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
           <button
             type="button"
             className={`${styles.statusToggle} ${minimapEnabled ? styles.statusToggleOn : ""}`}
-            title="Minimap"
+            data-tip="Minimap" aria-label="Minimap"
             onClick={() => setMinimapEnabled((v) => !v)}
           >
             缩略图

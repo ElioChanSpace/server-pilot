@@ -770,3 +770,49 @@
   background: rgba(106, 168, 143, 0.12);
   border-color: rgba(106, 168, 143, 0.3);
 }
+
+/* ==================== 自绘 tooltip（替代原生 title） ==================== */
+/* 原生 title 提示在窗口右上/右下角会被边缘裁切（"悬浮文字被挡住"）。
+   自绘 tooltip 右对齐按钮、向左展开，窗口内永不被裁；z 值低于对话框。 */
+.toolbarButton,
+.closeButton,
+.statusToggle {
+  position: relative;
+}
+
+.toolbarButton[data-tip]::after,
+.closeButton[data-tip]::after,
+.statusToggle[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: 0;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--bg-elevated-opaque, var(--bg-elevated, #233650));
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 40;
+}
+
+/* 工具栏在窗口顶部：提示向下展开 */
+.toolbarButton[data-tip]::after,
+.closeButton[data-tip]::after {
+  top: calc(100% + 8px);
+}
+
+/* 状态栏在窗口底部：提示向上展开 */
+.statusToggle[data-tip]::after {
+  bottom: calc(100% + 8px);
+}
+
+.toolbarButton[data-tip]:hover::after,
+.closeButton[data-tip]:hover::after,
+.statusToggle[data-tip]:hover::after {
+  opacity: 1;
+}
