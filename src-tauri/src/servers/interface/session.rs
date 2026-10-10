@@ -102,6 +102,16 @@ pub fn list_terminal_sessions(
     Ok(session_manager::list_active_sessions(&session_manager))
 }
 
+/// 取会话历史输出快照（UI 刷新后回放）
+#[tauri::command(async)]
+pub fn get_terminal_session_output(
+    session_manager: State<'_, SessionManagerState>,
+    session_id: String,
+) -> Result<String, String> {
+    Ok(session_manager::session_output_snapshot(&session_manager, &session_id)
+        .unwrap_or_default())
+}
+
 #[tauri::command]
 pub fn pty_write(
     session_manager: State<'_, SessionManagerState>,

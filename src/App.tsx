@@ -344,9 +344,25 @@ const AppContent: React.FC = () => {
         if (alive.length > 0) {
           const restored = reconcileSessions(alive, loadStoredSessions());
           if (restored.length > 0) {
+            // P1: 先取历史输出快照，再一次性恢复 tab + 回放
+            const snapshots = await Promise.all(
+              restored.map(s =>
+                invoke<string>("get_terminal_session_output", { sessionId: s.id }).catch(() => ""),
+              ),
+            );
+            if (cancelled) return;
             const reindexed = reindexSessions(restored);
             sessionsRef.current = reindexed;
             setSessions(reindexed);
+            restored.forEach((s, i) => {
+              const output = snapshots[i];
+              if (output) {
+                resetTerminalOutput(s.id, [
+                  "[INFO] 终端会话已恢复，以下为刷新前的历史输出\r\n",
+                  output,
+                ]);
+              }
+            });
             if (currentSessionIdRef.current == null) {
               setCurrentSessionId(reindexed[0].id);
             }

@@ -20,6 +20,9 @@ struct PendingCwdRequest {
     responder: mpsc::Sender<Result<String, String>>,
 }
 
+/// 会话输出环形缓冲上限（UI 刷新后恢复回放用）
+const OUTPUT_RING_LIMIT: usize = 2 * 1024 * 1024;
+
 // 代表一个活动的 PTY 会话
 pub struct Session {
     pub session_id: String,
@@ -36,6 +39,8 @@ pub struct Session {
     pub last_activity_at: Instant,
     pub close_reason: Option<String>,
     last_output: String,
+    /// 环形输出缓冲：UI 刷新/重连后可整体回放，按字节上限裁剪
+    output_ring: Vec<u8>,
     /// Last successfully probed remote working directory (cached so tab badges
     /// can show it without injecting a probe command into the terminal).
     pub last_known_cwd: Option<String>,
@@ -262,6 +267,12 @@ fn append_session_output(session: &Arc<Mutex<Session>>, data: &str) {
         // Receiving output counts as activity so long-running commands
         // (tail -f, builds, migrations) are not killed by the idle timeout.
         guard.last_activity_at = Instant::now();
+        // 环形缓冲：供 UI 刷新后整体回放，超限从头部裁剪
+        guard.output_ring.extend_from_slice(data.as_bytes());
+        if guard.output_ring.len() > OUTPUT_RING_LIMIT {
+            let excess = guard.output_ring.len() - OUTPUT_RING_LIMIT;
+            guard.output_ring.drain(..excess);
+        }
         guard.last_output.push_str(data);
         if guard.last_output.len() > 8192 {
             let keep_from = guard.last_output.len() - 8192;
@@ -471,6 +482,7 @@ pub fn start_session(
         last_activity_at: Instant::now(),
         close_reason: None,
         last_output: String::new(),
+        output_ring: Vec::new(),
         last_known_cwd: None,
         pending_cwd_request: None,
         pending_host_key: None,
@@ -1207,4 +1219,14 @@ pub fn find_active_session_for_server(
             None
         }
     })
+}
+
+/// 取会话输出环形缓冲快照（UI 刷新后回放历史输出）
+pub fn session_output_snapshot(
+    session_manager_state: &State<'_, SessionManagerState>,
+    session_id: &str,
+) -> Option<String> {
+    let sessions = session_manager_state.0.lock().ok()?;
+    let session = sessions.get(session_id)?.lock().ok()?;
+    Some(String::from_utf8_lossy(&session.output_ring).into_owned())
 }
