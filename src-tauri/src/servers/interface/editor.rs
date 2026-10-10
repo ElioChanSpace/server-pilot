@@ -1,10 +1,6 @@
 use crate::servers::application::AppState;
 use serde::Serialize;
 use std::path::Path;
-use syntect::easy::HighlightLines;
-use syntect::highlighting::ThemeSet;
-use syntect::html::{styled_line_to_highlighted_html, IncludeBackground};
-use syntect::parsing::SyntaxSet;
 use tauri::State;
 
 use super::file_transfer::resolve_transfer_server;
@@ -18,16 +14,9 @@ const EDITOR_FILE_SIZE_LIMIT: usize = 512 * 1024;
 #[serde(rename_all = "camelCase")]
 pub struct FileContent {
     pub raw: String,
-    pub html: String,
     pub language: String,
     pub line_count: usize,
     pub file_size: usize,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HighlightedCode {
-    pub html: String,
 }
 
 fn detect_language(path: &str) -> &'static str {
@@ -100,60 +89,11 @@ fn detect_language(path: &str) -> &'static str {
     }
 }
 
-fn syntax_set() -> &'static SyntaxSet {
-    static SYNTAX_SET: std::sync::OnceLock<SyntaxSet> = std::sync::OnceLock::new();
-    SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
-}
-
-fn theme_set() -> &'static ThemeSet {
-    static THEME_SET: std::sync::OnceLock<ThemeSet> = std::sync::OnceLock::new();
-    THEME_SET.get_or_init(ThemeSet::load_defaults)
-}
-
-fn highlight_to_html(code: &str, syntax_name: &str, theme_mode: &str) -> Result<String, String> {
-    let ss = syntax_set();
-    let ts = theme_set();
-
-    let syntax = ss
-        .find_syntax_by_name(syntax_name)
-        .or_else(|| ss.find_syntax_by_extension(syntax_name))
-        .unwrap_or_else(|| ss.find_syntax_plain_text());
-
-    let theme_name = if theme_mode == "light" {
-        "base16-ocean.light"
-    } else {
-        "base16-ocean.dark"
-    };
-    let theme = &ts.themes[theme_name];
-    let mut highlighter = HighlightLines::new(syntax, theme);
-
-    let mut html = String::new();
-    html.push_str("<pre class=\"editor-code\">");
-
-    // Use split('\n') instead of lines() to preserve trailing empty segment,
-    // matching JavaScript's split("\n") behavior for consistent line counts.
-    for (i, line) in code.split('\n').enumerate() {
-        if i > 0 {
-            html.push('\n');
-        }
-        let ranges = highlighter
-            .highlight_line(line, &ss)
-            .map_err(|err| format!("高亮失败: {}", err))?;
-        let line_html = styled_line_to_highlighted_html(&ranges, IncludeBackground::No)
-            .map_err(|err| format!("HTML 转换失败: {}", err))?;
-        html.push_str(&line_html);
-    }
-
-    html.push_str("</pre>");
-    Ok(html)
-}
-
 #[tauri::command]
 pub async fn get_file_content(
     state: State<'_, AppState>,
     server_id: String,
     path: String,
-    theme_mode: Option<String>,
 ) -> Result<FileContent, String> {
     let path = path.trim().to_string();
     if path.is_empty() {
@@ -161,7 +101,6 @@ pub async fn get_file_content(
     }
 
     let connection = resolve_transfer_server(&state, &server_id)?;
-    let theme_mode = theme_mode.unwrap_or_else(|| "dark".to_string());
 
     tauri::async_runtime::spawn_blocking(move || {
         // Single SSH command: check size, then cat if within limit.
@@ -198,30 +137,14 @@ pub async fn get_file_content(
         // Match JavaScript split("\n").length — include trailing empty segment
         let line_count = raw.split('\n').count();
         let file_size = raw.len();
-        let html = highlight_to_html(&raw, language, &theme_mode)?;
 
+        // 语法高亮由前端 Monaco 负责（原 syntect html 字段已废弃移除）
         Ok(FileContent {
             raw,
-            html,
             language: language.to_string(),
             line_count,
             file_size,
         })
-    })
-    .await
-    .map_err(|err| err.to_string())?
-}
-
-#[tauri::command]
-pub async fn highlight_code(
-    code: String,
-    language: String,
-    theme_mode: Option<String>,
-) -> Result<HighlightedCode, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let theme_mode = theme_mode.unwrap_or_else(|| "dark".to_string());
-        let html = highlight_to_html(&code, &language, &theme_mode)?;
-        Ok(HighlightedCode { html })
     })
     .await
     .map_err(|err| err.to_string())?

@@ -15,17 +15,12 @@ import {
 import type * as monaco from "monaco-editor";
 import type { initVimMode as InitVimMode } from "monaco-vim";
 import { toMonacoLanguage } from "./monaco-language";
-import {
-  getInitialThemeId,
-  getThemeMode,
-  THEME_STORAGE_KEY,
-} from "../utils/theme-helpers";
+import { getInitialThemeId, THEME_STORAGE_KEY } from "../utils/theme-helpers";
 import { APP_THEMES, DEFAULT_THEME } from "../utils/app-themes";
 import styles from "./EditorWorkspace.module.css";
 
 interface FileContent {
   raw: string;
-  html: string;
   language: string;
   lineCount: number;
   fileSize: number;
@@ -136,7 +131,6 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
   );
   const themeRef = useRef(theme);
   themeRef.current = theme;
-  const themeMode = useMemo(() => getThemeMode(themeId), [themeId]);
 
   useEffect(() => {
     tabsRef.current = tabs;
@@ -210,7 +204,6 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
         const result = await invoke<FileContent>("get_file_content", {
           serverId,
           path: filePath,
-          themeMode,
         });
         if (!mountedRef.current) return;
         // 等待 Monaco 内核动态加载完成（窗口外壳已先行显示）
@@ -273,7 +266,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
         );
       }
     },
-    [themeMode],
+    [],
   );
 
   // 首个文件（URL 参数）
