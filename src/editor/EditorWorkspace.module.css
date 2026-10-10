@@ -816,3 +816,10 @@
 .statusToggle[data-tip]:hover::after {
   opacity: 1;
 }
+
+/* ==================== Monaco 查找控件位置修正 ==================== */
+/* .find-widget 默认贴编辑区顶部，其按钮的悬浮提示向上弹出时会顶进
+   标题栏被遮住；整体下移 36px 让出提示空间。 */
+.monacoHost :global(.monaco-editor .find-widget) {
+  top: 36px !important;
+}
