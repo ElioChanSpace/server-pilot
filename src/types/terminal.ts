@@ -16,6 +16,14 @@ export interface ConnectServerResult {
   sessionId: string;
 }
 
+export interface TerminalSessionSummary {
+  sessionId: string;
+  serverId: string;
+  alive: boolean;
+  wasConnected: boolean;
+  createdAt: number;
+}
+
 export interface TerminalSessionStatusEvent {
   sessionId: string;
   serverId: string;

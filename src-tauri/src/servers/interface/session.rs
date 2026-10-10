@@ -20,8 +20,11 @@ pub async fn connect_server(
     id: String,
 ) -> Result<SessionConnectResult, String> {
     info!("Received connect_server command for id: {}", id);
-    let has_existing_session =
-        session_manager::has_active_session_for_server(&session_manager, &id)?;
+    // 连接复用：该服务器已有存活会话时直接返回（UI 刷新后再点连接不应叠加 PTY）
+    if let Some(existing) = session_manager::find_active_session_for_server(&session_manager, &id) {
+        info!("Reusing existing terminal session {} for server {}", existing, id);
+        return Ok(SessionConnectResult { session_id: existing });
+    }
     let server = {
         let mut data = state.data.lock().map_err(|e| e.to_string())?;
         let s = data
@@ -29,10 +32,8 @@ pub async fn connect_server(
             .iter_mut()
             .find(|s| s.id == id)
             .ok_or("Server not found")?;
-        if !has_existing_session {
-            s.status = "connecting".into();
-            let _ = window.emit("server-status-changed", s.clone());
-        }
+        s.status = "connecting".into();
+        let _ = window.emit("server-status-changed", s.clone());
         s.clone()
     };
 
@@ -92,6 +93,13 @@ pub async fn connect_server(
     )?;
 
     Ok(SessionConnectResult { session_id })
+}
+
+#[tauri::command(async)]
+pub fn list_terminal_sessions(
+    session_manager: State<'_, SessionManagerState>,
+) -> Result<Vec<session_manager::SessionSummary>, String> {
+    Ok(session_manager::list_active_sessions(&session_manager))
 }
 
 #[tauri::command]

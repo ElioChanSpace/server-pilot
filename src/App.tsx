@@ -41,10 +41,15 @@ import { ServiceManagerModal } from "./components/ServiceManagerModal";
 import { TransferHistoryModal } from "./components/TransferHistoryModal";
 import { useTransferHistory } from "./hooks/useTransferHistory";
 import { FaEdit, FaPlus, FaFolderPlus, FaPlug, FaUnlink, FaTrash } from "react-icons/fa";
-import type { TerminalSession, TerminalSessionClosedEvent, TerminalSessionStatusEvent } from "./types/terminal";
+import type { TerminalSession, TerminalSessionClosedEvent, TerminalSessionStatusEvent, TerminalSessionSummary } from "./types/terminal";
 import type { AppSettings } from "./types/settings";
 import type { ContextMenuState, HostKeyPromptEvent, FileTransferProgressEvent } from "./types/app";
 import { reindexSessions, resolveNextSessionId } from "./utils/session-helpers";
+import {
+  loadStoredSessions,
+  saveStoredSessions,
+  reconcileSessions,
+} from "./utils/session-restore";
 import { getInitialThemeId, getThemeMode, applyTheme } from "./utils/theme-helpers";
 import type { ThemeMode } from "./utils/theme-helpers";
 import { APP_THEMES, DEFAULT_THEME } from "./utils/app-themes";
@@ -321,6 +326,53 @@ const AppContent: React.FC = () => {
   useEffect(() => { serversRef.current = servers; }, [servers]);
   useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
 
+  // 会话元数据持久化：tab 信息随会话变化落盘，供刷新后恢复。
+  // 必须等启动对账完成后再开始保存，否则挂载时的空列表会先把存储抹掉。
+  const sessionsHydratedRef = useRef(false);
+  useEffect(() => {
+    if (!sessionsHydratedRef.current) return;
+    saveStoredSessions(sessions);
+  }, [sessions]);
+
+  // P0: UI 刷新后恢复会话 —— 后端 PTY 仍存活，枚举后与本地元数据对账重建 tab
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const alive = await invoke<TerminalSessionSummary[]>("list_terminal_sessions");
+        if (cancelled) return;
+        if (alive.length > 0) {
+          const restored = reconcileSessions(alive, loadStoredSessions());
+          if (restored.length > 0) {
+            const reindexed = reindexSessions(restored);
+            sessionsRef.current = reindexed;
+            setSessions(reindexed);
+            if (currentSessionIdRef.current == null) {
+              setCurrentSessionId(reindexed[0].id);
+            }
+            notify(
+              "终端会话已恢复",
+              `刷新前的 ${reindexed.length} 个终端连接仍在后台运行，已重新接入`,
+            );
+          }
+        }
+      } catch (err) {
+        console.error("恢复终端会话失败:", err);
+      } finally {
+        if (!cancelled) {
+          sessionsHydratedRef.current = true;
+          // 对账完成后以当前列表为准，顺带清理已死亡会话的残留元数据
+          saveStoredSessions(sessionsRef.current);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // 仅在挂载时对账一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Update session status helper
   const updateSessionStatus = useCallback((sessionId: string, status: TerminalSession["status"]) => {
     setSessions(prev => prev.map(session => (
@@ -502,6 +554,13 @@ const AppContent: React.FC = () => {
 
     try {
       const result = await connectToServer(server.id);
+      // 连接复用：后端返回的是既有会话（如刷新后重连）—— 不新建 tab、
+      // 不清空已有输出，直接选中
+      const existing = sessionsRef.current.find(s => s.id === result.sessionId);
+      if (existing) {
+        setCurrentSessionId(existing.id);
+        return;
+      }
       const displayId = generateDisplayId();
       const newSession: TerminalSession = { id: result.sessionId, serverId: server.id, terminalIndex: 0, displayId, status: "connecting", createdAt: Date.now() };
       // Make the session visible to the output pipeline immediately so chunks

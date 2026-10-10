@@ -24,6 +24,8 @@ struct PendingCwdRequest {
 pub struct Session {
     pub session_id: String,
     pub server_id: String,
+    /// 会话创建时间（Unix ms），用于 UI 刷新后恢复 tab 元数据
+    pub created_at: u64,
     pub pty: Box<dyn MasterPty + Send>,
     /// Ordered, non-blocking write queue: the main thread never blocks on a
     /// stalled PTY while keystrokes keep their order (single writer thread).
@@ -457,6 +459,10 @@ pub fn start_session(
     let session = Arc::new(Mutex::new(Session {
         session_id: session_id.clone(),
         server_id: server_id.clone(),
+        created_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
         pty: pair.master,
         write_tx: write_tx.clone(),
         child_process: child,
@@ -1149,4 +1155,56 @@ pub fn has_active_session_for_server(
             .map(|guard| guard.server_id == server_id && guard.alive.load(Ordering::SeqCst))
             .unwrap_or(false)
     }))
+}
+
+/// UI 刷新后恢复 tab 用的会话摘要
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummary {
+    pub session_id: String,
+    pub server_id: String,
+    pub alive: bool,
+    pub was_connected: bool,
+    pub created_at: u64,
+}
+
+/// 枚举全部存活的终端会话（UI 刷新/重启后对账恢复用）
+pub fn list_active_sessions(
+    session_manager_state: &State<'_, SessionManagerState>,
+) -> Vec<SessionSummary> {
+    let Ok(sessions) = session_manager_state.0.lock() else {
+        return Vec::new();
+    };
+    sessions
+        .values()
+        .filter_map(|session| {
+            let guard = session.lock().ok()?;
+            if !guard.alive.load(Ordering::SeqCst) {
+                return None;
+            }
+            Some(SessionSummary {
+                session_id: guard.session_id.clone(),
+                server_id: guard.server_id.clone(),
+                alive: true,
+                was_connected: guard.was_connected,
+                created_at: guard.created_at,
+            })
+        })
+        .collect()
+}
+
+/// 查找服务器已存在的存活会话（连接复用，避免重复建 PTY）
+pub fn find_active_session_for_server(
+    session_manager_state: &State<'_, SessionManagerState>,
+    server_id: &str,
+) -> Option<String> {
+    let sessions = session_manager_state.0.lock().ok()?;
+    sessions.values().find_map(|session| {
+        let guard = session.lock().ok()?;
+        if guard.server_id == server_id && guard.alive.load(Ordering::SeqCst) {
+            Some(guard.session_id.clone())
+        } else {
+            None
+        }
+    })
 }
