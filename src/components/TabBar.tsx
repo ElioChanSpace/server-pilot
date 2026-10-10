@@ -1,10 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaBolt, FaCalendarAlt, FaChartLine, FaColumns, FaCopy, FaCogs, FaDocker, FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose, FaFolderOpen } from 'react-icons/fa';
+import {
+  FaBolt, FaCalendarAlt, FaChartLine, FaColumns, FaCopy, FaCogs, FaDocker,
+  FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip,
+  FaServer, FaTimes, FaTools, FaWindowClose, FaFolderOpen, FaThumbtack,
+  FaPen, FaPalette,
+} from 'react-icons/fa';
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, horizontalListSortingStrategy, useSortable, arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { ContextMenu, ContextMenuAction, isEventInsideContextMenu } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
-import { getServerStatusMeta } from '../utils/serverStatus';
 
 export type ToolboxTool = 'ports' | 'docker' | 'services' | 'processes' | 'disk' | 'sysinfo' | 'net' | 'logstream' | 'cron' | 'metrics' | 'files';
 
@@ -13,6 +25,18 @@ export interface TabRemoteStatus {
   gitBranch?: string | null;
   load1: number;
 }
+
+/** 标签配色（VS Code 式左缘色条） */
+const TAB_COLORS: Array<{ id: string; value: string; name: string }> = [
+  { id: 'red', value: '#f87171', name: '红' },
+  { id: 'orange', value: '#fb923c', name: '橙' },
+  { id: 'amber', value: '#fbbf24', name: '琥珀' },
+  { id: 'green', value: '#4ade80', name: '绿' },
+  { id: 'cyan', value: '#22d3ee', name: '青' },
+  { id: 'blue', value: '#60a5fa', name: '蓝' },
+  { id: 'purple', value: '#c084fc', name: '紫' },
+  { id: 'pink', value: '#f472b6', name: '粉' },
+];
 
 interface TabBarProps {
   sessions: TerminalSession[];
@@ -31,6 +55,8 @@ interface TabBarProps {
   onOpenTransferHistory: () => void;
   followCwdEnabled: boolean;
   onToggleFollowCwd: () => void;
+  onReorderSessions: (ordered: TerminalSession[]) => void;
+  onUpdateSessionMeta: (sessionId: string, patch: Partial<TerminalSession>) => void;
 }
 
 interface TabContextMenuState {
@@ -38,6 +64,109 @@ interface TabContextMenuState {
   y: number;
   sessionId: string;
 }
+
+/** 单个可排序标签 */
+const SortableTab: React.FC<{
+  session: TerminalSession;
+  serverName: string;
+  username: string;
+  active: boolean;
+  cwdName: string | null;
+  cwdFull: string;
+  renaming: boolean;
+  renameValue: string;
+  onSelect: () => void;
+  onClose: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onRenameSubmit: () => void;
+  onRenameCancel: () => void;
+  onRenameChange: (v: string) => void;
+  onStartRename: () => void;
+}> = ({
+  session,
+  serverName,
+  username,
+  active,
+  cwdName,
+  cwdFull,
+  renaming,
+  renameValue,
+  onSelect,
+  onClose,
+  onContextMenu,
+  onRenameSubmit,
+  onRenameCancel,
+  onRenameChange,
+  onStartRename,
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: session.id });
+  const displayName = session.alias || serverName;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={styles.tab}
+      data-active={active}
+      data-pinned={session.pinned || undefined}
+      data-dragging={isDragging || undefined}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        ...(session.color ? { ['--tab-color' as string]: session.color } : {}),
+      }}
+      onClick={onSelect}
+      onContextMenu={onContextMenu}
+      onDoubleClick={onStartRename}
+      onMouseDown={e => {
+        if (e.button === 1) {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+      {...attributes}
+      {...listeners}
+    >
+      {session.color && <span className={styles.colorBar} />}
+      <span className={styles.statusDot} data-status={session.status} title={session.status} />
+      {session.pinned && <FaThumbtack size={8} className={styles.pinIcon} />}
+      {renaming ? (
+        <input
+          className={styles.renameInput}
+          value={renameValue}
+          autoFocus
+          onChange={e => onRenameChange(e.target.value)}
+          onBlur={onRenameSubmit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') onRenameSubmit();
+            if (e.key === 'Escape') onRenameCancel();
+            e.stopPropagation();
+          }}
+          onClick={e => e.stopPropagation()}
+        />
+      ) : (
+        <span className={styles.tabName} title={`${displayName} · ${username} · ${cwdFull}`}>
+          {displayName}
+          {!session.alias && <span className={styles.tabDisplayId}> {session.displayId}</span>}
+        </span>
+      )}
+      {cwdName && !renaming && (
+        <span className={styles.tabCwd} title={cwdFull}>{cwdName}</span>
+      )}
+      <button
+        type="button"
+        className={styles.tabClose}
+        title="关闭标签"
+        onClick={e => {
+          e.stopPropagation();
+          onClose();
+        }}
+      >
+        <FaTimes size={9} />
+      </button>
+    </div>
+  );
+};
 
 const TabBarComponent: React.FC<TabBarProps> = ({
   sessions,
@@ -56,9 +185,25 @@ const TabBarComponent: React.FC<TabBarProps> = ({
   onOpenTransferHistory,
   followCwdEnabled,
   onToggleFollowCwd,
+  onReorderSessions,
+  onUpdateSessionMeta,
 }) => {
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const tabsContainerRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  // 固定标签置顶（稳定排序），其余保持用户拖拽顺序
+  const orderedSessions = useMemo(() => {
+    const pinned = sessions.filter(s => s.pinned);
+    const rest = sessions.filter(s => !s.pinned);
+    return [...pinned, ...rest];
+  }, [sessions]);
 
   useEffect(() => {
     if (!contextMenu) {
@@ -94,24 +239,74 @@ const TabBarComponent: React.FC<TabBarProps> = ({
     };
   }, [contextMenu]);
 
+  // 拖拽重排
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const oldIndex = orderedSessions.findIndex(s => s.id === active.id);
+      const newIndex = orderedSessions.findIndex(s => s.id === over.id);
+      if (oldIndex < 0 || newIndex < 0) return;
+      onReorderSessions(arrayMove(orderedSessions, oldIndex, newIndex));
+    },
+    [orderedSessions, onReorderSessions],
+  );
+
+  // 快捷键：⌘⇧[ / ⌘⇧] 切换标签，⌘⌥1-9 直达
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const primary = isMac ? e.metaKey : e.ctrlKey;
+      if (primary && e.shiftKey && (e.key === '[' || e.key === ']')) {
+        e.preventDefault();
+        const idx = orderedSessions.findIndex(s => s.id === currentSessionId);
+        const delta = e.key === ']' ? 1 : -1;
+        const target =
+          orderedSessions[(idx + delta + orderedSessions.length) % orderedSessions.length];
+        if (target) onSelectSession(target.id);
+        return;
+      }
+      if (primary && e.altKey && /^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        const target = orderedSessions[Number(e.key) - 1];
+        if (target) onSelectSession(target.id);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [orderedSessions, currentSessionId, onSelectSession]);
+
+  // 激活标签自动滚动入视口
+  useEffect(() => {
+    const el = tabsContainerRef.current?.querySelector<HTMLElement>('[data-active="true"]');
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [currentSessionId]);
+
+  const startRename = useCallback((session: TerminalSession) => {
+    setRenamingId(session.id);
+    setRenameValue(session.alias ?? '');
+  }, []);
+
+  const commitRename = useCallback(() => {
+    if (renamingId) {
+      onUpdateSessionMeta(renamingId, { alias: renameValue.trim() || undefined });
+    }
+    setRenamingId(null);
+  }, [renamingId, renameValue, onUpdateSessionMeta]);
+
   if (sessions.length === 0) {
     return null; // 如果没有会话，则不渲染任何内容
   }
 
-  // Format time as HH:MM
-  const formatTime = (timestamp: number): string => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
-  };
-
   const targetSession = contextMenu
-    ? sessions.find(session => session.id === contextMenu.sessionId) ?? null
+    ? sessions.find(session => session.id === contextMenu.sessionId)
     : null;
-  const targetSessionIndex = targetSession
-    ? sessions.findIndex(session => session.id === targetSession.id)
-    : -1;
-  const hasSessionsOnLeft = targetSessionIndex > 0;
-  const hasSessionsOnRight = targetSessionIndex >= 0 && targetSessionIndex < sessions.length - 1;
+  const hasSessionsOnLeft =
+    targetSession != null &&
+    sessions.findIndex(s => s.id === targetSession.id) > 0;
+  const hasSessionsOnRight =
+    targetSession != null &&
+    sessions.findIndex(s => s.id === targetSession.id) < sessions.length - 1;
   const currentServerSessionCount = targetSession
     ? sessions.filter(session => session.serverId === targetSession.serverId).length
     : 0;
@@ -141,10 +336,69 @@ const TabBarComponent: React.FC<TabBarProps> = ({
             onToggleFollowCwd();
           },
         },
+        { type: 'separator' },
+        {
+          label: targetSession.pinned ? '取消固定' : '📌 固定标签',
+          icon: <FaThumbtack />,
+          action: () => {
+            onUpdateSessionMeta(targetSession.id, { pinned: !targetSession.pinned });
+          },
+        },
+        {
+          label: '标签颜色',
+          icon: <FaPalette />,
+          children: [
+            ...TAB_COLORS.map(c => ({
+              label: `${targetSession.color === c.value ? '✓ ' : ''}${c.name}`,
+              icon: undefined,
+              action: () => {
+                onUpdateSessionMeta(targetSession.id, { color: c.value });
+              },
+            })),
+            { type: 'separator' as const },
+            {
+              label: '无颜色',
+              action: () => {
+                onUpdateSessionMeta(targetSession.id, { color: undefined });
+              },
+            },
+          ],
+        },
+        {
+          label: '重命名标签',
+          icon: <FaPen />,
+          action: () => startRename(targetSession),
+        },
+        { type: 'separator' },
         {
           label: '工具箱',
           icon: <FaTools />,
           children: [
+            {
+              label: '端口监测',
+              icon: <FaNetworkWired />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenTool('ports', server.id, server.name);
+              },
+            },
+            {
+              label: 'Docker 管理',
+              icon: <FaDocker />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenTool('docker', server.id, server.name);
+              },
+            },
+            {
+              label: '服务管理',
+              icon: <FaCogs />,
+              action: () => {
+                const server = servers.find(s => s.id === targetSession.serverId);
+                if (server) onOpenTool('services', server.id, server.name);
+              },
+            },
+            { type: 'separator' },
             {
               label: '进程管理',
               icon: <FaMicrochip />,
@@ -209,30 +463,6 @@ const TabBarComponent: React.FC<TabBarProps> = ({
                 if (server) onOpenTool('files', server.id, server.name);
               },
             },
-            {
-              label: '端口监测',
-              icon: <FaNetworkWired />,
-              action: () => {
-                const server = servers.find(s => s.id === targetSession.serverId);
-                if (server) onOpenTool('ports', server.id, server.name);
-              },
-            },
-            {
-              label: 'Docker 管理',
-              icon: <FaDocker />,
-              action: () => {
-                const server = servers.find(s => s.id === targetSession.serverId);
-                if (server) onOpenTool('docker', server.id, server.name);
-              },
-            },
-            {
-              label: '服务管理',
-              icon: <FaCogs />,
-              action: () => {
-                const server = servers.find(s => s.id === targetSession.serverId);
-                if (server) onOpenTool('services', server.id, server.name);
-              },
-            },
             { type: 'separator' },
             {
               label: '传输历史',
@@ -286,63 +516,47 @@ const TabBarComponent: React.FC<TabBarProps> = ({
   return (
     <>
       <div className={styles.tabBar}>
-        {sessions.map(session => {
-          const server = servers.find(item => item.id === session.serverId);
-          const serverName = server?.name ?? '终端';
-          const username = server?.username ?? '';
-          const timeStr = session.createdAt ? formatTime(session.createdAt) : '';
-          const statusMeta = getServerStatusMeta(session.status);
-          const StatusIcon = statusMeta.icon;
-          const remote = tabStatuses[session.id];
-          const cwdName = remote?.cwd ? remote.cwd.split('/').filter(Boolean).pop() ?? '/' : null;
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={orderedSessions.map(s => s.id)} strategy={horizontalListSortingStrategy}>
+            <div className={styles.tabList} ref={tabsContainerRef}>
+              {orderedSessions.map(session => {
+                const server = servers.find(item => item.id === session.serverId);
+                const serverName = server?.name ?? '终端';
+                const username = server?.username ?? '';
+                const remote = tabStatuses[session.id];
+                const cwdFull = remote?.cwd ?? '';
+                const cwdName = cwdFull
+                  ? cwdFull.split('/').filter(Boolean).pop() ?? '/'
+                  : null;
 
-          return (
-            <div
-              key={session.id}
-              className={styles.tab}
-              data-active={session.id === currentSessionId}
-              onClick={() => onSelectSession(session.id)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.id });
-              }}
-            >
-              <StatusIcon
-                size={12}
-                className={`${styles.statusIcon} ${statusMeta.spinning ? styles.statusSpinning : ''}`.trim()}
-                style={{ color: statusMeta.color }}
-              />
-              <div className={styles.tabContent}>
-                <div className={styles.tabPrimary}>
-                  <span className={styles.tabServerName}>{serverName}</span>
-                  {username && <span className={styles.tabUsername}>{username}</span>}
-                </div>
-                <div className={styles.tabSecondary}>
-                  {cwdName && <span className={styles.tabBadgeCwd} title={remote?.cwd ?? ''}>{cwdName}</span>}
-                  {remote?.gitBranch && <span className={styles.tabBadgeGit} title="Git 分支">{remote.gitBranch}</span>}
-                  {remote && remote.load1 > 0 && (
-                    <span className={`${styles.tabBadgeLoad} ${remote.load1 > 2 ? styles.tabBadgeLoadHigh : ''}`} title="负载 (1 分钟)">
-                      {remote.load1.toFixed(2)}
-                    </span>
-                  )}
-                  {timeStr && <span className={styles.tabTime}>{timeStr}</span>}
-                  <span className={styles.tabDisplayId}>{session.displayId}</span>
-                </div>
-              </div>
-              <button
-                className={styles.closeButton}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCloseSession(session.id);
-                }}
-                title={`关闭 ${serverName}`}
-              >
-                <FaTimes />
-              </button>
+                return (
+                  <SortableTab
+                    key={session.id}
+                    session={session}
+                    serverName={serverName}
+                    username={username}
+                    active={session.id === currentSessionId}
+                    cwdName={cwdName}
+                    cwdFull={cwdFull}
+                    renaming={renamingId === session.id}
+                    renameValue={renameValue}
+                    onSelect={() => onSelectSession(session.id)}
+                    onClose={() => onCloseSession(session.id)}
+                    onContextMenu={event => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.id });
+                    }}
+                    onRenameSubmit={commitRename}
+                    onRenameCancel={() => setRenamingId(null)}
+                    onRenameChange={setRenameValue}
+                    onStartRename={() => startRename(session)}
+                  />
+                );
+              })}
             </div>
-          );
-        })}
+          </SortableContext>
+        </DndContext>
       </div>
       {contextMenu && (
         <ContextMenu

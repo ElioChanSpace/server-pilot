@@ -10,6 +10,12 @@ export interface TerminalSession {
   displayId: string; // 全局唯一显示标识，6 位随机字符串
   status: TerminalSessionStatus;
   createdAt: number; // Unix timestamp in milliseconds
+  /** 固定标签（置顶显示） */
+  pinned?: boolean;
+  /** 标签配色（左缘色条，CSS 颜色值） */
+  color?: string;
+  /** 自定义标签名（双击重命名；为空时显示服务器名） */
+  alias?: string;
 }
 
 export interface ConnectServerResult {

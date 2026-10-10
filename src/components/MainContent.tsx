@@ -28,6 +28,8 @@ interface MainContentProps {
   onOpenTransferHistory: () => void;
   followCwdEnabled: boolean;
   onToggleFollowCwd: () => void;
+  onReorderSessions: (ordered: import('../types/terminal').TerminalSession[]) => void;
+  onUpdateSessionMeta: (sessionId: string, patch: Partial<import('../types/terminal').TerminalSession>) => void;
   terminalFontSize: number;
   terminalScrollback: number;
   onTerminalFontSizeChange: (delta: number) => void;
@@ -54,6 +56,8 @@ const MainContentComponent: React.FC<MainContentProps> = ({
   onOpenTransferHistory,
   followCwdEnabled,
   onToggleFollowCwd,
+  onReorderSessions,
+  onUpdateSessionMeta,
   terminalFontSize,
   terminalScrollback,
   onTerminalFontSizeChange,
@@ -130,6 +134,8 @@ const MainContentComponent: React.FC<MainContentProps> = ({
           onOpenTransferHistory={onOpenTransferHistory}
           followCwdEnabled={followCwdEnabled}
           onToggleFollowCwd={onToggleFollowCwd}
+          onReorderSessions={onReorderSessions}
+          onUpdateSessionMeta={onUpdateSessionMeta}
         />
       )}
       <div className={styles.stage}>

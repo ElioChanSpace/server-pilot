@@ -1,207 +1,207 @@
 .tabBar {
   display: flex;
-  align-items: flex-end;
-  background-color: var(--bg-secondary);
+  align-items: stretch;
+  gap: 8px;
+  padding: 6px 10px 0;
+  background: var(--glass-bg);
   border-bottom: 1px solid var(--glass-border);
-  overflow-x: auto;
-  padding: 0 4px;
-  gap: 2px;
-  scrollbar-width: none;
-  min-height: 46px;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  position: relative;
+  z-index: 2;
 }
 
-.tabBar::-webkit-scrollbar {
+.tabList {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 0;
+  scrollbar-width: none;
+}
+
+.tabList::-webkit-scrollbar {
   display: none;
 }
 
+/* ── 标签（VS Code 式：圆角顶 + 激活渐变底线） ── */
 .tab {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px 7px;
+  gap: 7px;
+  min-width: 132px;
+  max-width: 230px;
+  height: 36px;
+  padding: 0 8px 0 13px;
+  border-radius: 10px 10px 0 0;
   cursor: pointer;
-  background-color: transparent;
-  border: none;
-  border-radius: 8px 8px 0 0;
-  min-width: 150px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 12px;
-  user-select: none;
-  transition: background-color 0.15s ease, color 0.15s ease;
-  position: relative;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.14s ease, color 0.14s ease, transform 0.14s ease,
+    box-shadow 0.14s ease;
 }
 
 .tab:hover {
-  background-color: var(--surface-hover);
-  color: var(--text-secondary);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 .tab[data-active="true"] {
-  background-color: var(--bg-elevated);
+  background: var(--bg-elevated);
   color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 -4px 14px -8px rgba(0, 0, 0, 0.35);
 }
 
+/* 激活态：主题色渐变底线 */
 .tab[data-active="true"]::after {
   content: "";
   position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
   height: 2px;
-  background-color: var(--accent-color);
   border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, var(--accent-color), var(--accent-hover));
 }
 
-.statusIcon {
+.tab[data-dragging="true"] {
+  opacity: 0.65;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* ── 配色条（右键设置） ── */
+.colorBar {
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--tab-color, transparent);
+}
+
+/* ── 状态点 ── */
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   flex-shrink: 0;
-  opacity: 0.7;
-  align-self: center;
+  background: var(--text-muted);
+  transition: background 0.15s ease;
 }
 
-.tab[data-active="true"] .statusIcon {
-  opacity: 1;
+.statusDot[data-status="connected"] {
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.45);
 }
 
-.statusSpinning {
-  animation: tab-status-spin 1s linear infinite;
+.statusDot[data-status="connecting"] {
+  background: #fbbf24;
+  animation: dotPulse 1.2s ease infinite;
 }
 
-@keyframes tab-status-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.tabContent {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-  flex: 1;
-}
-
-.tabPrimary {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-
-.tabServerName {
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-}
-
-.tabUsername {
-  font-size: 11px;
-  white-space: nowrap;
-  color: var(--text-secondary);
-  opacity: 0.75;
-}
-
-.tab[data-active="true"] .tabServerName {
-  color: var(--text-primary);
-}
-
-.tab[data-active="true"] .tabUsername {
-  opacity: 0.85;
-}
-
-.tabSecondary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.tabTime {
-  font-size: 10px;
-  color: var(--text-muted);
+.statusDot[data-status="disconnected"] {
+  background: var(--text-muted);
   opacity: 0.6;
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.pinIcon {
+  color: var(--accent-color);
+  opacity: 0.85;
+  flex-shrink: 0;
+  transform: rotate(35deg);
+}
+
+.tabName {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+  flex: 1;
+  min-width: 0;
 }
 
 .tabDisplayId {
-  font-size: 10px;
-  white-space: nowrap;
-  font-family: Menlo, Monaco, "Courier New", monospace;
   color: var(--text-muted);
-  opacity: 0.45;
-  letter-spacing: 0.04em;
+  font-size: 10px;
+  font-weight: 400;
+  font-family: Menlo, Monaco, "Courier New", monospace;
+  opacity: 0.7;
 }
 
-.tabBadgeCwd,
-.tabBadgeGit,
-.tabBadgeLoad {
-  font-size: 9.5px;
-  white-space: nowrap;
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-variant-numeric: tabular-nums;
-  max-width: 90px;
+.tabCwd {
+  max-width: 88px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.tabBadgeCwd {
+  white-space: nowrap;
+  padding: 1px 7px;
+  border-radius: 999px;
   background: var(--surface-hover);
-  color: var(--text-secondary);
+  color: var(--text-muted);
+  font-size: 9.5px;
   font-family: Menlo, Monaco, "Courier New", monospace;
+  flex-shrink: 0;
 }
 
-.tabBadgeGit {
-  background: rgba(103, 194, 58, 0.14);
-  color: #67c23a;
-  font-weight: 600;
-}
-
-.tabBadgeLoad {
-  background: rgba(64, 158, 255, 0.12);
+.tab[data-active="true"] .tabCwd {
   color: var(--accent-color);
+  background: rgba(106, 168, 143, 0.12);
 }
 
-.tabBadgeLoadHigh {
-  background: rgba(245, 108, 108, 0.14);
-  color: var(--danger-color);
-  font-weight: 700;
-}
-
-.tab[data-active="true"] .tabTime {
-  opacity: 0.8;
-}
-
-.tab[data-active="true"] .tabDisplayId {
-  opacity: 0.6;
-}
-
-.closeButton {
+.tabClose {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 4px;
-  background-color: var(--surface-active);
-  color: var(--text-primary);
-  font-size: 10px;
   padding: 0;
-  margin: 0;
-  margin-left: 2px;
-  box-shadow: none;
-  transform: none;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
   opacity: 0;
-  transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
   flex-shrink: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-.tab:hover .closeButton,
-.tab[data-active="true"] .closeButton {
-  opacity: 1;
+.tab:hover .tabClose,
+.tab[data-active="true"] .tabClose {
+  opacity: 0.75;
 }
 
-.closeButton:hover {
-  background-color: var(--danger-color);
-  color: var(--bg-primary);
+.tabClose:hover {
+  opacity: 1 !important;
+  background: var(--surface-active);
+  color: var(--danger-color, #f38ba8);
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--accent-color);
+  border-radius: 5px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.renameInput:focus {
+  outline: none;
 }

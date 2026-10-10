@@ -755,6 +755,18 @@ const AppContent: React.FC = () => {
     }).catch(() => {});
   }, []);
 
+  // B1: 标签拖拽重排 / 元数据（固定/配色/别名）更新
+  const handleReorderSessions = useCallback((ordered: TerminalSession[]) => {
+    setSessions(reindexSessions(ordered));
+  }, []);
+
+  const handleUpdateSessionMeta = useCallback(
+    (sessionId: string, patch: Partial<TerminalSession>) => {
+      setSessions(prev => prev.map(s => (s.id === sessionId ? { ...s, ...patch } : s)));
+    },
+    [],
+  );
+
   const handleSelectCategory = useCallback((category: Category | null) => {
     clearSelection();
     setActiveCategory(category);
@@ -1017,6 +1029,8 @@ const AppContent: React.FC = () => {
             onOpenTool={handleOpenTool}
             followCwdEnabled={followCwdEnabled}
             onToggleFollowCwd={() => setFollowCwdEnabled(v => !v)}
+            onReorderSessions={handleReorderSessions}
+            onUpdateSessionMeta={handleUpdateSessionMeta}
             onOpenTransferHistory={handleOpenTransferHistory}
             terminalFontSize={appSettings?.terminalFontSize ?? 14}
             terminalScrollback={appSettings?.terminalScrollback ?? 5000}
