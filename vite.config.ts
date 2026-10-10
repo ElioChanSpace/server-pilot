@@ -6,6 +6,19 @@ import { resolve } from 'path'
 export default defineConfig({
   plugins: [react()],
 
+  resolve: {
+    alias: [
+      // monaco-vim 等包按 esm/vs 深路径引用 monaco（如
+      // monaco-editor/esm/vs/editor/editor.api），与 monaco-editor 0.57 的
+      // exports 映射（monaco-editor/<sub> → esm/vs/<sub>.js）冲突会解析成
+      // esm/vs/esm/vs/... 双重前缀而失败。统一重写为短路径再走 exports。
+      {
+        find: /^monaco-editor\/esm\/vs\/(.*)$/,
+        replacement: 'monaco-editor/$1',
+      },
+    ],
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   // prevent vite from obscuring rust errors
   clearScreen: false,
