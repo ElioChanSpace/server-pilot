@@ -57,6 +57,7 @@ interface TabBarProps {
   onToggleFollowCwd: () => void;
   onReorderSessions: (ordered: TerminalSession[]) => void;
   onUpdateSessionMeta: (sessionId: string, patch: Partial<TerminalSession>) => void;
+  onSplitSession: (sessionId: string, layout: 'row' | 'column') => void;
 }
 
 interface TabContextMenuState {
@@ -67,7 +68,9 @@ interface TabContextMenuState {
 
 /** 单个可排序标签 */
 const SortableTab: React.FC<{
+  sortId: string;
   session: TerminalSession;
+  paneCount: number;
   serverName: string;
   username: string;
   active: boolean;
@@ -83,7 +86,9 @@ const SortableTab: React.FC<{
   onRenameChange: (v: string) => void;
   onStartRename: () => void;
 }> = ({
+  sortId,
   session,
+  paneCount,
   serverName,
   username,
   active,
@@ -100,7 +105,7 @@ const SortableTab: React.FC<{
   onStartRename,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: session.id });
+    useSortable({ id: sortId });
   const displayName = session.alias || serverName;
 
   return (
@@ -148,6 +153,7 @@ const SortableTab: React.FC<{
         <span className={styles.tabName} title={`${displayName} · ${username} · ${cwdFull}`}>
           {displayName}
           {!session.alias && <span className={styles.tabDisplayId}> {session.displayId}</span>}
+          {paneCount > 1 && <span className={styles.tabDisplayId}> ⟨{paneCount}⟩</span>}
         </span>
       )}
       {cwdName && !renaming && (
@@ -187,6 +193,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({
   onToggleFollowCwd,
   onReorderSessions,
   onUpdateSessionMeta,
+  onSplitSession,
 }) => {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const tabsContainerRef = useRef<HTMLDivElement>(null);
@@ -204,6 +211,18 @@ const TabBarComponent: React.FC<TabBarProps> = ({
     const rest = sessions.filter(s => !s.pinned);
     return [...pinned, ...rest];
   }, [sessions]);
+
+  // B2: 一标签 = 一个分屏组（同 groupId 的会话同标签）
+  const tabGroups = useMemo(() => {
+    const map = new Map<string, { key: string; sessions: TerminalSession[] }>();
+    for (const s of orderedSessions) {
+      const key = s.groupId ?? s.id;
+      const list = map.get(key);
+      if (list) list.sessions.push(s);
+      else map.set(key, { key, sessions: [s] });
+    }
+    return [...map.values()];
+  }, [orderedSessions]);
 
   useEffect(() => {
     if (!contextMenu) {
@@ -244,12 +263,13 @@ const TabBarComponent: React.FC<TabBarProps> = ({
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      const oldIndex = orderedSessions.findIndex(s => s.id === active.id);
-      const newIndex = orderedSessions.findIndex(s => s.id === over.id);
+      const oldIndex = tabGroups.findIndex(g => g.key === active.id);
+      const newIndex = tabGroups.findIndex(g => g.key === over.id);
       if (oldIndex < 0 || newIndex < 0) return;
-      onReorderSessions(arrayMove(orderedSessions, oldIndex, newIndex));
+      const reorderedGroups = arrayMove(tabGroups, oldIndex, newIndex);
+      onReorderSessions(reorderedGroups.flatMap(g => g.sessions));
     },
-    [orderedSessions, onReorderSessions],
+    [tabGroups, onReorderSessions],
   );
 
   // 快捷键：⌘⇧[ / ⌘⇧] 切换标签，⌘⌥1-9 直达
@@ -259,22 +279,27 @@ const TabBarComponent: React.FC<TabBarProps> = ({
       const primary = isMac ? e.metaKey : e.ctrlKey;
       if (primary && e.shiftKey && (e.key === '[' || e.key === ']')) {
         e.preventDefault();
-        const idx = orderedSessions.findIndex(s => s.id === currentSessionId);
+        const idx = tabGroups.findIndex(g => g.sessions.some(s => s.id === currentSessionId));
         const delta = e.key === ']' ? 1 : -1;
         const target =
-          orderedSessions[(idx + delta + orderedSessions.length) % orderedSessions.length];
-        if (target) onSelectSession(target.id);
+          tabGroups[(idx + delta + tabGroups.length) % tabGroups.length];
+        if (target) onSelectSession(target.sessions[0].id);
         return;
       }
       if (primary && e.altKey && /^[1-9]$/.test(e.key)) {
         e.preventDefault();
-        const target = orderedSessions[Number(e.key) - 1];
-        if (target) onSelectSession(target.id);
+        const target = tabGroups[Number(e.key) - 1];
+        if (target) onSelectSession(target.sessions[0].id);
+        return;
+      }
+      if (primary && e.key.toLowerCase() === 'd' && currentSessionId) {
+        e.preventDefault();
+        void onSplitSession(currentSessionId, e.shiftKey ? 'column' : 'row');
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [orderedSessions, currentSessionId, onSelectSession]);
+  }, [tabGroups, currentSessionId, onSelectSession, onSplitSession]);
 
   // 激活标签自动滚动入视口
   useEffect(() => {
@@ -283,7 +308,7 @@ const TabBarComponent: React.FC<TabBarProps> = ({
   }, [currentSessionId]);
 
   const startRename = useCallback((session: TerminalSession) => {
-    setRenamingId(session.id);
+    setRenamingId(session.groupId ?? session.id);
     setRenameValue(session.alias ?? '');
   }, []);
 
@@ -334,6 +359,21 @@ const TabBarComponent: React.FC<TabBarProps> = ({
           icon: <FaFolderOpen />,
           action: () => {
             onToggleFollowCwd();
+          },
+        },
+        { type: 'separator' },
+        {
+          label: '向右拆分终端',
+          icon: <FaColumns />,
+          action: () => {
+            void onSplitSession(targetSession.id, 'row');
+          },
+        },
+        {
+          label: '向下拆分终端',
+          icon: <FaColumns />,
+          action: () => {
+            void onSplitSession(targetSession.id, 'column');
           },
         },
         { type: 'separator' },
@@ -517,13 +557,15 @@ const TabBarComponent: React.FC<TabBarProps> = ({
     <>
       <div className={styles.tabBar}>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={orderedSessions.map(s => s.id)} strategy={horizontalListSortingStrategy}>
+          <SortableContext items={tabGroups.map(g => g.key)} strategy={horizontalListSortingStrategy}>
             <div className={styles.tabList} ref={tabsContainerRef}>
-              {orderedSessions.map(session => {
-                const server = servers.find(item => item.id === session.serverId);
+              {tabGroups.map(group => {
+                const activePane =
+                  group.sessions.find(s => s.id === currentSessionId) ?? group.sessions[0];
+                const server = servers.find(item => item.id === activePane.serverId);
                 const serverName = server?.name ?? '终端';
                 const username = server?.username ?? '';
-                const remote = tabStatuses[session.id];
+                const remote = tabStatuses[activePane.id];
                 const cwdFull = remote?.cwd ?? '';
                 const cwdName = cwdFull
                   ? cwdFull.split('/').filter(Boolean).pop() ?? '/'
@@ -531,26 +573,28 @@ const TabBarComponent: React.FC<TabBarProps> = ({
 
                 return (
                   <SortableTab
-                    key={session.id}
-                    session={session}
+                    key={group.key}
+                    sortId={group.key}
+                    session={activePane}
+                    paneCount={group.sessions.length}
                     serverName={serverName}
                     username={username}
-                    active={session.id === currentSessionId}
+                    active={group.sessions.some(s => s.id === currentSessionId)}
                     cwdName={cwdName}
                     cwdFull={cwdFull}
-                    renaming={renamingId === session.id}
+                    renaming={renamingId === group.key}
                     renameValue={renameValue}
-                    onSelect={() => onSelectSession(session.id)}
-                    onClose={() => onCloseSession(session.id)}
+                    onSelect={() => onSelectSession(activePane.id)}
+                    onClose={() => group.sessions.forEach(s => onCloseSession(s.id))}
                     onContextMenu={event => {
                       event.preventDefault();
                       event.stopPropagation();
-                      setContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.id });
+                      setContextMenu({ x: event.clientX, y: event.clientY, sessionId: activePane.id });
                     }}
                     onRenameSubmit={commitRename}
                     onRenameCancel={() => setRenamingId(null)}
                     onRenameChange={setRenameValue}
-                    onStartRename={() => startRename(session)}
+                    onStartRename={() => startRename(activePane)}
                   />
                 );
               })}

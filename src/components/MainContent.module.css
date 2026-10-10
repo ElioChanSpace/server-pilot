@@ -75,3 +75,94 @@
   color: var(--text-secondary);
   font-size: 13px;
 }
+
+/* ==================== B2: 终端分屏 ==================== */
+.paneGrid {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.paneGrid[data-layout="row"] {
+  flex-direction: row;
+}
+
+.paneGrid[data-layout="column"] {
+  flex-direction: column;
+}
+
+.pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  transition: border-color 0.15s ease;
+}
+
+.pane[data-active="true"] {
+  border-color: var(--accent-color);
+}
+
+.paneDivider {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 3;
+  transition: background 0.12s ease;
+}
+
+.paneDivider[data-layout="column"] {
+  cursor: row-resize;
+}
+
+.paneDivider:hover {
+  background: var(--accent-color);
+  opacity: 0.6;
+}
+
+.paneTag {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  font-size: 9.5px;
+  color: var(--text-muted);
+  font-family: Menlo, Monaco, "Courier New", monospace;
+  opacity: 0.65;
+  transition: opacity 0.12s ease;
+  pointer-events: auto;
+}
+
+.pane:hover .paneTag {
+  opacity: 1;
+}
+
+.paneClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.paneClose:hover {
+  background: var(--surface-active);
+  color: var(--danger-color, #f38ba8);
+}

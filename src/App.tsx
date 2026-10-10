@@ -767,6 +767,51 @@ const AppContent: React.FC = () => {
     [],
   );
 
+  // B2: 终端分屏 —— 新建同组会话（新 PTY）加入当前标签
+  const handleSplitSession = useCallback(
+    async (sessionId: string, layout: 'row' | 'column') => {
+      const source = sessionsRef.current.find(s => s.id === sessionId);
+      if (!source) return;
+      try {
+        const result = await connectToServer(source.serverId);
+        // connect 复用保护：同 id 已存在则忽略（分屏要求新会话）
+        if (sessionsRef.current.some(s => s.id === result.sessionId)) return;
+        const groupId = source.groupId ?? source.id;
+        const newSession: TerminalSession = {
+          id: result.sessionId,
+          serverId: source.serverId,
+          terminalIndex: 0,
+          displayId: generateDisplayId(),
+          status: 'connecting',
+          createdAt: Date.now(),
+          groupId,
+          paneLayout: layout,
+          paneRatio: 1,
+        };
+        const next = sessionsRef.current.map(s =>
+          s.id === sessionId || s.groupId === groupId
+            ? { ...s, groupId, paneLayout: layout, paneRatio: s.paneRatio ?? 1 }
+            : s,
+        );
+        const all = reindexSessions([...next, newSession]);
+        sessionsRef.current = all;
+        setSessions(all);
+        setCurrentSessionId(result.sessionId);
+        resetTerminalOutput(result.sessionId, [
+          `[信息] 分屏会话已启动\r\n`,
+        ]);
+      } catch (err) {
+        setConnectionError(getErrorMessage(err));
+      }
+    },
+    [connectToServer, resetTerminalOutput],
+  );
+
+  /** 分屏面板尺寸调整（拖动分隔条） */
+  const handlePaneRatioChange = useCallback((sessionId: string, ratio: number) => {
+    setSessions(prev => prev.map(s => (s.id === sessionId ? { ...s, paneRatio: ratio } : s)));
+  }, []);
+
   const handleSelectCategory = useCallback((category: Category | null) => {
     clearSelection();
     setActiveCategory(category);
@@ -1031,6 +1076,8 @@ const AppContent: React.FC = () => {
             onToggleFollowCwd={() => setFollowCwdEnabled(v => !v)}
             onReorderSessions={handleReorderSessions}
             onUpdateSessionMeta={handleUpdateSessionMeta}
+            onSplitSession={handleSplitSession}
+            onPaneRatioChange={handlePaneRatioChange}
             onOpenTransferHistory={handleOpenTransferHistory}
             terminalFontSize={appSettings?.terminalFontSize ?? 14}
             terminalScrollback={appSettings?.terminalScrollback ?? 5000}

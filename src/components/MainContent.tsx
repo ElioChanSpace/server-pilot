@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo } from "react";
 import { Server } from "../context/ServerContext";
+import { FaTimes } from "react-icons/fa";
 import { ConsoleView } from "./ConsoleView";
 import { TabBar } from "./TabBar";
 import type { TerminalSession } from "../types/terminal";
@@ -30,6 +31,8 @@ interface MainContentProps {
   onToggleFollowCwd: () => void;
   onReorderSessions: (ordered: import('../types/terminal').TerminalSession[]) => void;
   onUpdateSessionMeta: (sessionId: string, patch: Partial<import('../types/terminal').TerminalSession>) => void;
+  onSplitSession: (sessionId: string, layout: 'row' | 'column') => void;
+  onPaneRatioChange: (sessionId: string, ratio: number) => void;
   terminalFontSize: number;
   terminalScrollback: number;
   onTerminalFontSizeChange: (delta: number) => void;
@@ -58,6 +61,8 @@ const MainContentComponent: React.FC<MainContentProps> = ({
   onToggleFollowCwd,
   onReorderSessions,
   onUpdateSessionMeta,
+  onSplitSession,
+  onPaneRatioChange,
   terminalFontSize,
   terminalScrollback,
   onTerminalFontSizeChange,
@@ -112,6 +117,51 @@ const MainContentComponent: React.FC<MainContentProps> = ({
     return map;
   }, [onTerminalCommandExecuted, sessions]);
 
+  // B2: 分屏分组 —— 同 groupId 的会话在一个标签层内分屏展示
+  const tabGroups = useMemo(() => {
+    const map = new Map<string, { key: string; sessions: TerminalSession[]; layout: 'row' | 'column' }>();
+    for (const entry of currentSessions) {
+      const session = entry.session;
+      const key = session.groupId ?? session.id;
+      const group = map.get(key) ?? { key, sessions: [], layout: 'row' as const };
+      group.sessions.push(session);
+      if (session.paneLayout) {
+        group.layout = session.paneLayout;
+      }
+      map.set(key, group);
+    }
+    return [...map.values()];
+  }, [currentSessions]);
+
+  // 分隔条拖拽：按指针位置调整相邻两个面板的权重
+  const handleDividerDrag = useCallback(
+    (event: React.MouseEvent, groupSessions: TerminalSession[], dividerIndex: number) => {
+      event.preventDefault();
+      const container = (event.currentTarget.parentElement as HTMLElement | null);
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const horizontal = container.dataset.layout === 'row';
+      const prev = groupSessions[dividerIndex - 1];
+      const next = groupSessions[dividerIndex];
+      const totalRatio = (prev.paneRatio ?? 1) + (next.paneRatio ?? 1);
+
+      const onMove = (ev: MouseEvent) => {
+        const pos = horizontal ? ev.clientX - rect.left : ev.clientY - rect.top;
+        const size = horizontal ? rect.width : rect.height;
+        const fraction = Math.min(0.85, Math.max(0.15, pos / size));
+        onPaneRatioChange(prev.id, fraction * totalRatio);
+        onPaneRatioChange(next.id, (1 - fraction) * totalRatio);
+      };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    },
+    [onPaneRatioChange],
+  );
+
   const hasActiveSessions = sessions.length > 0 && currentSessionId;
 
   return (
@@ -136,6 +186,7 @@ const MainContentComponent: React.FC<MainContentProps> = ({
           onToggleFollowCwd={onToggleFollowCwd}
           onReorderSessions={onReorderSessions}
           onUpdateSessionMeta={onUpdateSessionMeta}
+          onSplitSession={onSplitSession}
         />
       )}
       <div className={styles.stage}>
@@ -153,13 +204,47 @@ const MainContentComponent: React.FC<MainContentProps> = ({
           </div>
         </div>
 
-        {currentSessions.map(({ session }) => (
+        {tabGroups.map(group => {
+          const groupActive = group.sessions.some(sess => sess.id === currentSessionId);
+          return (
           <div
-            key={session.id}
+            key={group.key}
             className={styles.sessionLayer}
-            data-hidden={session.id !== currentSessionId}
+            data-hidden={!groupActive}
           >
-            <ConsoleView
+            <div className={styles.paneGrid} data-layout={group.layout}>
+              {group.sessions.map((session, paneIndex) => (
+                <React.Fragment key={session.id}>
+                  {paneIndex > 0 && (
+                    <div
+                      className={styles.paneDivider}
+                      data-layout={group.layout}
+                      onMouseDown={e => handleDividerDrag(e, group.sessions, paneIndex)}
+                    />
+                  )}
+                  <div
+                    className={styles.pane}
+                    data-active={session.id === currentSessionId}
+                    style={{ flex: `${session.paneRatio ?? 1} 1 0` }}
+                    onClick={() => onSelectSession(session.id)}
+                  >
+                    {group.sessions.length > 1 && (
+                      <div className={styles.paneTag}>
+                        <span>{session.displayId}</span>
+                        <button
+                          type="button"
+                          className={styles.paneClose}
+                          title="关闭此面板"
+                          onClick={e => {
+                            e.stopPropagation();
+                            onCloseSession(session.id);
+                          }}
+                        >
+                          <FaTimes size={10} />
+                        </button>
+                      </div>
+                    )}
+                    <ConsoleView
               sessionId={session.id}
               outputChunks={terminalOutputs[session.id]?.chunks ?? EMPTY_CHUNKS}
               droppedChunks={terminalOutputs[session.id]?.droppedChunks ?? 0}
@@ -173,9 +258,14 @@ const MainContentComponent: React.FC<MainContentProps> = ({
               onReconnect={reconnectBySession.get(session.id)!}
               onFontSizeChange={onTerminalFontSizeChange}
               disconnectMessage={disconnectMessage}
-            />
+                    />
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </main>
   );
