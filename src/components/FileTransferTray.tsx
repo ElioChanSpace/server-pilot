@@ -20,6 +20,9 @@ import {
 import { Server } from "../context/ServerContext";
 import styles from "./FileTransferTray.module.css";
 
+/** 编辑工作区窗口标签（单窗多标签） */
+const WORKSPACE_LABEL = "editor-workspace";
+
 /* ── Types ── */
 
 interface FileTransferTrayProps {
@@ -106,8 +109,6 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, entry: null });
   // 正在编辑的文件路径集合（对应行显示"编辑中"高亮）
   const [editingPaths, setEditingPaths] = useState<Set<string>>(new Set());
-  // 活编辑窗口映射：path -> window（唯一 label，关闭/失效时清理）
-  const editorWindowsRef = useRef<Map<string, WebviewWindow>>(new Map());
 
   // Refs so the long-lived event listeners never need to be re-registered
   // when the current directory or server object identity changes.
@@ -400,79 +401,53 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
   const handleEdit = async (entry: RemoteDirectoryEntry) => {
     if (!server) return;
 
-    // 已打开的窗口：聚焦即可；句柄失效（已销毁）则清理后重建。
-    // 存活判定用后端窗口注册表（getByLabel 查询真实存在性），
-    // 不信任句柄自身的 show()/setFocus() —— 死句柄可能静默"成功"。
-    const existingWin = editorWindowsRef.current.get(entry.path);
-    if (existingWin) {
-      const alive = await WebviewWindow.getByLabel(existingWin.label).catch(() => null);
-      if (alive) {
-        try {
-          await alive.show();
-          await alive.setFocus();
-          setEditingPaths(prev => new Set(prev).add(entry.path));
-          return;
-        } catch {
-          // fallthrough 重建
-        }
-      }
-      editorWindowsRef.current.delete(entry.path);
-    }
-
-    // label 唯一（时间戳后缀）：关闭后立即重开不会与销毁中的旧窗口撞 label
-    const label = `editor-${server.id}-${entry.path.replace(/[^a-zA-Z0-9]/g, "_")}-${Date.now().toString(36)}`;
-    const url = `/editor.html?serverId=${encodeURIComponent(server.id)}&filePath=${encodeURIComponent(entry.path)}`;
-
-    try {
-      // visible 直接为 true（透明窗体在内容渲染前不可见，无白闪）——
-      // 不再依赖 webview 内的 show()，避免页面异常时窗口永远隐形
-      const win = new WebviewWindow(label, {
-        url,
-        title: `编辑 - ${entry.name}`,
-        width: 900,
-        height: 700,
-        minWidth: 600,
-        minHeight: 400,
-        decorations: false,
-        transparent: true,
-        shadow: true,
-        resizable: true,
-        center: true,
-      });
-      editorWindowsRef.current.set(entry.path, win);
-      setEditingPaths(prev => new Set(prev).add(entry.path));
-
-      const cleanup = () => {
-        if (editorWindowsRef.current.get(entry.path) === win) {
-          editorWindowsRef.current.delete(entry.path);
-        }
-        setEditingPaths(prev => {
-          if (!prev.has(entry.path)) return prev;
-          const next = new Set(prev);
-          next.delete(entry.path);
-          return next;
+    // 编辑工作区：单窗口多标签。已存在 → 发 editor-open 事件增标签并前置
+    const existing = await WebviewWindow.getByLabel(WORKSPACE_LABEL).catch(() => null);
+    if (existing) {
+      try {
+        await existing.emit("editor-open", {
+          serverId: server.id,
+          filePath: entry.path,
         });
-      };
-      win.once("tauri://error", cleanup);
-      win.once("tauri://destroyed", cleanup);
-      // 创建完成后强制前置到最前（macOS 新窗可能被主窗挡住）
-      win.once("tauri://created", () => {
-        void win.show().catch(() => {});
-        void win.setFocus().catch(() => {});
-      });
-    } catch (err) {
-      // 创建失败必须可见地报错，不再"点了没反应"
-      setEditingPaths(prev => {
-        const next = new Set(prev);
-        next.delete(entry.path);
-        return next;
-      });
-      setError(`打开编辑器失败: ${err instanceof Error ? err.message : String(err)}`);
+        await existing.show();
+        await existing.setFocus();
+        setEditingPaths(prev => new Set(prev).add(entry.path));
+        return;
+      } catch {
+        // 句柄失效 → 落到重建流程
+      }
     }
+
+    setEditingPaths(prev => new Set(prev).add(entry.path));
+    const url = `/editor.html?serverId=${encodeURIComponent(server.id)}&filePath=${encodeURIComponent(entry.path)}`;
+    const win = new WebviewWindow(WORKSPACE_LABEL, {
+      url,
+      title: `编辑 - ${server.name}`,
+      width: 1100,
+      height: 760,
+      minWidth: 640,
+      minHeight: 420,
+      decorations: false,
+      transparent: true,
+      shadow: true,
+      resizable: true,
+      center: true,
+    });
+
+    const cleanup = () => {
+      // 窗口整体销毁：清掉该服务器所有"编辑中"行态
+      setEditingPaths(new Set());
+    };
+    win.once("tauri://error", cleanup);
+    win.once("tauri://destroyed", cleanup);
+    win.once("tauri://created", () => {
+      void win.show().catch(() => {});
+      void win.setFocus().catch(() => {});
+    });
   };
 
   // 编辑窗口关闭后复位行态（编辑器在关闭前 emit "editor-closed"）。
-  // 注意 payload 字段是 filePath（与 RemoteFileEditor 的 emit 保持一致）。
+  // 注意 payload 字段是 filePath（与 EditorWorkspace 的 emit 保持一致）。
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -480,7 +455,6 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
       if (disposed) return;
       const path = event.payload.filePath;
       if (!path) return;
-      editorWindowsRef.current.delete(path);
       setEditingPaths(prev => {
         if (!prev.has(path)) return prev;
         const next = new Set(prev);
