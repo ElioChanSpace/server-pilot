@@ -376,7 +376,11 @@ fn process_pending_cwd_output(
                 display.push_str(&pending_request.buffer);
                 pending_request.buffer.clear();
 
-                if cwd.is_empty() {
+                // 校验提取值：控制字符/格式符泄漏说明探测被回显或 TUI 干扰
+                let cwd_valid = !cwd.is_empty()
+                    && !cwd.contains('%')
+                    && !cwd.chars().any(|c| c.is_control());
+                if !cwd_valid {
                     return (display, Some(Err("无法读取当前终端目录".to_string())));
                 }
 
@@ -999,10 +1003,12 @@ pub fn probe_session_cwd(
             return Err("正在读取当前终端目录，请稍后重试".to_string());
         }
 
-        let request_id = Uuid::new_v4().to_string();
-        let marker_start = format!("__SERVER_PILOT_CWD_START_{}__", request_id);
-        let marker_end = format!("__SERVER_PILOT_CWD_END_{}__", request_id);
-        let command_text = format!("printf '{}%s{}' \"$PWD\"", marker_start, marker_end);
+        // 用 \x01/\x02 控制字符做定界符：命令仅 20 来个字符，回显不会换行
+        // 折行 —— 之前超长 marker 命令在窄终端回显时被插入换行，导致
+        // 无法匹配整条命令、回显碎片泄漏到终端显示。
+        let marker_start = "\u{1}".to_string();
+        let marker_end = "\u{2}".to_string();
+        let command_text = "printf '\\001%s\\002' \"$PWD\"".to_string();
         let (responder, receiver) = mpsc::channel();
         session_guard.pending_cwd_request = Some(PendingCwdRequest {
             command_text: command_text.clone(),
@@ -1059,6 +1065,7 @@ pub fn session_cached_cwd(
 
 /// Whether the session has been idle (no input/output) for at least `min_idle`.
 /// Probing the terminal while the user is typing would corrupt their input.
+#[allow(dead_code)]
 pub fn session_is_idle(
     session_manager_state: &SessionManagerState,
     session_id: &str,
@@ -1153,6 +1160,7 @@ pub fn close_server_sessions(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn has_active_session_for_server(
     session_manager_state: &State<'_, SessionManagerState>,
     server_id: &str,

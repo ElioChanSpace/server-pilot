@@ -170,6 +170,8 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   const fitFrameRef = useRef<number | null>(null);
   const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const selectionCopyTimerRef = useRef<number | null>(null);
+  // 最近一次非空选区快照：右键/焦点变化清掉 xterm 选区后仍可复制
+  const lastSelectionRef = useRef<string>("");
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [isDropTargetActive, setIsDropTargetActive] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -351,11 +353,21 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       focusTerminal();
 
       const copySelection = async () => {
-        const selection = terminal.getSelection();
+        // xterm 在 mousedown（含右键）时可能清掉选区 —— 用最近一次非空
+        // 选区快照兜底，保证右键复制/快捷键复制始终拿到内容
+        const selection =
+          terminal.getSelection() ||
+          lastSelectionRef.current ||
+          window.getSelection()?.toString() ||
+          "";
         if (!selection) {
           return;
         }
-        await writeText(selection);
+        try {
+          await writeText(selection);
+        } catch (err) {
+          console.error("[Terminal] 复制到剪贴板失败:", err);
+        }
       };
 
       terminal.attachCustomKeyEventHandler((event) => {
@@ -367,10 +379,10 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
         const hasPrimaryModifier = isMac
           ? event.metaKey && !event.ctrlKey
           : event.ctrlKey && !event.metaKey;
-        const isCopyShortcut = terminal.hasSelection() && (
+        // 不再要求 hasSelection：选区被清（右键/焦点切换）时也能复制
+        const isCopyShortcut =
           (hasPrimaryModifier && !event.altKey && key === 'c') ||
-          (!isMac && event.ctrlKey && event.shiftKey && key === 'c')
-        );
+          (!isMac && event.ctrlKey && event.shiftKey && key === 'c');
         const isPasteShortcut =
           (hasPrimaryModifier && !event.altKey && key === 'v') ||
           (!isMac && event.ctrlKey && event.shiftKey && key === 'v');
@@ -422,6 +434,10 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
 
       // 选中自动复制到系统剪贴板（防抖，避免拖选过程中高频 IPC）
       terminal.onSelectionChange(() => {
+        const current = terminal.getSelection();
+        if (current) {
+          lastSelectionRef.current = current;
+        }
         if (selectionCopyTimerRef.current !== null) {
           window.clearTimeout(selectionCopyTimerRef.current);
         }
@@ -429,7 +445,9 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
           selectionCopyTimerRef.current = null;
           const selection = terminal.getSelection();
           if (selection) {
-            void writeText(selection).catch(() => {});
+            void writeText(selection).catch(err => {
+              console.error("[Terminal] 选区自动复制失败:", err);
+            });
           }
         }, 200);
       });
@@ -700,9 +718,16 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       label: '复制',
       icon: <FaCopy />,
       action: () => {
-        const selection = termInstance.current?.getSelection();
+        // 选区可能已被 mousedown 清掉，用最近一次快照兜底
+        const selection =
+          termInstance.current?.getSelection() ||
+          lastSelectionRef.current ||
+          window.getSelection()?.toString() ||
+          "";
         if (selection) {
-          void writeText(selection).catch(() => {});
+          void writeText(selection).catch(err => {
+            console.error("[Terminal] 右键复制失败:", err);
+          });
         }
         focusTerminal();
       },

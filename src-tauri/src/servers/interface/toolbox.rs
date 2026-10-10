@@ -684,18 +684,10 @@ pub async fn fetch_tab_status(
     let connection = resolve_transfer_server(&state, &id)?;
     let session_state = session_manager.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        // Prefer the cached cwd; only inject a probe command when the terminal
-        // has been idle for a while so we never corrupt typing in progress.
-        let mut cwd = session_manager::session_cached_cwd(&session_state, &session_id);
-        if cwd.is_none()
-            && session_manager::session_is_idle(
-                &session_state,
-                &session_id,
-                std::time::Duration::from_secs(5),
-            )
-        {
-            cwd = session_manager::probe_session_cwd(&session_state, &session_id).ok();
-        }
+        // 只读缓存 cwd，绝不自动向 PTY 注入探测命令 —— 定时注入会把
+        // printf 回显漏进终端、干扰用户输入甚至破坏 TUI 的鼠标/模式状态。
+        // cwd 由用户主动操作（如"上传到当前目录"）时探测并缓存。
+        let cwd = session_manager::session_cached_cwd(&session_state, &session_id);
 
         let git_cmd = match &cwd {
             Some(cwd) => format!(
