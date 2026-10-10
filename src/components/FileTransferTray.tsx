@@ -447,6 +447,7 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
         decorations: false,
         transparent: true,
         shadow: true,
+        visible: true,
         resizable: true,
         center: true,
       });
@@ -457,12 +458,15 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
         void win.setFocus().catch(() => {});
       };
 
+      // 立即 + created + 延时多次拉起：透明窗创建后可能被主窗挡住，
+      // 且不能只依赖 tauri://created（存在事件早于监听注册的竞态）
+      bringToFront();
       win.once("tauri://created", () => {
         if (settled) return;
         settled = true;
         bringToFront();
-        // 前置加固：透明窗创建后可能被主窗挡住，350ms 后再拉一次焦点
         setTimeout(bringToFront, 350);
+        setTimeout(bringToFront, 900);
       });
 
       win.once("tauri://error", e => {

@@ -508,6 +508,9 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
   >(null);
 
   // ── 窗口关闭（聚合脏检查） ──
+  // 注意：Tauri 的 close() 只发 close-requested 事件，真正销毁由监听链
+  // 里的 destroy() 完成（需要 allow-destroy 权限，缺失会静默失败留下
+  // 隐形活窗）。这里直接 destroy() 强制销毁，不依赖事件链。
   const animateClose = useCallback(() => {
     if (forceCloseRef.current) return;
     forceCloseRef.current = true;
@@ -517,15 +520,12 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
     }
     setTimeout(() => {
       const win = getCurrentWindow();
-      win.close().catch(() => {
-        // 关闭失败不能留下隐形窗（data-closing 是 opacity:0）：
-        // 重试一次；仍失败则回滚视觉，避免"再也打不开编辑器"
-        setTimeout(() => {
-          win.close().catch(() => {
-            forceCloseRef.current = false;
-            setClosing(false);
-          });
-        }, 300);
+      win.destroy().catch(() => {
+        win.close().catch(() => {
+          // 双路都失败：回滚视觉，避免留下 opacity:0 的隐形窗
+          forceCloseRef.current = false;
+          setClosing(false);
+        });
       });
     }, 150);
   }, []);
