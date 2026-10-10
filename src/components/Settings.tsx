@@ -19,20 +19,20 @@ interface SyntaxPlugin {
 }
 
 const DEFAULT_SYNTAX_PLUGINS: SyntaxPlugin[] = [
-  { id: "python", name: "Python", description: "Python 语法高亮支持", extensions: [".py", ".pyw", ".pyi"], enabled: true, builtin: true },
-  { id: "rust", name: "Rust", description: "Rust 语法高亮支持", extensions: [".rs"], enabled: true, builtin: true },
-  { id: "java", name: "Java", description: "Java 语法高亮支持", extensions: [".java", ".class"], enabled: true, builtin: true },
+  { id: "python", name: "Python", description: "Python 高亮 + 补全/诊断", extensions: [".py", ".pyw", ".pyi"], enabled: true, builtin: true },
+  { id: "rust", name: "Rust", description: "Rust 高亮", extensions: [".rs"], enabled: true, builtin: true },
+  { id: "java", name: "Java", description: "Java 高亮", extensions: [".java", ".class"], enabled: true, builtin: true },
   { id: "shell", name: "Shell/Bash", description: "Shell 脚本语法高亮支持", extensions: [".sh", ".bash", ".zsh"], enabled: true, builtin: true },
-  { id: "markdown", name: "Markdown", description: "Markdown 语法高亮支持", extensions: [".md", ".markdown"], enabled: true, builtin: true },
-  { id: "javascript", name: "JavaScript", description: "JavaScript 语法高亮支持", extensions: [".js", ".jsx", ".mjs"], enabled: true, builtin: true },
-  { id: "typescript", name: "TypeScript", description: "TypeScript 语法高亮支持", extensions: [".ts", ".tsx"], enabled: true, builtin: true },
-  { id: "go", name: "Go", description: "Go 语法高亮支持", extensions: [".go"], enabled: true, builtin: true },
-  { id: "css", name: "CSS", description: "CSS 语法高亮支持", extensions: [".css", ".scss", ".less"], enabled: true, builtin: true },
-  { id: "html", name: "HTML", description: "HTML 语法高亮支持", extensions: [".html", ".htm"], enabled: true, builtin: true },
-  { id: "json", name: "JSON", description: "JSON 语法高亮支持", extensions: [".json"], enabled: true, builtin: true },
-  { id: "yaml", name: "YAML", description: "YAML 语法高亮支持", extensions: [".yaml", ".yml"], enabled: true, builtin: true },
-  { id: "sql", name: "SQL", description: "SQL 语法高亮支持", extensions: [".sql"], enabled: true, builtin: true },
-  { id: "dockerfile", name: "Dockerfile", description: "Dockerfile 语法高亮支持", extensions: ["Dockerfile"], enabled: true, builtin: true },
+  { id: "markdown", name: "Markdown", description: "Markdown 高亮", extensions: [".md", ".markdown"], enabled: true, builtin: true },
+  { id: "javascript", name: "JavaScript", description: "JavaScript 高亮", extensions: [".js", ".jsx", ".mjs"], enabled: true, builtin: true },
+  { id: "typescript", name: "TypeScript", description: "TypeScript 高亮", extensions: [".ts", ".tsx"], enabled: true, builtin: true },
+  { id: "go", name: "Go", description: "Go 高亮", extensions: [".go"], enabled: true, builtin: true },
+  { id: "css", name: "CSS", description: "CSS 高亮", extensions: [".css", ".scss", ".less"], enabled: true, builtin: true },
+  { id: "html", name: "HTML", description: "HTML 高亮", extensions: [".html", ".htm"], enabled: true, builtin: true },
+  { id: "json", name: "JSON", description: "JSON 高亮", extensions: [".json"], enabled: true, builtin: true },
+  { id: "yaml", name: "YAML", description: "YAML 高亮", extensions: [".yaml", ".yml"], enabled: true, builtin: true },
+  { id: "sql", name: "SQL", description: "SQL 高亮", extensions: [".sql"], enabled: true, builtin: true },
+  { id: "dockerfile", name: "Dockerfile", description: "Dockerfile 高亮", extensions: ["Dockerfile"], enabled: true, builtin: true },
 ];
 
 const defaultSettings: AppSettings = {
@@ -414,7 +414,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             </label>
 
             <div className={styles.backupSection}>
-              <span className={styles.fieldLabel}>插件管理</span>
+              <span className={styles.fieldLabel}>语言支持</span>
               <div className={styles.pluginList}>
                 {syntaxPlugins.map(plugin => (
                   <div key={plugin.id} className={styles.pluginItem}>
@@ -441,7 +441,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </div>
                 ))}
               </div>
-              <span className={styles.helper}>语法高亮插件由 Syntect 引擎提供支持，所有语言均已内置启用。</span>
+              <span className={styles.helper}>
+                语法高亮由 Monaco 内核（VS Code 同源）提供，以下语言随编辑器内置并自动匹配文件类型；
+                未收录的格式按纯文本显示。
+              </span>
             </div>
 
             <div className={styles.backupSection}>
