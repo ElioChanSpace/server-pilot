@@ -6,6 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
+  FaTerminal,
   FaEdit,
   FaFileAlt,
   FaFolder,
@@ -30,6 +31,8 @@ interface FileTransferTrayProps {
   server: Server | null;
   onClose?: () => void;
   onOpenHistory?: () => void;
+  /** 在该服务器的活动终端中 cd 到指定目录（面板 → 终端联动） */
+  onCdInTerminal?: (serverId: string, path: string) => void;
 }
 
 interface FileTransferResult {
@@ -97,7 +100,7 @@ const normalizeRemotePath = (path: string) => {
 
 /* ── Component ── */
 
-const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, server, onClose, onOpenHistory }) => {
+const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, server, onClose, onOpenHistory, onCdInTerminal }) => {
   /* ── State ── */
   const [currentPath, setCurrentPath] = useState("/");
   const [parentPath, setParentPath] = useState<string | null>(null);
@@ -116,6 +119,7 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
   useEffect(() => {
     currentPathRef.current = currentPath;
   }, [currentPath]);
+  const loadDirectoryRef = useRef<(path: string) => void>(() => {});
   const serverRef = useRef(server);
   useEffect(() => {
     serverRef.current = server;
@@ -219,6 +223,7 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
       if (reqId === requestRef.current) setIsLoading(false);
     }
   };
+  loadDirectoryRef.current = loadDirectory;
 
   useEffect(() => {
     if (isOpen && server && canOperate) {
@@ -537,6 +542,30 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
     };
   }, []);
 
+  // A: 终端目录跟随 —— 活动终端 cwd 变化/切换终端时面板自动导航
+  useEffect(() => {
+    if (!isOpen || !server) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<{ sessionId: string; serverId: string; cwd: string }>(
+      "terminal-cwd-changed",
+      event => {
+        if (disposed) return;
+        if (event.payload.serverId !== server.id) return;
+        const cwd = event.payload.cwd;
+        if (!cwd || normalizeRemotePath(cwd) === normalizeRemotePath(currentPathRef.current)) return;
+        loadDirectoryRef.current(cwd);
+      },
+    ).then(fn => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isOpen, server]);
+
   /* ── Context menu ── */
   const openContextMenu = (e: React.MouseEvent, entry: RemoteDirectoryEntry) => {
     e.preventDefault();
@@ -798,6 +827,16 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
               打开
             </button>
           )}
+          <button
+            className={styles.contextItem}
+            onClick={() => {
+              const entry = contextMenu.entry!;
+              onCdInTerminal?.(server?.id ?? "", entry.isDir ? entry.path : currentPath);
+              setContextMenu({ visible: false, x: 0, y: 0, entry: null });
+            }}
+          >
+            <FaTerminal size={11} /> 在终端中 cd 到此处
+          </button>
           {!contextMenu.entry.isDir && (
             <>
               <button

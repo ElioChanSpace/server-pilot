@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import {
   FaTimes, FaSpinner, FaExclamationCircle, FaFolder, FaFileAlt, FaArrowUp,
   FaSyncAlt, FaTrash, FaPen, FaFolderPlus, FaArrowRight, FaArrowLeft, FaHdd,
+  FaTerminal,
 } from 'react-icons/fa';
 import styles from './FileManagerModal.module.css';
 
@@ -32,6 +34,8 @@ interface FileManagerModalProps {
   serverId: string;
   serverName: string;
   onClose: () => void;
+  /** 在该服务器的活动终端中 cd 到指定目录（面板 → 终端联动） */
+  onCdInTerminal?: (serverId: string, path: string) => void;
 }
 
 const MAX_LOCAL_STAT = 300;
@@ -53,7 +57,7 @@ const formatTime = (ts: number | null) => {
 const normalize = (p: string) => (p.length > 1 ? p.replace(/\/+$/, '') : p);
 const joinPath = (base: string, name: string) => (base === '/' ? `/${name}` : `${normalize(base)}/${name}`);
 
-export const FileManagerModal: React.FC<FileManagerModalProps> = ({ serverId, serverName, onClose }) => {
+export const FileManagerModal: React.FC<FileManagerModalProps> = ({ serverId, serverName, onClose, onCdInTerminal }) => {
   const [localPath, setLocalPath] = useState('');
   const [localEntries, setLocalEntries] = useState<PaneEntry[]>([]);
   const [localLoading, setLocalLoading] = useState(true);
@@ -149,6 +153,31 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({ serverId, se
 
   useEffect(() => { void loadLocal(''); }, [loadLocal]);
   useEffect(() => { void loadRemote('/'); }, [loadRemote]);
+
+  // A: 终端目录跟随 —— 活动终端 cwd 变化/切换终端时远程面板自动导航
+  const loadRemoteRef = useRef(loadRemote);
+  loadRemoteRef.current = loadRemote;
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<{ sessionId: string; serverId: string; cwd: string }>(
+      "terminal-cwd-changed",
+      event => {
+        if (disposed) return;
+        if (event.payload.serverId !== serverId) return;
+        const cwd = event.payload.cwd;
+        if (!cwd || cwd === remotePath) return;
+        loadRemoteRef.current(cwd);
+      },
+    ).then(fn => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [serverId, remotePath]);
 
   const localParent = useMemo(() => {
     const idx = localPath.lastIndexOf('/');
@@ -302,6 +331,16 @@ export const FileManagerModal: React.FC<FileManagerModalProps> = ({ serverId, se
       >
         <div className={styles.paneHeader}>
           <span className={styles.paneTitle}>{isLocal ? <FaHdd size={11} /> : <FaFolder size={11} />} {isLocal ? '本地' : '远程'}</span>
+          {!isLocal && (
+            <button
+              type="button"
+              className={styles.iconBtn}
+              title="在终端中 cd 到此处"
+              onClick={e => { e.stopPropagation(); onCdInTerminal?.(serverId, remotePath); }}
+            >
+              <FaTerminal size={11} />
+            </button>
+          )}
           <button
             type="button"
             className={styles.iconBtn}

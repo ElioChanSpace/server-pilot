@@ -1239,6 +1239,26 @@ pub fn session_output_snapshot(
     Some(String::from_utf8_lossy(&session.output_ring).into_owned())
 }
 
+/// 更新会话缓存 cwd（前端推断/探测到目录变化时同步，供标签徽标与
+/// 切换终端时的面板跟随使用，避免重复注入探测命令）
+pub fn set_session_cached_cwd(
+    session_manager_state: &State<'_, SessionManagerState>,
+    session_id: &str,
+    cwd: &str,
+) -> bool {
+    let Ok(sessions) = session_manager_state.0.lock() else {
+        return false;
+    };
+    let Some(session) = sessions.get(session_id) else {
+        return false;
+    };
+    let Ok(mut guard) = session.lock() else {
+        return false;
+    };
+    guard.last_known_cwd = Some(cwd.to_string());
+    true
+}
+
 /// 关闭全部终端会话（"刷新后不恢复"设置生效时的兜底清理，避免孤儿 PTY）
 pub fn close_all_sessions(
     session_manager_state: &State<'_, SessionManagerState>,

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Server } from '../context/ServerContext';
-import { FaBolt, FaCalendarAlt, FaChartLine, FaColumns, FaCopy, FaCogs, FaDocker, FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose } from 'react-icons/fa';
+import { FaBolt, FaCalendarAlt, FaChartLine, FaColumns, FaCopy, FaCogs, FaDocker, FaGlobe, FaHdd, FaHistory, FaInfoCircle, FaNetworkWired, FaRedo, FaMicrochip, FaServer, FaTimes, FaTools, FaWindowClose, FaFolderOpen } from 'react-icons/fa';
 import { ContextMenu, ContextMenuAction, isEventInsideContextMenu } from './ContextMenu';
 import styles from './TabBar.module.css';
 import type { TerminalSession } from '../types/terminal';
@@ -29,6 +29,8 @@ interface TabBarProps {
   onReconnectSession: (sessionId: string) => void;
   onOpenTool: (tool: ToolboxTool, serverId: string, serverName: string) => void;
   onOpenTransferHistory: () => void;
+  followCwdEnabled: boolean;
+  onToggleFollowCwd: () => void;
 }
 
 interface TabContextMenuState {
@@ -52,6 +54,8 @@ const TabBarComponent: React.FC<TabBarProps> = ({
   onReconnectSession,
   onOpenTool,
   onOpenTransferHistory,
+  followCwdEnabled,
+  onToggleFollowCwd,
 }) => {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
@@ -128,6 +132,13 @@ const TabBarComponent: React.FC<TabBarProps> = ({
           icon: <FaCopy />,
           action: () => {
             onDuplicateSession(targetSession.id);
+          },
+        },
+        {
+          label: followCwdEnabled ? '✓ 跟随终端目录' : '跟随终端目录',
+          icon: <FaFolderOpen />,
+          action: () => {
+            onToggleFollowCwd();
           },
         },
         {

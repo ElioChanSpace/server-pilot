@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, memo, Suspense, lazy } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ServerProvider, useServer } from "./context/ServerContext";
@@ -134,6 +134,47 @@ const AppContent: React.FC = () => {
   // Remote status badges per tab (cwd / git branch / load) — polled while sessions are connected
   const [tabStatuses, setTabStatuses] = useState<Record<string, import("./components/TabBar").TabRemoteStatus>>({});
   const tabPollBusyRef = useRef(false);
+
+  // ── A: 终端 ↔ 文件面板路径联动 ──
+  // 跟随开关（全局模式）：开启后文件面板始终跟随"活动终端"的目录
+  const [followCwdEnabled, setFollowCwdEnabled] = useState(
+    () => window.localStorage.getItem("server-pilot-follow-cwd") !== "0",
+  );
+  const followCwdRef = useRef(followCwdEnabled);
+  followCwdRef.current = followCwdEnabled;
+  // 每会话已知 cwd（cd 探测/切换时查询），避免重复注入探测命令
+  const sessionCwdMapRef = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    window.localStorage.setItem("server-pilot-follow-cwd", followCwdEnabled ? "1" : "0");
+  }, [followCwdEnabled]);
+
+  /** 统一的 cwd 汇聚点：更新缓存 + 通知面板（仅活动会话 + 跟随开启时） */
+  const publishTerminalCwd = useCallback((sessionId: string, cwd: string) => {
+    if (!cwd) return;
+    sessionCwdMapRef.current.set(sessionId, cwd);
+    void invoke<boolean>("set_terminal_session_cwd", { sessionId, cwd }).catch(() => {});
+    const session = sessionsRef.current.find(s => s.id === sessionId);
+    if (!session || session.id !== currentSessionIdRef.current) return;
+    if (!followCwdRef.current) return;
+    void emit("terminal-cwd-changed", { sessionId, serverId: session.serverId, cwd });
+  }, []);
+
+  // 切换终端标签 → 面板跟随该会话的已知目录
+  useEffect(() => {
+    if (!currentSessionId || !followCwdEnabled) return;
+    const cwd = sessionCwdMapRef.current.get(currentSessionId);
+    if (cwd) {
+      const session = sessionsRef.current.find(s => s.id === currentSessionId);
+      if (session) {
+        void emit("terminal-cwd-changed", {
+          sessionId: currentSessionId,
+          serverId: session.serverId,
+          cwd,
+        });
+      }
+    }
+  }, [currentSessionId, followCwdEnabled]);
   useEffect(() => {
     const poll = async () => {
       if (tabPollBusyRef.current) return;
@@ -692,7 +733,27 @@ const AppContent: React.FC = () => {
     if (!session) return;
     const server = serversRef.current.find(s => s.id === session.serverId);
     addCommand(sessionId, session.displayId, session.serverId, server?.name ?? '未知服务器', command);
-  }, [addCommand]);
+
+    // A: 目录变更命令（cd/pushd/popd）→ 安全探测真实 cwd（命令瞬时完成，
+    // 探测命令排在其后执行；仅命令触发，绝不在用户输入/TUI 中注入）
+    if (/^\s*(cd|pushd|popd)\b/.test(command)) {
+      void invoke<string>("get_terminal_session_directory", { sessionId })
+        .then(cwd => publishTerminalCwd(sessionId, cwd))
+        .catch(() => {});
+    }
+  }, [addCommand, publishTerminalCwd]);
+
+  /** 面板 → 终端：在活动终端中 cd 到指定目录 */
+  const handleCdInTerminal = useCallback((serverId: string, path: string) => {
+    const session =
+      sessionsRef.current.find(s => s.serverId === serverId && s.id === currentSessionIdRef.current) ??
+      sessionsRef.current.find(s => s.serverId === serverId && s.status === "connected");
+    if (!session) return;
+    void invoke("pty_write", {
+      sessionId: session.id,
+      data: `cd ${JSON.stringify(path)}\r`,
+    }).catch(() => {});
+  }, []);
 
   const handleSelectCategory = useCallback((category: Category | null) => {
     clearSelection();
@@ -954,6 +1015,8 @@ const AppContent: React.FC = () => {
             onTerminalFilesDropped={handleTerminalFilesDropped}
             onTerminalCommandExecuted={handleTerminalCommandExecuted}
             onOpenTool={handleOpenTool}
+            followCwdEnabled={followCwdEnabled}
+            onToggleFollowCwd={() => setFollowCwdEnabled(v => !v)}
             onOpenTransferHistory={handleOpenTransferHistory}
             terminalFontSize={appSettings?.terminalFontSize ?? 14}
             terminalScrollback={appSettings?.terminalScrollback ?? 5000}
@@ -986,7 +1049,7 @@ const AppContent: React.FC = () => {
           )}
         </div>
       </div>
-      <FileTransferTray isOpen={isTransferTrayOpen} server={transferTargetServer} onClose={toggleTransferTray} onOpenHistory={handleOpenTransferHistory} />
+      <FileTransferTray isOpen={isTransferTrayOpen} server={transferTargetServer} onClose={toggleTransferTray} onOpenHistory={handleOpenTransferHistory} onCdInTerminal={handleCdInTerminal} />
       <BottomBar
         isLeftSidebarOpen={isLeftSidebarOpen}
         isRightSidebarOpen={isRightSidebarOpen}
@@ -1126,6 +1189,7 @@ const AppContent: React.FC = () => {
           serverId={toolboxTarget.id}
           serverName={toolboxTarget.name}
           onClose={() => setToolboxTarget(null)}
+          onCdInTerminal={handleCdInTerminal}
         />
       )}
       <TransferHistoryModal

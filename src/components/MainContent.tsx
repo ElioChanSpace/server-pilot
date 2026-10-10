@@ -26,6 +26,8 @@ interface MainContentProps {
   onTerminalCommandExecuted: (sessionId: string, command: string) => void;
   onOpenTool: (tool: import('./TabBar').ToolboxTool, serverId: string, serverName: string) => void;
   onOpenTransferHistory: () => void;
+  followCwdEnabled: boolean;
+  onToggleFollowCwd: () => void;
   terminalFontSize: number;
   terminalScrollback: number;
   onTerminalFontSizeChange: (delta: number) => void;
@@ -50,6 +52,8 @@ const MainContentComponent: React.FC<MainContentProps> = ({
   onTerminalCommandExecuted,
   onOpenTool,
   onOpenTransferHistory,
+  followCwdEnabled,
+  onToggleFollowCwd,
   terminalFontSize,
   terminalScrollback,
   onTerminalFontSizeChange,
@@ -124,6 +128,8 @@ const MainContentComponent: React.FC<MainContentProps> = ({
           onReconnectSession={onReconnectSession}
           onOpenTool={onOpenTool}
           onOpenTransferHistory={onOpenTransferHistory}
+          followCwdEnabled={followCwdEnabled}
+          onToggleFollowCwd={onToggleFollowCwd}
         />
       )}
       <div className={styles.stage}>

@@ -114,6 +114,16 @@ pub fn get_terminal_session_output(
         .unwrap_or_default())
 }
 
+/// 同步会话缓存 cwd（前端在 cd 后推断/探测得到）
+#[tauri::command(async)]
+pub fn set_terminal_session_cwd(
+    session_manager: State<'_, SessionManagerState>,
+    session_id: String,
+    cwd: String,
+) -> Result<bool, String> {
+    Ok(session_manager::set_session_cached_cwd(&session_manager, &session_id, &cwd))
+}
+
 /// 关闭全部终端会话（"刷新后不恢复"设置的兜底清理）
 #[tauri::command(async)]
 pub fn close_all_terminal_sessions(
