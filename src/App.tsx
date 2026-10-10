@@ -337,10 +337,14 @@ const AppContent: React.FC = () => {
 
   // P0: UI 刷新后恢复会话 —— 后端 PTY 仍存活，枚举后与本地元数据对账重建 tab。
   // 等设置加载完成后按 restoreSessionsOnLaunch 决定恢复 or 关闭全部。
-  const didRestoreRef = useRef(false);
+  //
+  // StrictMode 注意：挂载时 effect 会执行两遍（第一遍随后被"模拟卸载"清理），
+  // 因此这里不能用 cleanup 中止异步（否则第一遍被掐死、第二遍又被前置位挡住，
+  // 恢复逻辑永远不执行）。改为：启动前置位防重入 + 异步体不提供中止路径。
+  const restoreInFlightRef = useRef(false);
   useEffect(() => {
-    if (didRestoreRef.current || !appSettings) return;
-    didRestoreRef.current = true;
+    if (!appSettings || restoreInFlightRef.current) return;
+    restoreInFlightRef.current = true;
 
     if (appSettings.restoreSessionsOnLaunch === false) {
       // 不恢复 = 刷新即断开：清理后台会话与残留元数据，杜绝孤儿 PTY
@@ -350,11 +354,11 @@ const AppContent: React.FC = () => {
       return;
     }
 
-    let cancelled = false;
     void (async () => {
       try {
+        // 幂等护栏：已有 tab（如极端情况下的重复触发）则不再覆盖
+        if (sessionsRef.current.length > 0) return;
         const alive = await invoke<TerminalSessionSummary[]>("list_terminal_sessions");
-        if (cancelled) return;
         if (alive.length > 0) {
           const restored = reconcileSessions(alive, loadStoredSessions());
           if (restored.length > 0) {
@@ -364,7 +368,6 @@ const AppContent: React.FC = () => {
                 invoke<string>("get_terminal_session_output", { sessionId: s.id }).catch(() => ""),
               ),
             );
-            if (cancelled) return;
             const reindexed = reindexSessions(restored);
             sessionsRef.current = reindexed;
             setSessions(reindexed);
@@ -389,16 +392,12 @@ const AppContent: React.FC = () => {
       } catch (err) {
         console.error("恢复终端会话失败:", err);
       } finally {
-        if (!cancelled) {
-          sessionsHydratedRef.current = true;
-          // 对账完成后以当前列表为准，顺带清理已死亡会话的残留元数据
-          saveStoredSessions(sessionsRef.current);
-        }
+        // 无条件水合：此前被中止门槛挡住导致元数据从未落盘
+        sessionsHydratedRef.current = true;
+        // 以当前列表为准落盘（含恢复出的 displayId），并清理死亡会话的残留
+        saveStoredSessions(sessionsRef.current);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
     // 仅在设置首次加载后执行一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appSettings]);
