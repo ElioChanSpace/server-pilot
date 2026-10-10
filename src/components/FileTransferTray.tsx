@@ -416,36 +416,52 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
     const label = `editor-${server.id}-${entry.path.replace(/[^a-zA-Z0-9]/g, "_")}-${Date.now().toString(36)}`;
     const url = `/editor.html?serverId=${encodeURIComponent(server.id)}&filePath=${encodeURIComponent(entry.path)}`;
 
-    setEditingPaths(prev => new Set(prev).add(entry.path));
-    const win = new WebviewWindow(label, {
-      url,
-      title: `编辑 - ${entry.name}`,
-      width: 900,
-      height: 700,
-      minWidth: 600,
-      minHeight: 400,
-      decorations: false,
-      transparent: true,
-      shadow: true,
-      visible: false,
-      resizable: true,
-      center: true,
-    });
-    editorWindowsRef.current.set(entry.path, win);
+    try {
+      // visible 直接为 true（透明窗体在内容渲染前不可见，无白闪）——
+      // 不再依赖 webview 内的 show()，避免页面异常时窗口永远隐形
+      const win = new WebviewWindow(label, {
+        url,
+        title: `编辑 - ${entry.name}`,
+        width: 900,
+        height: 700,
+        minWidth: 600,
+        minHeight: 400,
+        decorations: false,
+        transparent: true,
+        shadow: true,
+        resizable: true,
+        center: true,
+      });
+      editorWindowsRef.current.set(entry.path, win);
+      setEditingPaths(prev => new Set(prev).add(entry.path));
 
-    const cleanup = () => {
-      if (editorWindowsRef.current.get(entry.path) === win) {
-        editorWindowsRef.current.delete(entry.path);
-      }
+      const cleanup = () => {
+        if (editorWindowsRef.current.get(entry.path) === win) {
+          editorWindowsRef.current.delete(entry.path);
+        }
+        setEditingPaths(prev => {
+          if (!prev.has(entry.path)) return prev;
+          const next = new Set(prev);
+          next.delete(entry.path);
+          return next;
+        });
+      };
+      win.once("tauri://error", cleanup);
+      win.once("tauri://destroyed", cleanup);
+      // 创建完成后强制前置到最前（macOS 新窗可能被主窗挡住）
+      win.once("tauri://created", () => {
+        void win.show().catch(() => {});
+        void win.setFocus().catch(() => {});
+      });
+    } catch (err) {
+      // 创建失败必须可见地报错，不再"点了没反应"
       setEditingPaths(prev => {
-        if (!prev.has(entry.path)) return prev;
         const next = new Set(prev);
         next.delete(entry.path);
         return next;
       });
-    };
-    win.once("tauri://error", cleanup);
-    win.once("tauri://destroyed", cleanup);
+      setError(`打开编辑器失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   // 编辑窗口关闭后复位行态（编辑器在关闭前 emit "editor-closed"）

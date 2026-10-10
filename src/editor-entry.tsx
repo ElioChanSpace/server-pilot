@@ -18,18 +18,12 @@ applyTheme(initialTheme);
 function EditorApp() {
   const currentThemeRef = useRef(initialThemeId);
 
-  // 窗口以 visible:false 创建，首帧就绪后再显示 —— 配合入场动画，杜绝白闪/方角
+  // 窗口创建即可视（透明窗体在内容渲染前不可见，天然无白闪）；
+  // 此处仅负责把窗口前置到焦点，不承担"显示"职责 —— 显示不再依赖页面 JS。
   useEffect(() => {
     const win = getCurrentWindow();
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        win.show()
-          .then(() => win.setFocus().catch(() => {}))
-          .catch(err => {
-            // show 失败（如权限缺失）时窗口会一直不可见，必须显式暴露
-            console.error("[Editor] win.show() failed:", err);
-          });
-      });
+      void win.setFocus().catch(() => {});
     });
   }, []);
 
