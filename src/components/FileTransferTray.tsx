@@ -399,17 +399,23 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
   const handleEdit = async (entry: RemoteDirectoryEntry) => {
     if (!server) return;
 
-    // 已打开的窗口：聚焦即可；句柄失效（已销毁）则清理后重建
+    // 已打开的窗口：聚焦即可；句柄失效（已销毁）则清理后重建。
+    // 存活判定用后端窗口注册表（getByLabel 查询真实存在性），
+    // 不信任句柄自身的 show()/setFocus() —— 死句柄可能静默"成功"。
     const existingWin = editorWindowsRef.current.get(entry.path);
     if (existingWin) {
-      try {
-        await existingWin.show();
-        await existingWin.setFocus();
-        setEditingPaths(prev => new Set(prev).add(entry.path));
-        return;
-      } catch {
-        editorWindowsRef.current.delete(entry.path);
+      const alive = await WebviewWindow.getByLabel(existingWin.label).catch(() => null);
+      if (alive) {
+        try {
+          await alive.show();
+          await alive.setFocus();
+          setEditingPaths(prev => new Set(prev).add(entry.path));
+          return;
+        } catch {
+          // fallthrough 重建
+        }
       }
+      editorWindowsRef.current.delete(entry.path);
     }
 
     // label 唯一（时间戳后缀）：关闭后立即重开不会与销毁中的旧窗口撞 label
@@ -464,17 +470,20 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
     }
   };
 
-  // 编辑窗口关闭后复位行态（编辑器在关闭前 emit "editor-closed"）
+  // 编辑窗口关闭后复位行态（编辑器在关闭前 emit "editor-closed"）。
+  // 注意 payload 字段是 filePath（与 RemoteFileEditor 的 emit 保持一致）。
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen<{ path: string }>("editor-closed", event => {
+    void listen<{ serverId: string; filePath: string }>("editor-closed", event => {
       if (disposed) return;
-      editorWindowsRef.current.delete(event.payload.path);
+      const path = event.payload.filePath;
+      if (!path) return;
+      editorWindowsRef.current.delete(path);
       setEditingPaths(prev => {
-        if (!prev.has(event.payload.path)) return prev;
+        if (!prev.has(path)) return prev;
         const next = new Set(prev);
-        next.delete(event.payload.path);
+        next.delete(path);
         return next;
       });
     }).then(fn => {
