@@ -20,11 +20,11 @@ pub async fn connect_server(
     id: String,
 ) -> Result<SessionConnectResult, String> {
     info!("Received connect_server command for id: {}", id);
-    // 连接复用：该服务器已有存活会话时直接返回（UI 刷新后再点连接不应叠加 PTY）
-    if let Some(existing) = session_manager::find_active_session_for_server(&session_manager, &id) {
-        info!("Reusing existing terminal session {} for server {}", existing, id);
-        return Ok(SessionConnectResult { session_id: existing });
-    }
+    // 每次连接一律新建会话（session_id 恒唯一）—— 同一服务器可开多个终端；
+    // 刷新后的 tab 恢复走 list_terminal_sessions 重绑，不经过此路径。
+    // 已有存活会话时仅用于状态判定：不把已连接的服务器闪断成 "connecting"。
+    let has_alive_session =
+        session_manager::find_active_session_for_server(&session_manager, &id).is_some();
     let server = {
         let mut data = state.data.lock().map_err(|e| e.to_string())?;
         let s = data
@@ -32,8 +32,10 @@ pub async fn connect_server(
             .iter_mut()
             .find(|s| s.id == id)
             .ok_or("Server not found")?;
-        s.status = "connecting".into();
-        let _ = window.emit("server-status-changed", s.clone());
+        if !has_alive_session {
+            s.status = "connecting".into();
+            let _ = window.emit("server-status-changed", s.clone());
+        }
         s.clone()
     };
 

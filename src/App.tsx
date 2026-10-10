@@ -584,13 +584,8 @@ const AppContent: React.FC = () => {
 
     try {
       const result = await connectToServer(server.id);
-      // 连接复用：后端返回的是既有会话（如刷新后重连）—— 不新建 tab、
-      // 不清空已有输出，直接选中
-      const existing = sessionsRef.current.find(s => s.id === result.sessionId);
-      if (existing) {
-        setCurrentSessionId(existing.id);
-        return;
-      }
+      // 每次连接都是新会话（后端 UUID 唯一）—— 同一服务器可开多个终端；
+      // 刷新恢复走 list_terminal_sessions 重绑，不经过此路径。
       const displayId = generateDisplayId();
       const newSession: TerminalSession = { id: result.sessionId, serverId: server.id, terminalIndex: 0, displayId, status: "connecting", createdAt: Date.now() };
       // Make the session visible to the output pipeline immediately so chunks
