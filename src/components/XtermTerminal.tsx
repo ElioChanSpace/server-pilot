@@ -635,6 +635,20 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
     focusTerminal();
   }, [resetToken]);
 
+  // 窗口重新获得系统焦点时（如编辑器窗口关闭后），把键盘焦点还给终端，
+  // 否则按键会掉进无焦点的窗口，表现为"终端卡住/无法输入"。
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      if (isActive && termInstance.current) {
+        focusTerminal();
+      }
+    };
+    window.addEventListener("focus", handleWindowFocus);
+    return () => window.removeEventListener("focus", handleWindowFocus);
+    // focusTerminal 仅读取 ref，闭包陈旧无影响
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive]);
+
   useEffect(() => {
     const terminal = termInstance.current;
     if (!terminal || !isActive) {

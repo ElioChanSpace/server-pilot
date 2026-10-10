@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { open, save, ask } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -486,6 +487,8 @@ const FileTransferTrayComponent: React.FC<FileTransferTrayProps> = ({ isOpen, se
         next.delete(path);
         return next;
       });
+      // 编辑窗口关闭后把键盘焦点拉回主窗口，避免按键掉进虚空
+      void getCurrentWindow().setFocus().catch(() => {});
     }).then(fn => {
       if (disposed) fn();
       else unlisten = fn;

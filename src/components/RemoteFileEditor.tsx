@@ -458,9 +458,11 @@ export const RemoteFileEditor: React.FC<RemoteFileEditorProps> = ({
     const win = getCurrentWindow();
     let disposed = false;
     void win.onCloseRequested(event => {
-      if (forceCloseRef.current) return; // 允许关闭
-      event.preventDefault();
+      // disposed 检查必须在 preventDefault 之前：旧 handler 若先拦截
+      // 就再也放行不了，窗口关不掉且残留在焦点层（终端因此"卡住"）
       if (disposed) return;
+      if (forceCloseRef.current) return;
+      event.preventDefault();
       if (saveStatus === "saving") return;
       if (contentRef.current !== originalContentRef.current) {
         setCloseDialog("dirty");
