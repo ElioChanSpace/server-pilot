@@ -195,6 +195,13 @@ pub struct AppSettings {
     pub notifications_enabled: bool,
     #[serde(default = "default_confirm_on_disconnect")]
     pub confirm_on_disconnect: bool,
+    /// 刷新/启动后是否自动恢复后台存活的终端会话（默认开）
+    #[serde(default = "default_restore_sessions_on_launch")]
+    pub restore_sessions_on_launch: bool,
+}
+
+fn default_restore_sessions_on_launch() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -208,6 +215,7 @@ impl Default for AppSettings {
             theme_preference: default_theme_preference(),
             notifications_enabled: default_notifications_enabled(),
             confirm_on_disconnect: default_confirm_on_disconnect(),
+            restore_sessions_on_launch: default_restore_sessions_on_launch(),
         }
     }
 }

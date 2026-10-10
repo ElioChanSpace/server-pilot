@@ -112,6 +112,14 @@ pub fn get_terminal_session_output(
         .unwrap_or_default())
 }
 
+/// 关闭全部终端会话（"刷新后不恢复"设置的兜底清理）
+#[tauri::command(async)]
+pub fn close_all_terminal_sessions(
+    session_manager: State<'_, SessionManagerState>,
+) -> Result<u32, String> {
+    Ok(session_manager::close_all_sessions(&session_manager)? as u32)
+}
+
 #[tauri::command]
 pub fn pty_write(
     session_manager: State<'_, SessionManagerState>,

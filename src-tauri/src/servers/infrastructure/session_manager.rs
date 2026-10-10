@@ -1230,3 +1230,30 @@ pub fn session_output_snapshot(
     let session = sessions.get(session_id)?.lock().ok()?;
     Some(String::from_utf8_lossy(&session.output_ring).into_owned())
 }
+
+/// 关闭全部终端会话（"刷新后不恢复"设置生效时的兜底清理，避免孤儿 PTY）
+pub fn close_all_sessions(
+    session_manager_state: &State<'_, SessionManagerState>,
+) -> Result<usize, String> {
+    let sessions: Vec<Arc<Mutex<Session>>> = {
+        let guard = session_manager_state
+            .0
+            .lock()
+            .map_err(|err| err.to_string())?;
+        guard.values().cloned().collect()
+    };
+    let mut closed = 0;
+    for session in sessions {
+        if let Ok(mut session_guard) = session.lock() {
+            if session_guard.alive.load(Ordering::SeqCst) {
+                session_guard.alive.store(false, Ordering::SeqCst);
+                session_guard.close_reason = Some("manual".to_string());
+                session_guard.pending_host_key = None;
+                session_guard.pending_cwd_request = None;
+                let _ = session_guard.child_process.kill();
+                closed += 1;
+            }
+        }
+    }
+    Ok(closed)
+}

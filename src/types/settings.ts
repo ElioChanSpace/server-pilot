@@ -7,4 +7,5 @@ export interface AppSettings {
   themePreference: string;
   notificationsEnabled: boolean;
   confirmOnDisconnect: boolean;
+  restoreSessionsOnLaunch: boolean;
 }

@@ -44,6 +44,7 @@ const defaultSettings: AppSettings = {
   themePreference: DEFAULT_THEME,
   notificationsEnabled: true,
   confirmOnDisconnect: true,
+  restoreSessionsOnLaunch: true,
 };
 
 interface SettingsProps {
@@ -395,6 +396,21 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 }}
               />
               <span className={styles.fieldLabel}>断开连接前确认</span>
+            </label>
+
+            <label className={styles.fieldRow}>
+              <input
+                type="checkbox"
+                className={styles.checkbox}
+                checked={settings.restoreSessionsOnLaunch}
+                onChange={(event) => {
+                  setSettings(prev => ({
+                    ...prev,
+                    restoreSessionsOnLaunch: event.target.checked,
+                  }));
+                }}
+              />
+              <span className={styles.fieldLabel}>刷新/启动后自动恢复终端会话（关闭则刷新即断开全部连接）</span>
             </label>
 
             <div className={styles.backupSection}>

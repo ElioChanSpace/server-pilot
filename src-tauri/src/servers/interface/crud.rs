@@ -15,6 +15,7 @@ pub struct UpdateAppSettingsRequest {
     pub theme_preference: Option<String>,
     pub notifications_enabled: Option<bool>,
     pub confirm_on_disconnect: Option<bool>,
+    pub restore_sessions_on_launch: Option<bool>,
 }
 
 #[tauri::command(async)]
@@ -359,6 +360,9 @@ pub fn update_app_settings(
         confirm_on_disconnect: payload
             .confirm_on_disconnect
             .unwrap_or(current.confirm_on_disconnect),
+        restore_sessions_on_launch: payload
+            .restore_sessions_on_launch
+            .unwrap_or(current.restore_sessions_on_launch),
     };
     let settings = data.settings.clone();
     drop(data);

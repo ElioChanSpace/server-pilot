@@ -48,6 +48,7 @@ import { reindexSessions, resolveNextSessionId } from "./utils/session-helpers";
 import {
   loadStoredSessions,
   saveStoredSessions,
+  clearStoredSessions,
   reconcileSessions,
 } from "./utils/session-restore";
 import { getInitialThemeId, getThemeMode, applyTheme } from "./utils/theme-helpers";
@@ -334,8 +335,21 @@ const AppContent: React.FC = () => {
     saveStoredSessions(sessions);
   }, [sessions]);
 
-  // P0: UI 刷新后恢复会话 —— 后端 PTY 仍存活，枚举后与本地元数据对账重建 tab
+  // P0: UI 刷新后恢复会话 —— 后端 PTY 仍存活，枚举后与本地元数据对账重建 tab。
+  // 等设置加载完成后按 restoreSessionsOnLaunch 决定恢复 or 关闭全部。
+  const didRestoreRef = useRef(false);
   useEffect(() => {
+    if (didRestoreRef.current || !appSettings) return;
+    didRestoreRef.current = true;
+
+    if (appSettings.restoreSessionsOnLaunch === false) {
+      // 不恢复 = 刷新即断开：清理后台会话与残留元数据，杜绝孤儿 PTY
+      void invoke<number>("close_all_terminal_sessions").catch(() => {});
+      clearStoredSessions();
+      sessionsHydratedRef.current = true;
+      return;
+    }
+
     let cancelled = false;
     void (async () => {
       try {
@@ -385,9 +399,9 @@ const AppContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-    // 仅在挂载时对账一次
+    // 仅在设置首次加载后执行一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [appSettings]);
 
   // Update session status helper
   const updateSessionStatus = useCallback((sessionId: string, status: TerminalSession["status"]) => {
