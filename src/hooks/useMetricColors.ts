@@ -1,33 +1,47 @@
 import { useEffect, useState } from "react";
+import type { AppTheme } from "../types/theme";
+import { getPublishedTheme, subscribeTheme } from "../utils/theme-store";
 
 export type MetricColorKey = "cpu" | "mem" | "disk" | "net" | "gpu" | "load";
 
-const KEYS: MetricColorKey[] = ["cpu", "mem", "disk", "net", "gpu", "load"];
+/**
+ * 指标语义色映射（与 App.css 的 --metric-* 定义一致）：
+ * CPU=accent、内存=info、磁盘=warning、网络=success、GPU=debug、负载=danger。
+ */
+const colorsFromTheme = (theme: AppTheme): Record<MetricColorKey, string> => ({
+  cpu: theme.colors.accent,
+  mem: theme.colors.info,
+  disk: theme.colors.warning,
+  net: theme.colors.success,
+  gpu: theme.colors.debug,
+  load: theme.colors.danger,
+});
 
-const readColors = (): Record<MetricColorKey, string> => {
-  const style = getComputedStyle(document.documentElement);
-  const out = {} as Record<MetricColorKey, string>;
-  for (const key of KEYS) {
-    out[key] = style.getPropertyValue(`--metric-${key}`).trim() || "#888";
-  }
-  return out;
+const FALLBACK: Record<MetricColorKey, string> = {
+  cpu: "#888",
+  mem: "#888",
+  disk: "#888",
+  net: "#888",
+  gpu: "#888",
+  load: "#888",
 };
 
 /**
- * 读取指标语义色（--metric-*）。主题切换（含跟随系统）时自动刷新，
- * 供图表等需要具体色值的场景使用。
+ * 指标语义色：直接来自当前主题对象（订阅 theme-store），
+ * 不经 DOM 自定义属性，切换主题立即生效。供图表等需要具体色值的场景使用。
  */
 export function useMetricColors(): Record<MetricColorKey, string> {
-  const [colors, setColors] = useState<Record<MetricColorKey, string>>(readColors);
+  const [colors, setColors] = useState<Record<MetricColorKey, string>>(
+    () => (getPublishedTheme() ? colorsFromTheme(getPublishedTheme()!) : FALLBACK)
+  );
 
-  useEffect(() => {
-    const observer = new MutationObserver(() => setColors(readColors()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["style", "data-theme", "data-theme-id"],
-    });
-    return () => observer.disconnect();
-  }, []);
+  useEffect(
+    () =>
+      subscribeTheme(theme => {
+        setColors(colorsFromTheme(theme));
+      }),
+    []
+  );
 
   return colors;
 }

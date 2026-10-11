@@ -1,5 +1,6 @@
 import type { AppTheme, ThemeExportFormat } from '../types/theme';
 import { APP_THEMES, DEFAULT_THEME } from './app-themes';
+import { publishTheme } from './theme-store';
 
 export type ThemeMode = 'dark' | 'light';
 
@@ -124,6 +125,9 @@ export const applyTheme = (theme: AppTheme): void => {
   root.style.setProperty('--terminal-bright-white', colors.terminalBrightWhite);
 
   root.style.setProperty('--body-gradient', colors.bodyGradient);
+
+  // 发布给不走 CSS 变量的消费者（xterm、图表）
+  publishTheme(theme);
 
   // 保存主题 ID
   window.localStorage.setItem(THEME_STORAGE_KEY, theme.id);

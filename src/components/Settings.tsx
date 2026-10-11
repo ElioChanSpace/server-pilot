@@ -9,7 +9,7 @@ import {
 import { useServer } from "../context/ServerContext";
 import type { AppSettings } from "../types/settings";
 import { APP_THEMES, BUILTIN_THEME_IDS, DEFAULT_THEME } from "../utils/app-themes";
-import { exportTheme, importTheme } from "../utils/theme-helpers";
+import { exportTheme, importTheme, applyTheme } from "../utils/theme-helpers";
 import { SshKeyManager } from "./SshKeyManager";
 import RoundSwitch from "./ui/RoundSwitch";
 import styles from "./Settings.module.css";
@@ -222,7 +222,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onPersistSettings }
       }
       await invoke("save_custom_app_themes", { themes: customThemes });
 
-      // 设置为当前主题（即改即生效）
+      // 立即应用：即使导入的主题与当前 ID 相同（重新导入），
+      // themeId 不变时主题 effect 不会重跑，这里直接落地
+      applyTheme(importedTheme);
       applyChange({ themePreference: importedTheme.id });
 
       setNotice(`主题「${importedTheme.name}」已导入并应用。`);

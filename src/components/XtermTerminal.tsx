@@ -6,6 +6,8 @@ import { SearchAddon } from 'xterm-addon-search';
 import { FaChevronDown, FaChevronUp, FaCopy, FaPaste, FaSearch, FaTimes } from 'react-icons/fa';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { ContextMenu, ContextMenuAction, isEventInsideContextMenu } from './ContextMenu';
+import { getPublishedTheme, subscribeTheme } from '../utils/theme-store';
+import { buildXtermTheme } from '../utils/xterm-theme';
 import 'xterm/css/xterm.css';
 
 interface XtermTerminalProps {
@@ -267,30 +269,10 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
   }, [trackLocalInput]);
 
   const applyTerminalTheme = (terminal: Terminal) => {
-    const style = getComputedStyle(document.documentElement);
-    const get = (name: string) => style.getPropertyValue(name).trim();
-    terminal.options.theme = {
-      background: get('--terminal-bg'),
-      foreground: get('--terminal-fg'),
-      cursor: get('--terminal-cursor'),
-      selectionBackground: get('--terminal-selection'),
-      black: get('--terminal-black'),
-      red: get('--terminal-red'),
-      green: get('--terminal-green'),
-      yellow: get('--terminal-yellow'),
-      blue: get('--terminal-blue'),
-      magenta: get('--terminal-magenta'),
-      cyan: get('--terminal-cyan'),
-      white: get('--terminal-white'),
-      brightBlack: get('--terminal-bright-black'),
-      brightRed: get('--terminal-bright-red'),
-      brightGreen: get('--terminal-bright-green'),
-      brightYellow: get('--terminal-bright-yellow'),
-      brightBlue: get('--terminal-bright-blue'),
-      brightMagenta: get('--terminal-bright-magenta'),
-      brightCyan: get('--terminal-bright-cyan'),
-      brightWhite: get('--terminal-bright-white'),
-    };
+    const theme = getPublishedTheme();
+    if (theme) {
+      terminal.options.theme = buildXtermTheme(theme.colors);
+    }
   };
 
   const notifyResize = (terminal: Terminal) => {
@@ -470,17 +452,14 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
         focusTerminal();
       }, 50);
 
-      // 监听主题变化
-      const themeObserver = new MutationObserver(() => {
-        applyTerminalTheme(terminal);
-      });
-      themeObserver.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['data-theme', 'data-theme-id'],
+      // 监听主题变化：直接订阅主题对象取色（不经 DOM 自定义属性，
+      // 避免 getComputedStyle 读到旧值导致部分主题切换不生效）
+      const unsubscribeTheme = subscribeTheme(theme => {
+        terminal.options.theme = buildXtermTheme(theme.colors);
       });
 
       return () => {
-        themeObserver.disconnect();
+        unsubscribeTheme();
         resizeObserver.disconnect();
         window.clearTimeout(mountTimer);
         if (selectionCopyTimerRef.current !== null) {
