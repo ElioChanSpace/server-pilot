@@ -11,6 +11,10 @@ jobs:
   build-check:
     runs-on: macos-latest
 
+    # 前端构建（tsc + vite + Monaco）会触顶 Node 默认堆上限
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
