@@ -233,27 +233,6 @@ const AppContent: React.FC = () => {
     return () => mq.removeEventListener("change", sync);
   }, [themePreference]);
 
-  // 托盘显示一项活动读数：活动终端会话数（docs/design/principles.md §窗口交互）
-  const sessionCount = sessions.length;
-  useEffect(() => {
-    let disposed = false;
-    void (async () => {
-      try {
-        const { TrayIcon } = await import("@tauri-apps/api/tray");
-        const tray = await TrayIcon.getById("main-tray");
-        if (!tray || disposed) {
-          return;
-        }
-        await tray.setTitle(sessionCount > 0 ? String(sessionCount) : null);
-      } catch {
-        // 平台不支持托盘标题时忽略
-      }
-    })();
-    return () => {
-      disposed = true;
-    };
-  }, [sessionCount]);
-
   // Fullscreen detection - use multiple methods
   useEffect(() => {
     const win = getCurrentWindow();

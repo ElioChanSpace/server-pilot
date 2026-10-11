@@ -131,6 +131,73 @@ export const APP_THEMES: Record<string, AppTheme> = {
     },
   },
 
+
+  // 深海 — 参考 ftop「sea」调色板：性能核蓝、能效核青，墨蓝玻璃深色
+  sea: {
+    id: 'sea',
+    name: '深海',
+    type: 'dark',
+    colors: {
+      accent: '#5eb0e8',
+      accentHover: '#7fc4f2',
+      accentStrong: '#3a8cc4',
+
+      bgPrimary: '#0b1522',
+      bgSecondary: '#101d2e',
+      bgElevated: '#17293f',
+      glassBg: '#0e1a2a',
+      glassBorder: '#1f3450',
+      borderColor: '#1f3450',
+      shadowColor: '#040a12',
+
+      textPrimary: '#e8f2fa',
+      textSecondary: '#9db8cf',
+      textMuted: '#6c88a2',
+
+      surfaceHover: '#17293f',
+      surfaceActive: '#1f3450',
+      surfaceOverlay: '#071020',
+
+      sidebarBg: '#091320',
+      sidebarText: '#e8f2fa',
+      sidebarTextSecondary: '#9db8cf',
+      sidebarItemBg: '#0d1a2a',
+      sidebarItemHoverBg: '#122338',
+
+      success: '#3fc79a',
+      warning: '#e8b45c',
+      danger: '#e8737c',
+      dangerHover: '#f28e96',
+      error: '#ff8b94',
+      info: '#5eb0e8',
+      debug: '#9d9fe8',
+      dangerSoft: '#2a1720',
+
+      terminalBg: '#081321',
+      terminalFg: '#e8f2fa',
+      terminalCursor: '#5eb0e8',
+      terminalSelection: '#16304c',
+      terminalBlack: '#243447',
+      terminalRed: '#f07882',
+      terminalGreen: '#4fc9a0',
+      terminalYellow: '#e8c06a',
+      terminalBlue: '#5eb0e8',
+      terminalMagenta: '#b49ae8',
+      terminalCyan: '#5ed4e0',
+      terminalWhite: '#dce9f4',
+      terminalBrightBlack: '#7d94ab',
+      terminalBrightRed: '#f79aa2',
+      terminalBrightGreen: '#7fdcb8',
+      terminalBrightYellow: '#f2d68e',
+      terminalBrightBlue: '#8cc8f2',
+      terminalBrightMagenta: '#cbb8f2',
+      terminalBrightCyan: '#8ce6ee',
+      terminalBrightWhite: '#f4f9fd',
+
+      bodyGradient: 'linear-gradient(160deg, #071120 0%, #0c1c30 52%, #123348 100%)',
+    },
+  },
+
   midnight: {
     id: 'midnight',
     name: '午夜黑',
@@ -258,6 +325,140 @@ export const APP_THEMES: Record<string, AppTheme> = {
       terminalBrightWhite: '#fafaf9',
 
       bodyGradient: 'linear-gradient(180deg, #faf5e6 0%, #f5eeda 52%, #f0e8d0 100%)',
+    },
+  },
+
+
+  // 暖白 — 参考 ftop「warm」调色板与标志色（暖白、一点琥珀）：暖白浅色
+  warm: {
+    id: 'warm',
+    name: '暖白',
+    type: 'light',
+    colors: {
+      accent: '#c98a4b',
+      accentHover: '#d9a066',
+      accentStrong: '#a96f38',
+
+      bgPrimary: '#faf6ef',
+      bgSecondary: '#f2ece1',
+      bgElevated: '#fffdf7',
+      glassBg: '#f7f2e8',
+      glassBorder: '#e0d4bf',
+      borderColor: '#e0d4bf',
+      shadowColor: '#c9b99e',
+
+      textPrimary: '#3a3226',
+      textSecondary: '#7a6a54',
+      textMuted: '#9c8b73',
+
+      surfaceHover: '#f0e8d8',
+      surfaceActive: '#e7dcc6',
+      surfaceOverlay: '#e8ddc9',
+
+      sidebarBg: '#f3ede2',
+      sidebarText: '#3a3226',
+      sidebarTextSecondary: '#7a6a54',
+      sidebarItemBg: '#f8f3ea',
+      sidebarItemHoverBg: '#eee5d4',
+
+      success: '#5a9a62',
+      warning: '#c98a2b',
+      danger: '#c25b52',
+      dangerHover: '#d47268',
+      error: '#b84a42',
+      info: '#5a86b8',
+      debug: '#94789c',
+      dangerSoft: '#f2e0dc',
+
+      terminalBg: '#fbf7ef',
+      terminalFg: '#3a3226',
+      terminalCursor: '#a96f38',
+      terminalSelection: '#eadfca',
+      terminalBlack: '#4a4234',
+      terminalRed: '#b8544c',
+      terminalGreen: '#5f7f44',
+      terminalYellow: '#9a7420',
+      terminalBlue: '#4a72a0',
+      terminalMagenta: '#9c5a7c',
+      terminalCyan: '#3d7a72',
+      terminalWhite: '#8a7c66',
+      terminalBrightBlack: '#7a6c56',
+      terminalBrightRed: '#d47268',
+      terminalBrightGreen: '#7fa05e',
+      terminalBrightYellow: '#c09440',
+      terminalBrightBlue: '#6a92c0',
+      terminalBrightMagenta: '#bc7a9c',
+      terminalBrightCyan: '#5c9a90',
+      terminalBrightWhite: '#f3ece0',
+
+      bodyGradient: 'linear-gradient(180deg, #fcf9f2 0%, #f6efe3 52%, #efe4d0 100%)',
+    },
+  },
+
+
+  // 石墨 — 参考 ftop「graphite」与「line」方向（白底、黑条）：冷白浅色 + 黑条终端
+  graphite: {
+    id: 'graphite',
+    name: '石墨',
+    type: 'light',
+    colors: {
+      accent: '#3c4654',
+      accentHover: '#55606f',
+      accentStrong: '#242c37',
+
+      bgPrimary: '#f5f6f8',
+      bgSecondary: '#eceef2',
+      bgElevated: '#ffffff',
+      glassBg: '#f2f4f7',
+      glassBorder: '#d4d8e0',
+      borderColor: '#d4d8e0',
+      shadowColor: '#b7bec9',
+
+      textPrimary: '#1e232b',
+      textSecondary: '#545c68',
+      textMuted: '#88909b',
+
+      surfaceHover: '#e7eaef',
+      surfaceActive: '#dce0e8',
+      surfaceOverlay: '#dfe3ea',
+
+      sidebarBg: '#eef0f4',
+      sidebarText: '#1e232b',
+      sidebarTextSecondary: '#545c68',
+      sidebarItemBg: '#f4f6f9',
+      sidebarItemHoverBg: '#e6e9ef',
+
+      success: '#2f8f6b',
+      warning: '#b07a20',
+      danger: '#c23b47',
+      dangerHover: '#d6535e',
+      error: '#a82834',
+      info: '#3d6fa8',
+      debug: '#6a6f8c',
+      dangerSoft: '#f2dfe1',
+
+      terminalBg: '#20242b',
+      terminalFg: '#e8eaee',
+      terminalCursor: '#e8eaee',
+      terminalSelection: '#3a414c',
+      terminalBlack: '#2c313a',
+      terminalRed: '#e06c75',
+      terminalGreen: '#7fbd8a',
+      terminalYellow: '#d9b26a',
+      terminalBlue: '#6fa3d6',
+      terminalMagenta: '#b28fc7',
+      terminalCyan: '#6fbfc4',
+      terminalWhite: '#c8cdd4',
+      terminalBrightBlack: '#7d8590',
+      terminalBrightRed: '#ee8a92',
+      terminalBrightGreen: '#9ed4a7',
+      terminalBrightYellow: '#e8c98c',
+      terminalBrightBlue: '#92bce4',
+      terminalBrightMagenta: '#c8a8da',
+      terminalBrightCyan: '#92d4d8',
+      terminalBrightWhite: '#f2f4f7',
+
+      bodyGradient: 'linear-gradient(180deg, #fafbfc 0%, #f2f4f7 52%, #e8ebf0 100%)',
     },
   },
 
@@ -593,3 +794,6 @@ export const APP_THEMES: Record<string, AppTheme> = {
 };
 
 export const DEFAULT_THEME = 'dark';
+
+/** 内置主题 ID（模块加载时求值，不含运行时合并进来的自定义主题） */
+export const BUILTIN_THEME_IDS: string[] = Object.keys(APP_THEMES);

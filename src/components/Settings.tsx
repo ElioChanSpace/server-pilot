@@ -8,7 +8,7 @@ import {
 } from "react-icons/fa";
 import { useServer } from "../context/ServerContext";
 import type { AppSettings } from "../types/settings";
-import { APP_THEMES, DEFAULT_THEME } from "../utils/app-themes";
+import { APP_THEMES, BUILTIN_THEME_IDS, DEFAULT_THEME } from "../utils/app-themes";
 import { exportTheme, importTheme } from "../utils/theme-helpers";
 import { SshKeyManager } from "./SshKeyManager";
 import RoundSwitch from "./ui/RoundSwitch";
@@ -216,7 +216,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onPersistSettings }
       const customThemes: Record<string, unknown> = {};
       for (const [id, theme] of Object.entries(APP_THEMES)) {
         // 只保存非内置主题
-        if (!['dark', 'light', 'midnight', 'eyecare', 'monokai', 'dracula', 'solarized', 'nord'].includes(id)) {
+        if (!BUILTIN_THEME_IDS.includes(id)) {
           customThemes[id] = theme;
         }
       }
