@@ -2,9 +2,9 @@
   position: fixed;
   inset: 0;
   z-index: 3;
-  background-color: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur));
+  -webkit-backdrop-filter: blur(var(--overlay-blur));
   display: flex;
   justify-content: center;
   align-items: center;
@@ -13,7 +13,7 @@
 
 .content {
   padding: var(--space-4) var(--space-5);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   width: min(520px, 100%);
   max-height: calc(100vh - 48px);
   overflow-y: auto;
@@ -207,7 +207,7 @@
 .welcomeIcon {
   width: 56px;
   height: 56px;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;

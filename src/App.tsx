@@ -220,6 +220,40 @@ const AppContent: React.FC = () => {
     applyTheme(currentTheme);
   }, [themeId]);
 
+  // 跟随系统主题：系统深浅色变化时实时切换（docs/design/principles.md）
+  const themePreference = appSettings?.themePreference;
+  useEffect(() => {
+    if (themePreference !== "system" || typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setThemeId(mq.matches ? "dark" : "light");
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [themePreference]);
+
+  // 托盘显示一项活动读数：活动终端会话数（docs/design/principles.md §窗口交互）
+  const sessionCount = sessions.length;
+  useEffect(() => {
+    let disposed = false;
+    void (async () => {
+      try {
+        const { TrayIcon } = await import("@tauri-apps/api/tray");
+        const tray = await TrayIcon.getById("main-tray");
+        if (!tray || disposed) {
+          return;
+        }
+        await tray.setTitle(sessionCount > 0 ? String(sessionCount) : null);
+      } catch {
+        // 平台不支持托盘标题时忽略
+      }
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, [sessionCount]);
+
   // Fullscreen detection - use multiple methods
   useEffect(() => {
     const win = getCurrentWindow();
@@ -359,10 +393,8 @@ const AppContent: React.FC = () => {
 
     if (appSettings.themePreference && APP_THEMES[appSettings.themePreference]) {
       setThemeId(appSettings.themePreference);
-    } else if (appSettings.themePreference === "system") {
-      const systemThemeId = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      setThemeId(systemThemeId);
     }
+    // themePreference === "system" 由上方的跟随系统 effect 实时处理
   }, [appSettings, notificationsEnabledRef]);
 
   // Sync refs
@@ -1135,7 +1167,7 @@ const AppContent: React.FC = () => {
       />
       {uploadProgressOverlay && <UploadProgressToast overlay={uploadProgressOverlay} />}
       {isSettingsOpen && (
-        <Settings onClose={() => setIsSettingsOpen(false)} />
+        <Settings onClose={() => setIsSettingsOpen(false)} onPersistSettings={persistAppSettings} />
       )}
       {isLogViewerOpen && (
         <Suspense fallback={null}>

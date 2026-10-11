@@ -30,7 +30,7 @@
 .heroBadge {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -227,7 +227,7 @@
   padding: 14px;
   background: var(--sidebar-item-bg);
   border: 1px solid var(--sidebar-border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 
 .infoTable {
@@ -281,7 +281,7 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--sidebar-border);
   background: var(--sidebar-item-bg);
 }
@@ -424,7 +424,7 @@
   gap: 12px;
   padding: 12px 14px;
   margin-bottom: 20px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--danger-color);
   background: var(--danger-soft);
 }

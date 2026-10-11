@@ -2,11 +2,11 @@
   position: fixed;
   inset: 0;
   z-index: 900;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(var(--overlay-blur));
   animation: fadeIn 0.15s ease;
 }
 
@@ -17,7 +17,7 @@
   max-height: min(680px, 84vh);
   background: var(--bg-secondary);
   border: 1px solid var(--glass-border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;

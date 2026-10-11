@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   FaTimes, FaSearch, FaSpinner, FaExclamationCircle, FaNetworkWired,
 } from 'react-icons/fa';
+import { usePolling } from '../hooks/usePolling';
 import styles from './NetConnectionsModal.module.css';
 
 interface NetConnection {
@@ -67,11 +68,8 @@ export const NetConnectionsModal: React.FC<NetConnectionsModalProps> = ({ server
   useEffect(() => { void fetchConnections(); }, [fetchConnections]);
   useEffect(() => { searchRef.current?.focus(); }, []);
 
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const timer = setInterval(() => { void fetchConnections(true); }, 4000);
-    return () => clearInterval(timer);
-  }, [autoRefresh, fetchConnections]);
+  // 安静轮询：窗口隐藏/最小化时暂停（docs/design/principles.md §7）
+  usePolling(() => fetchConnections(true), 4000, autoRefresh);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };

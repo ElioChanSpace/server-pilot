@@ -29,7 +29,7 @@
 .processCard,
 .emptyState,
 .errorBanner {
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--sidebar-border);
   background: var(--sidebar-item-bg);
 }
@@ -39,6 +39,53 @@
 .processCard {
   padding: 14px;
   margin-bottom: 16px;
+}
+
+/* 指标区：徽章 + 数字，模块间不画分割线（docs/design/principles.md） */
+.metricGrid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 22px;
+  padding: 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-lg);
+  background: var(--sidebar-item-bg);
+}
+
+.memoryRow {
+  padding: 0 14px 14px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--sidebar-item-bg);
+}
+
+.memoryTrack {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-active);
+  overflow: hidden;
+}
+
+.memoryFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--metric-mem);
+  transition: width var(--motion-slow) var(--ease-out);
+}
+
+.memoryMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 12px;
+  align-items: baseline;
+}
+
+.memorySecondary {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .infoTable,
@@ -101,6 +148,23 @@
 
 .tableWrap {
   overflow-x: auto;
+}
+
+/* 行可点开详情卡：按压反馈；卡片开启期间其它行不高亮 */
+.processTable tbody tr {
+  cursor: pointer;
+}
+
+.processTable tbody tr:hover td {
+  background: var(--surface-hover);
+}
+
+.processTable[data-card-open="true"] tbody tr:hover td {
+  background: transparent;
+}
+
+.processTable tbody tr[data-card-open="true"] td {
+  background: var(--surface-active);
 }
 
 .emptyState {

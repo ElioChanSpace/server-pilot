@@ -1,3 +1,35 @@
+/** 读不到的数值：显示为 em dash，绝不显示 0（0 是有效读数）。 */
+export const UNAVAILABLE = "—";
+
+/**
+ * 数值排版规则（见 docs/design/principles.md）：
+ * 小于 10 显示一位小数，10 及以上取整。
+ * `0.4` / `9.9` / `10` / `100`
+ */
+export function formatFigure(value: number): string {
+  if (!Number.isFinite(value)) {
+    return UNAVAILABLE;
+  }
+  const abs = Math.abs(value);
+  if (abs < 10) {
+    return value.toFixed(1);
+  }
+  return String(Math.round(value));
+}
+
+/** 百分比数值：`formatFigure` 的结果，无百分号（单位由调用方弱化渲染）。 */
+export function formatPercentFigure(value: number): string {
+  return formatFigure(value);
+}
+
+/** 速率（B/s）的小数规则：<100 一位小数，≥100 取整。 */
+export function formatRateFigure(value: number): string {
+  if (!Number.isFinite(value)) {
+    return UNAVAILABLE;
+  }
+  return Math.abs(value) < 100 ? value.toFixed(1) : String(Math.round(value));
+}
+
 /**
  * Format byte counts to human-readable string.
  *

@@ -1,0 +1,60 @@
+.badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.disc {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--badge-color);
+  opacity: 0.16;
+}
+
+.ring {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.track {
+  fill: none;
+  stroke: var(--badge-color);
+  opacity: 0.18;
+}
+
+.arc {
+  fill: none;
+  stroke: var(--badge-color);
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--motion-slow) var(--ease-out);
+}
+
+.glyph {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--badge-glyph);
+  line-height: 1;
+  color: var(--badge-color);
+}
+
+.figure {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--figure-size);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.figureLg {
+  font-size: var(--figure-size-lg);
+}

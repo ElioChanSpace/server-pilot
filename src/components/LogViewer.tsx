@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaTimes } from 'react-icons/fa';
 import { invoke } from '@tauri-apps/api/core';
+import { usePolling } from "../hooks/usePolling";
 import styles from './LogViewer.module.css';
 
 interface LogViewerProps {
@@ -74,15 +75,10 @@ const LogViewer: React.FC<LogViewerProps> = ({ onClose }) => {
 
   useEffect(() => {
     void loadLogs(true);
-
-    const timer = window.setInterval(() => {
-      void loadLogs(false);
-    }, 2000);
-
-    return () => {
-      window.clearInterval(timer);
-    };
   }, [loadLogs]);
+
+  // 安静轮询：窗口隐藏/最小化时暂停（docs/design/principles.md §7）
+  usePolling(() => loadLogs(false), 2000);
 
   useEffect(() => {
     const node = logContainerRef.current;

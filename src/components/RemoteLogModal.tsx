@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FaRedo, FaTimes } from "react-icons/fa";
 import { Server } from "../context/ServerContext";
+import { usePolling } from "../hooks/usePolling";
 import styles from "./RemoteLog.module.css";
 
 interface RemoteLogModalProps {
@@ -49,17 +50,8 @@ export const RemoteLogModal: React.FC<RemoteLogModalProps> = ({ server, onClose 
     }
   }, [lineCount, path, server.id]);
 
-  useEffect(() => {
-    if (!isAutoRefresh) {
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      void loadLogs(false);
-    }, 3000);
-
-    return () => window.clearInterval(timer);
-  }, [isAutoRefresh, loadLogs]);
+  // 安静轮询：窗口隐藏/最小化时暂停（docs/design/principles.md §7）
+  usePolling(() => loadLogs(false), 3000, isAutoRefresh);
 
   useEffect(() => {
     if (isAutoRefresh && logContainerRef.current) {

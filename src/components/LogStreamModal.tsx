@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { FaTimes, FaSpinner, FaExclamationCircle, FaPlay, FaPause, FaEraser, FaFilter, FaArrowDown } from 'react-icons/fa';
+import { usePolling } from '../hooks/usePolling';
 import styles from './LogStreamModal.module.css';
 
 interface LogChunk {
@@ -88,12 +89,8 @@ export const LogStreamModal: React.FC<LogStreamModalProps> = ({ serverId, server
     streamingRef.current = false;
   }, []);
 
-  // Polling loop
-  useEffect(() => {
-    if (!streaming) return;
-    const timer = setInterval(() => { void poll(); }, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [streaming, poll]);
+  // 安静轮询：窗口隐藏/最小化时暂停（docs/design/principles.md §7）
+  usePolling(poll, POLL_INTERVAL_MS, streaming);
 
   // Auto-scroll when following
   useEffect(() => {

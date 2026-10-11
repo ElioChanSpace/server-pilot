@@ -36,7 +36,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--danger-color);
   background: var(--danger-soft);
 }
@@ -84,7 +84,7 @@
   width: 100%;
   background: var(--sidebar-item-bg);
   border: 1px solid var(--sidebar-border);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   padding: 18px;
 }
 
@@ -115,7 +115,7 @@
 .panelIcon {
   width: 42px;
   height: 42px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -155,7 +155,7 @@
 
 .summaryCard {
   padding: 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--sidebar-item-bg);
   border: 1px solid var(--sidebar-border);
 }
@@ -196,7 +196,7 @@
   gap: 10px;
   min-width: 0;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--sidebar-item-bg);
   border: 1px solid var(--sidebar-border);
 }

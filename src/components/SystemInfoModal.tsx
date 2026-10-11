@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   FaTimes, FaSpinner, FaExclamationCircle, FaServer, FaLinux, FaMicrochip,
-  FaMemory, FaClock, FaSyncAlt,
+  FaMemory, FaClock, FaSyncAlt, FaWaveSquare,
 } from 'react-icons/fa';
+import MetricFigure from './metrics/MetricFigure';
 import styles from './SystemInfoModal.module.css';
 
 interface SystemInfo {
@@ -46,12 +47,6 @@ const formatUptime = (seconds: number) => {
   return `${m} 分钟`;
 };
 
-const loadTone = (load: number, cores: number) => {
-  if (cores <= 0) return '';
-  const ratio = load / cores;
-  return ratio >= 1 ? styles.toneHigh : ratio >= 0.7 ? styles.toneMid : styles.toneOk;
-};
-
 export const SystemInfoModal: React.FC<SystemInfoModalProps> = ({ serverId, serverName, onClose }) => {
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,8 +73,8 @@ export const SystemInfoModal: React.FC<SystemInfoModalProps> = ({ serverId, serv
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  const memPct = info && info.memTotalKb > 0 ? Math.round((info.memUsedKb / info.memTotalKb) * 100) : 0;
-  const swapPct = info && info.swapTotalKb > 0 ? Math.round((info.swapUsedKb / info.swapTotalKb) * 100) : 0;
+  const memPct = info && info.memTotalKb > 0 ? (info.memUsedKb / info.memTotalKb) * 100 : null;
+  const swapPct = info && info.swapTotalKb > 0 ? (info.swapUsedKb / info.swapTotalKb) * 100 : null;
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -143,7 +138,13 @@ export const SystemInfoModal: React.FC<SystemInfoModalProps> = ({ serverId, serv
                 <div className={styles.tile}>
                   <div className={styles.tileLabel}><FaSyncAlt size={11} /> 负载</div>
                   <div className={styles.tileValue}>
-                    <span className={loadTone(info.load1, info.cpuCores)}>{info.load1.toFixed(2)}</span>
+                    <MetricFigure
+                      kind="load"
+                      icon={<FaWaveSquare />}
+                      value={info.load1}
+                      format={value => value.toFixed(2)}
+                      title="1 分钟负载"
+                    />
                     <span className={styles.loadSub}> / {info.load5.toFixed(2)} / {info.load15.toFixed(2)}</span>
                   </div>
                   <div className={styles.tileSub}>1 / 5 / 15 分钟</div>
@@ -151,33 +152,35 @@ export const SystemInfoModal: React.FC<SystemInfoModalProps> = ({ serverId, serv
               </div>
 
               <div className={styles.section}>
-                <div className={styles.sectionTitle}><FaMemory size={12} /> 内存</div>
+                <div className={styles.sectionTitle}>
+                  <MetricFigure kind="mem" icon={<FaMemory />} arc={memPct == null ? null : memPct / 100} value={memPct} unit="%" title="内存占用" />
+                </div>
                 <div className={styles.barHeader}>
-                  <span>{formatBytes(info.memUsedKb)} / {formatBytes(info.memTotalKb)}</span>
-                  <span className={memPct >= 90 ? styles.toneHigh : memPct >= 70 ? styles.toneMid : styles.toneOk}>{memPct}%</span>
+                  <span className="figure">{formatBytes(info.memUsedKb)} / {formatBytes(info.memTotalKb)}</span>
                 </div>
                 <div className={styles.barTrack}>
                   <div
-                    className={`${styles.barFill} ${memPct >= 90 ? styles.barDanger : memPct >= 70 ? styles.barWarn : styles.barOk}`}
-                    style={{ width: `${Math.min(100, memPct)}%` }}
+                    className={`${styles.barFill} ${(memPct ?? 0) >= 90 ? styles.barDanger : (memPct ?? 0) >= 70 ? styles.barWarn : styles.barOk}`}
+                    style={{ width: `${Math.min(100, memPct ?? 0)}%` }}
                   />
                 </div>
               </div>
 
               <div className={styles.section}>
-                <div className={styles.sectionTitle}><FaMemory size={12} /> Swap</div>
+                <div className={styles.sectionTitle}>
+                  <MetricFigure kind="mem" icon={<FaMemory />} arc={swapPct == null ? null : swapPct / 100} value={swapPct} unit="%" title="Swap 占用" />
+                </div>
                 {info.swapTotalKb === 0 ? (
                   <div className={styles.noSwap}>未配置 Swap</div>
                 ) : (
                   <>
                     <div className={styles.barHeader}>
-                      <span>{formatBytes(info.swapUsedKb)} / {formatBytes(info.swapTotalKb)}</span>
-                      <span className={swapPct >= 90 ? styles.toneHigh : swapPct >= 70 ? styles.toneMid : styles.toneOk}>{swapPct}%</span>
+                      <span className="figure">{formatBytes(info.swapUsedKb)} / {formatBytes(info.swapTotalKb)}</span>
                     </div>
                     <div className={styles.barTrack}>
                       <div
-                        className={`${styles.barFill} ${swapPct >= 90 ? styles.barDanger : swapPct >= 70 ? styles.barWarn : styles.barOk}`}
-                        style={{ width: `${Math.min(100, swapPct)}%` }}
+                        className={`${styles.barFill} ${(swapPct ?? 0) >= 90 ? styles.barDanger : (swapPct ?? 0) >= 70 ? styles.barWarn : styles.barOk}`}
+                        style={{ width: `${Math.min(100, swapPct ?? 0)}%` }}
                       />
                     </div>
                   </>

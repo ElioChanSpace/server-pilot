@@ -7,7 +7,7 @@ import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   FaSave, FaSpinner, FaEdit, FaTimes, FaLock, FaSearch, FaRedo,
-  FaExclamationTriangle, FaFolderOpen, FaTerminal,
+  FaExclamationTriangle, FaFolderOpen, FaTerminal, FaThumbtack, FaMinus,
 } from "react-icons/fa";
 // 仅类型导入（编译期擦除）：monaco / monaco-vim / monaco-theme 在运行时
 // 动态加载 —— 这样窗口外壳（标签栏/工具栏/状态栏）立即可见，
@@ -17,6 +17,7 @@ import type { initVimMode as InitVimMode } from "monaco-vim";
 import { toMonacoLanguage } from "./monaco-language";
 import { getInitialThemeId, THEME_STORAGE_KEY } from "../utils/theme-helpers";
 import { APP_THEMES, DEFAULT_THEME } from "../utils/app-themes";
+import WindowResizeHandles from "../components/ui/WindowResizeHandles";
 import styles from "./EditorWorkspace.module.css";
 
 interface FileContent {
@@ -85,6 +86,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [dialog, setDialog] = useState<DialogState>(null);
+  const [pinned, setPinned] = useState(false);
   const [closing, setClosing] = useState(false);
   const [themeId, setThemeId] = useState(getInitialThemeId());
   // Model 创建/切换后的重同步（触发 setModel 的 effect）
@@ -576,6 +578,24 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
     animateClose();
   }, [animateClose]);
 
+  // 置顶 / 隐藏（docs/design/principles.md §窗口交互）
+  const handlePin = useCallback(async () => {
+    try {
+      const win = getCurrentWindow();
+      const next = !pinned;
+      await win.setAlwaysOnTop(next);
+      setPinned(next);
+    } catch (err) {
+      console.warn("setAlwaysOnTop 失败:", err);
+    }
+  }, [pinned]);
+
+  const handleHide = useCallback(() => {
+    void getCurrentWindow()
+      .hide()
+      .catch(err => console.warn("hide 失败:", err));
+  }, []);
+
   useEffect(() => {
     const win = getCurrentWindow();
     let disposed = false;
@@ -858,6 +878,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
       className={styles.workspace}
       data-closing={closing || undefined}
     >
+      <WindowResizeHandles />
       {/* ── 标签栏 ── */}
       <div className={styles.tabBar}>
         <div className={styles.tabList}>
@@ -897,12 +918,12 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
       </div>
 
       {/* ── 工具栏（针对当前标签） ── */}
-      <div className={styles.toolbar}>
-        <div className={styles.toolbarLeft}>
-          <div className={styles.fileBadge}>
+      <div className={styles.toolbar} data-tauri-drag-region>
+        <div className={styles.toolbarLeft} data-tauri-drag-region>
+          <div className={styles.fileBadge} data-tauri-drag-region>
             {activeTab && !activeTab.readOnly && <span className={styles.accentBar} />}
             {activeTab?.readOnly && <FaLock size={10} className={styles.lockIcon} />}
-            <span className={styles.fileName} title={activeTab?.filePath ?? ""}>
+            <span className={styles.fileName} title={activeTab?.filePath ?? ""} data-tauri-drag-region>
               {activeTab ? activeTab.fileName : "编辑工作区"}
             </span>
             {activeTab &&
@@ -972,6 +993,24 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ initial }) => 
             disabled={!activeTab}
           >
             <FaSearch size={11} />
+          </button>
+          <button
+            type="button"
+            className={`${styles.toolbarButton} ${pinned ? styles.toggleOn : ""}`}
+            onClick={() => void handlePin()}
+            data-tip={pinned ? "取消置顶" : "窗口置顶"}
+            aria-label={pinned ? "取消置顶" : "窗口置顶"}
+          >
+            <FaThumbtack size={11} />
+          </button>
+          <button
+            type="button"
+            className={styles.toolbarButton}
+            onClick={handleHide}
+            data-tip="隐藏窗口（从文件面板重新打开）"
+            aria-label="隐藏窗口"
+          >
+            <FaMinus size={11} />
           </button>
           <button
             type="button"

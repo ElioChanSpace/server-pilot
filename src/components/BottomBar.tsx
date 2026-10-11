@@ -9,6 +9,7 @@ import {
 } from "react-icons/tb";
 import { FaExchangeAlt, FaHistory } from "react-icons/fa";
 import type { AppStats } from "../types/app";
+import { formatFigure } from "../utils/format";
 import styles from "./BottomBar.module.css";
 
 interface BottomBarProps {
@@ -75,22 +76,26 @@ const BottomBarComponent: React.FC<BottomBarProps> = ({
       <div className={styles.statsGroup}>
         <div className={styles.statItem} title="打开的终端数">
           <TbTerminal2 size={14} />
-          <span>{terminalCount}</span>
+          <span className="figure">{terminalCount}</span>
         </div>
         <div className={styles.statItem} title="服务器总数">
           <TbServer size={14} />
-          <span>{serverCount}</span>
+          <span className="figure">{serverCount}</span>
         </div>
         <div
           className={styles.statItem}
           title={`内存占用: ${appStats.memoryMb} MB`}
         >
           <TbDeviceDesktop size={14} />
-          <span>{appStats.memoryMb} MB</span>
+          <span className="figure">
+            {appStats.memoryMb >= 1024 ? (appStats.memoryMb / 1024).toFixed(1) : String(appStats.memoryMb)}
+          </span>
+          <span className="figure-unit">{appStats.memoryMb >= 1024 ? "GB" : "MB"}</span>
         </div>
         <div className={styles.statItem} title={`CPU 占用: ${appStats.cpuPercent.toFixed(1)}%`}>
           <TbCpu size={14} />
-          <span>{appStats.cpuPercent.toFixed(1)}%</span>
+          <span className="figure">{formatFigure(appStats.cpuPercent)}</span>
+          <span className="figure-unit">%</span>
         </div>
       </div>
     </div>

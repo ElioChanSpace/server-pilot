@@ -2,9 +2,9 @@
   position: fixed;
   inset: 0;
   z-index: 100;
-  background-color: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur));
+  -webkit-backdrop-filter: blur(var(--overlay-blur));
   display: flex;
   justify-content: center;
   align-items: center;
@@ -16,7 +16,7 @@
   max-height: calc(100vh - 48px);
   overflow-y: auto;
   padding: var(--space-5);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background-color: var(--glass-bg);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-md);
@@ -25,7 +25,7 @@
 .card {
   max-width: 620px;
   padding: var(--space-4) 18px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-sm);
@@ -273,4 +273,117 @@
 .pluginDisabled {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* 控制块：圆形开关（docs/design/principles.md §8） */
+.controlBlock {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+/* 主题调色板：环选，环滑到新选项 */
+.paletteSection {
+  margin-bottom: var(--space-4);
+}
+
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.paletteItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.paletteItem:hover {
+  background: var(--surface-hover);
+}
+
+.paletteDisc {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.paletteDiscInner {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+}
+
+.paletteDiscSystem {
+  background: linear-gradient(135deg, var(--bg-secondary) 50%, var(--accent-color) 50%);
+}
+
+.paletteRing {
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  border: 2px solid var(--accent-color);
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+.paletteName {
+  font-size: 11px;
+  color: var(--text-muted);
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paletteItem:hover .paletteName {
+  color: var(--text-secondary);
+}
+
+/* 更多：就地展开 */
+.moreToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: var(--space-2) var(--space-2);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+}
+
+.moreToggle:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+  transition: transform var(--motion-base) var(--ease-out);
+}
+
+.moreBlock {
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  padding: var(--space-4);
 }

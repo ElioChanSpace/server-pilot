@@ -2,9 +2,9 @@
   position: fixed;
   inset: 0;
   z-index: 100;
-  background-color: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur));
+  -webkit-backdrop-filter: blur(var(--overlay-blur));
   display: flex;
   justify-content: center;
   align-items: center;
@@ -16,7 +16,7 @@
   flex-direction: column;
   width: min(900px, 100%);
   height: min(640px, 100%);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background-color: var(--bg-primary);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-md);

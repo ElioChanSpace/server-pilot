@@ -2,7 +2,7 @@
   position: fixed;
   background-color: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 6px;
   z-index: 9999;
   box-shadow: 0 16px 36px -24px var(--shadow-color);
@@ -54,7 +54,7 @@
   position: fixed;
   background-color: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 6px;
   z-index: 10000;
   box-shadow: 0 16px 36px -24px var(--shadow-color);

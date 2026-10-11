@@ -2,11 +2,11 @@
   position: fixed;
   inset: 0;
   z-index: 900;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(var(--overlay-blur));
   animation: fadeIn 0.15s ease;
 }
 
@@ -17,7 +17,7 @@
   height: min(620px, 80vh);
   background: var(--bg-secondary);
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
@@ -228,6 +228,11 @@
 
 .table tr:last-child td { border-bottom: none; }
 .table tr:hover td { background: var(--surface-hover); }
+
+/* 行可点开详情卡：按压有反馈；详情卡开启期间其它行不再高亮 */
+.table tbody tr { cursor: pointer; }
+.table[data-card-open="true"] tbody tr:hover td { background: transparent; }
+.table tbody tr[data-card-open="true"] td { background: var(--surface-active); }
 
 .tdPid { font-weight: 600; color: var(--accent-color); }
 .tdUser { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

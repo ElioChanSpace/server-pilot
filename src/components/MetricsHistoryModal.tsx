@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { FaTimes, FaSpinner, FaExclamationCircle, FaChartLine, FaBolt } from 'react-icons/fa';
+import { usePolling } from '../hooks/usePolling';
 import styles from './MetricsHistoryModal.module.css';
 
 interface MetricSample {
@@ -198,11 +199,8 @@ export const MetricsHistoryModal: React.FC<MetricsHistoryModalProps> = ({ server
     return () => { mounted = false; };
   }, [loadHistory, sampleNow]);
 
-  useEffect(() => {
-    if (!live) return;
-    const timer = setInterval(() => { void sampleNow(); }, SAMPLE_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [live, sampleNow]);
+  // 安静轮询：窗口隐藏/最小化时暂停（docs/design/principles.md §7）
+  usePolling(sampleNow, SAMPLE_INTERVAL_MS, live);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };

@@ -473,8 +473,8 @@
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(var(--overlay-blur));
+  -webkit-backdrop-filter: blur(var(--overlay-blur));
   animation: fadeIn 0.15s ease;
 }
 
@@ -483,7 +483,7 @@
 .dialog {
   width: min(420px, 88%);
   padding: 22px 24px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--bg-elevated-opaque, var(--bg-elevated, #233650));
   border: 1px solid var(--glass-border);
   box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6);
@@ -649,8 +649,8 @@
   justify-content: center;
   padding-top: 64px;
   background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(var(--overlay-blur));
+  -webkit-backdrop-filter: blur(var(--overlay-blur));
   animation: fadeIn 0.12s ease;
 }
 

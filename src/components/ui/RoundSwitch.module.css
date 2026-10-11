@@ -1,0 +1,71 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: transparent;
+  border: none;
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.row:hover {
+  background: var(--surface-hover);
+}
+
+.row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.disc {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--surface-active);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--accent-color);
+  transform-origin: center;
+}
+
+.glyph {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-secondary);
+  transition: color var(--motion-fast) var(--ease-out);
+}
+
+.row:hover .glyph {
+  color: var(--text-primary);
+}
+
+.row[aria-checked="true"] .glyph {
+  color: var(--bg-primary);
+}
+
+.label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.label[data-checked="true"] {
+  color: var(--text-primary);
+}
