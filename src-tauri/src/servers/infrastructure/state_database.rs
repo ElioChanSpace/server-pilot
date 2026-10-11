@@ -35,9 +35,9 @@ impl StateDatabase {
         let connection = self.connection.lock().map_err(|e| e.to_string())?;
         let mut statement = connection
             .prepare(
-                "SELECT id, session_id, display_id, server_id, server_name, command, timestamp
+                "                SELECT id, session_id, display_id, server_id, server_name, command, timestamp
                  FROM command_history
-                 ORDER BY timestamp ASC, rowid ASC",
+                 ORDER BY timestamp DESC, rowid DESC",
             )
             .map_err(|e| e.to_string())?;
 

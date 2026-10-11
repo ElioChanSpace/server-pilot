@@ -312,9 +312,10 @@ export const CommandHistoryModal: React.FC<CommandHistoryModalProps> = ({
       const el = scrollRef.current;
       if (el) {
         requestAnimationFrame(() => {
-          const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-          if (nearBottom) {
-            el.scrollTop = el.scrollHeight;
+          // 倒序（最新在前）：仅当用户贴着顶部时才跟随最新
+          const nearTop = el.scrollTop < 60;
+          if (nearTop) {
+            el.scrollTop = 0;
           }
         });
       }

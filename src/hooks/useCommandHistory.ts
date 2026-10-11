@@ -49,6 +49,8 @@ export function useCommandHistory() {
           });
           window.localStorage.removeItem(LEGACY_STORAGE_KEY);
         }
+        // 统一倒序（最新在前）；replace_command_history 返回的是输入顺序
+        records.sort((a, b) => b.timestamp - a.timestamp);
         if (mountedRef.current) {
           setCommandState(records);
         }
@@ -82,14 +84,17 @@ export function useCommandHistory() {
       command: normalizedCommand,
     };
 
-    const recentDuplicate = [...commandsRef.current]
-      .reverse()
-      .find(record => Date.now() - record.timestamp <= RECENT_DUPLICATE_WINDOW_MS && isSameCommand(record, pendingRecord));
+    const recentDuplicate = commandsRef.current.find(
+      record =>
+        Date.now() - record.timestamp <= RECENT_DUPLICATE_WINDOW_MS &&
+        isSameCommand(record, pendingRecord),
+    );
     if (recentDuplicate) return;
 
     try {
       const record = await invoke<CommandRecord>("add_command_history", pendingRecord);
-      const next = [...commandsRef.current, record].slice(-MAX_RECORDS);
+      // 最新在前（倒序）
+      const next = [record, ...commandsRef.current].slice(0, MAX_RECORDS);
       setCommandState(next);
     } catch (error) {
       console.error("保存命令历史失败:", error);
