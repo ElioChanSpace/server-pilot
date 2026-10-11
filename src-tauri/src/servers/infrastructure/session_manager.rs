@@ -436,6 +436,15 @@ pub fn start_session(
         "ssh"
     };
     let mut cmd = CommandBuilder::new(ssh_path);
+    // GUI 进程的环境里没有 TERM（或带着 tmux/screen 之类远端不一定有的值），
+    // 远端 dircolors/ls/git/默认彩色提示符会因此全部退化为无色。
+    // 显式声明终端能力（iTerm2/Tabby/WindTerm 同款做法）：
+    // xterm-256color 是兼容性最好的 256 色 terminfo；真彩声明放在 COLORTERM，
+    // 服务器若配置了 AcceptEnv COLORTERM 则一并透传（未配置时静默忽略）。
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.arg("-o");
+    cmd.arg("SendEnv=COLORTERM");
     cmd.arg(format!("{}@{}", username, host));
     cmd.arg("-p");
     cmd.arg(port.to_string());

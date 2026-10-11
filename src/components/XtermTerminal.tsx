@@ -3,8 +3,10 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { SearchAddon } from 'xterm-addon-search';
+import { WebLinksAddon } from 'xterm-addon-web-links';
 import { FaChevronDown, FaChevronUp, FaCopy, FaPaste, FaSearch, FaTimes } from 'react-icons/fa';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { open as openExternal } from '@tauri-apps/plugin-shell';
 import { ContextMenu, ContextMenuAction, isEventInsideContextMenu } from './ContextMenu';
 import { getPublishedTheme, subscribeTheme } from '../utils/theme-store';
 import { buildXtermTheme } from '../utils/xterm-theme';
@@ -318,16 +320,28 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       const isMac = navigator.platform.toUpperCase().includes('MAC');
       const terminal = new Terminal({
         cursorBlink: true,
+        cursorInactiveStyle: 'outline',
         convertEol: true,
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        // 现代等宽字体栈（JetBrains Mono/Cascadia/SF Mono 有则用）
+        fontFamily: '"JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Monaco, "Courier New", monospace',
         fontSize,
+        lineHeight: 1.2,
         scrollback,
+        // 加粗用亮色档（8 色时代的经典"跳色"效果，输出更有层次）
+        drawBoldTextInBrightColors: true,
+        // 保底对比度 4.5（WCAG AA，VS Code 同值）：任何主题下彩色文字都可读
+        minimumContrastRatio: 4.5,
       });
       applyTerminalTheme(terminal);
       const addon = new FitAddon();
       terminal.loadAddon(addon);
       const searchAddon = new SearchAddon();
       terminal.loadAddon(searchAddon);
+      // 可点击的 URL / 路径（Tabby/WindTerm 同类能力）
+      const webLinksAddon = new WebLinksAddon((_event, uri) => {
+        void openExternal(uri);
+      });
+      terminal.loadAddon(webLinksAddon);
       terminal.open(termRef.current);
       termInstance.current = terminal;
       fitAddonRef.current = addon;

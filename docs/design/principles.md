@@ -66,6 +66,17 @@ SSH 运维工具（多窗口、终端、大量列表与 Modal），不是常驻�
 
 ## 落地记录（实现时的决策）
 
+- **终端配色**（调研 iTerm2/Tabby/WindTerm/Warp/PuTTY 等后采纳）：
+  - SSH 进程显式声明 `TERM=xterm-256color` + `COLORTERM=truecolor` 并
+    `SendEnv=COLORTERM`——GUI 进程没有 TERM 时远端 dircolors/ls/git 与默认
+    彩色提示符会全部退化为无色，这是"终端内容没有配色"的根因。
+  - `drawBoldTextInBrightColors`（加粗走亮色档）、`minimumContrastRatio: 4.5`
+    （WCAG AA 保底，VS Code 同值）、`cursorInactiveStyle: outline`。
+  - 字体栈 JetBrains Mono / Cascadia Mono / SF Mono / Menlo；终端四周留白、
+    细圆角滚动条；URL/路径可点击（web-links）。
+  - 远端侧职责（不在客户端硬造）：`ls --color`/`LS_COLORS`/提示符 PS1/24bit
+    声明；客户端保证的是能力声明与渲染质量。
+
 - **条带形态**：底栏（BottomBar）这类窄条带用「图标 + 数字 + 弱化单位」，
   不放大徽章（ftop 的 strip 同理）；面板/卡片内的指标用完整徽章（`MetricBadge`）。
 - **进程列表**：`ProcessManagerModal` 仅在实时读数列（CPU/内存）降序时用稳定排序
