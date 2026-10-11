@@ -428,8 +428,12 @@ const XtermTerminalComponent: React.FC<XtermTerminalProps> = ({
       });
 
       terminal.onData(data => {
-        trackLocalInputRef.current?.(data);
+        // 先把用户输入发给 PTY，再做本地命令跟踪 —— 顺序反了会让
+        // 跟踪触发的探测注入（get_terminal_session_directory）抢在
+        // 回车之前到达 PTY，把探测文本拼进用户的命令行
+        // （表现为 "cd: 参数太多" 且终端状态错乱）
         onInputRef.current?.(data);
+        trackLocalInputRef.current?.(data);
       });
 
       // 选中自动复制到系统剪贴板（防抖，避免拖选过程中高频 IPC）

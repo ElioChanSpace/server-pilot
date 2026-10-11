@@ -144,6 +144,8 @@ const AppContent: React.FC = () => {
   followCwdRef.current = followCwdEnabled;
   // 每会话已知 cwd（cd 探测/切换时查询），避免重复注入探测命令
   const sessionCwdMapRef = useRef(new Map<string, string>());
+  // cd 后探测的去抖定时器（per session）
+  const cdProbeTimersRef = useRef(new Map<string, number>());
 
   useEffect(() => {
     window.localStorage.setItem("server-pilot-follow-cwd", followCwdEnabled ? "1" : "0");
@@ -734,12 +736,20 @@ const AppContent: React.FC = () => {
     const server = serversRef.current.find(s => s.id === session.serverId);
     addCommand(sessionId, session.displayId, session.serverId, server?.name ?? '未知服务器', command);
 
-    // A: 目录变更命令（cd/pushd/popd）→ 安全探测真实 cwd（命令瞬时完成，
-    // 探测命令排在其后执行；仅命令触发，绝不在用户输入/TUI 中注入）
+    // A: 目录变更命令（cd/pushd/popd）→ 安全探测真实 cwd。
+    // 延后 200ms 再注入探测（确保用户的回车已被 PTY 处理），并按会话
+    // 去抖（OSC133 与本地跟踪可能双触发），绝不与用户命令行拼接。
     if (/^\s*(cd|pushd|popd)\b/.test(command)) {
-      void invoke<string>("get_terminal_session_directory", { sessionId })
-        .then(cwd => publishTerminalCwd(sessionId, cwd))
-        .catch(() => {});
+      const pending = cdProbeTimersRef.current;
+      const existing = pending.get(sessionId);
+      if (existing !== undefined) window.clearTimeout(existing);
+      const timer = window.setTimeout(() => {
+        pending.delete(sessionId);
+        void invoke<string>("get_terminal_session_directory", { sessionId })
+          .then(cwd => publishTerminalCwd(sessionId, cwd))
+          .catch(() => {});
+      }, 200);
+      pending.set(sessionId, timer);
     }
   }, [addCommand, publishTerminalCwd]);
 
