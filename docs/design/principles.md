@@ -64,6 +64,21 @@ SSH 运维工具（多窗口、终端、大量列表与 Modal），不是常驻�
 - 设置是一块控制面：常用项是圆形开关，低频数值收进"更多"就地展开。
 - 改动立刻生效并持久化，不需要"保存"按钮。
 
+### 9. 图标（菜单栏/托盘）
+
+参考 Thor（自绘 template PNG）与 Leap（SF Symbol）的做法：**单色剪影 + template 渲染**。
+
+- 图形：双层机架（服务器集群语义），实心剪影 + 负空间细节；每单元 =
+  左侧单状态点 + 右侧三条散热槽（服务器面板图标惯例）。
+- 18px 可读：细节最小边 ≥ 1.5px。预览对比过"双点"版——18px 下两点糊成
+  一团且显脸谱感，故取单点。
+- 渲染：macOS 用白色版 + `icon_as_template(true)`（纯白/纯黑随菜单栏
+  自适应）；Windows/Linux 用深色版（浅色任务栏可读）。
+- 单一设计源 `design/tray-icon.svg`，`npm run gen:tray-icon` 栅格化出
+  `src-tauri/icons/tray-template.png` / `tray-dark.png`（产物入库，构建
+  不依赖脚本）。
+- 应用/Dock 图标（`icons/icon.png`）不受此规则约束，另行设计。
+
 ## 落地记录（实现时的决策）
 
 - **终端配色**（调研 iTerm2/Tabby/WindTerm/Warp/PuTTY 等后采纳）：

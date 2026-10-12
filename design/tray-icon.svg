@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    Server Pilot 菜单栏图标 — 双层机架（单色剪影 + 负空间细节）
+    设计规范见 docs/design/principles.md「图标」：
+    - 实心剪影，无渐变无文字；macOS 以 template 渲染（纯白/纯黑自适应）
+    - 18px 可读：细节（状态点/散热槽）最小边 ≥ 1.5px（32 网格上 ≥ 2.5）
+    - 每单元 = 左侧单状态点 + 右侧三条散热槽（服务器面板图标惯例）
+      预览对比过"双点"版：18px 下两点糊成一团且显脸谱感，故取单点
+    - 颜色占位 #FFFFFF，scripts/gen-tray-icon.mjs 会替换为深色变体
+  -->
+  <defs>
+    <mask id="cut">
+      <rect x="0" y="0" width="32" height="32" fill="#fff" />
+      <!-- 机架单元 1 -->
+      <circle cx="8.2" cy="9.25" r="1.8" fill="#000" />
+      <rect x="17.6" y="5.7" width="7.6" height="1.6" rx="0.8" fill="#000" />
+      <rect x="17.6" y="8.2" width="7.6" height="1.6" rx="0.8" fill="#000" />
+      <rect x="17.6" y="10.7" width="7.6" height="1.6" rx="0.8" fill="#000" />
+      <!-- 机架单元 2 -->
+      <circle cx="8.2" cy="22.75" r="1.8" fill="#000" />
+      <rect x="17.6" y="19.2" width="7.6" height="1.6" rx="0.8" fill="#000" />
+      <rect x="17.6" y="21.7" width="7.6" height="1.6" rx="0.8" fill="#000" />
+      <rect x="17.6" y="24.2" width="7.6" height="1.6" rx="0.8" fill="#000" />
+    </mask>
+  </defs>
+  <g mask="url(#cut)">
+    <rect x="3" y="4.5" width="26" height="9.5" rx="3.2" fill="#FFFFFF" />
+    <rect x="3" y="18" width="26" height="9.5" rx="3.2" fill="#FFFFFF" />
+  </g>
+</svg>

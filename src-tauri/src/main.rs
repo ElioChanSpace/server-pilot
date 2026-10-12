@@ -216,8 +216,21 @@ fn main() {
                 .build()
                 .map_err(|err| err.to_string())?;
 
+            // 托盘图标：单色「双层机架」剪影（design/tray-icon.svg → npm run gen:tray-icon）。
+            // macOS 用白色版 + template 渲染（纯白/纯黑随菜单栏自适应，Thor/Leap 同款机制）；
+            // Windows/Linux 用深色版（浅色任务栏可读）。
+            let tray_icon = {
+                let png: &[u8] = if cfg!(target_os = "macos") {
+                    include_bytes!("../icons/tray-template.png")
+                } else {
+                    include_bytes!("../icons/tray-dark.png")
+                };
+                tauri::image::Image::from_bytes(png).map_err(|err| err.to_string())?
+            };
+
             TrayIconBuilder::with_id("main-tray")
-                .icon(app.default_window_icon().cloned().ok_or("缺少应用图标")?)
+                .icon(tray_icon)
+                .icon_as_template(cfg!(target_os = "macos"))
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
