@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**一款基于 Tauri 的桌面端服务器管理工具，集成 SSH 终端、多会话管理、文件传输、监控与日志面板。**
+**一款基于 Tauri 的桌面端服务器管理工具：SSH 终端（多标签/分屏/会话恢复）、Monaco 远程编辑器、双栏文件管理与 10+ 运维工具箱。**
 
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
 ![Tauri](https://img.shields.io/badge/Tauri-2.11-orange)
@@ -16,18 +16,47 @@
 
 ## 功能特性
 
-- 多级分类管理：支持树形分类与未分类分组，适合按项目、环境或业务域管理服务器
-- SSH 连接与会话管理：通过系统 `ssh` 建立连接，支持密码认证，并能正确识别连接中与已连接状态
-- 多终端标签：支持同时打开多个服务器终端，切换标签时右侧服务器详情会同步联动
-- 内置终端：基于 `xterm.js` 的终端体验，支持 PTY 写入与窗口尺寸同步
-- 服务器详情面板：右侧按概览和监控分区展示服务器信息，默认关闭，可按需展开
-- 性能监控：对 Linux 服务器采集 CPU、内存、GPU 与高占用进程信息，并展示趋势图
-- 文件传输托盘：底部独立文件传输模块，支持上传、下载和远程目录浏览
-- 多级远程文件浏览：支持目录树、面包屑、当前目录双栏展示，按层级选择远程文件
-- 应用日志面板：应用日志以独立全宽面板显示，支持关闭，不会打断底层服务器终端
-- 右键快捷操作：可在左侧树中对分类和服务器进行新建、编辑、连接、断开等快捷操作
-- 本地持久化：服务器与分类配置以本地 JSON 方式保存，重启后仍可继续使用
-- 多主题支持：提供深色、浅色、午夜黑、护眼、Monokai、Dracula、Solarized、Nord 等 8 种主题，支持手动切换和导入导出自定义主题
+### 终端
+- **多标签终端**：VS Code 式标签（拖拽重排、固定置顶、8 色配色、双击重命名、`⌘⇧[` `⌘⇧]` / `⌘⌥1-9` 快捷切换、中键关闭）
+- **终端分屏**：`⌘D` 向右 / `⌘⇧D` 向下拆分同标签多面板，拖拽分隔条调比例，点击聚焦、面板级关闭
+- **会话恢复**：页面刷新后自动恢复全部终端标签（原 ID 不变）与历史输出回放，后台长任务不中断；同一服务器可开多个独立终端
+- **标签徽标**：实时显示远端当前目录、Git 分支、负载
+- **路径联动**：终端 `cd` / 切换标签时文件面板自动跟随；文件面板右键「在终端中 cd 到此处」反向同步
+- **可靠性**：PTY 输出 UTF-8 安全处理、空闲断连保护、主机密钥指纹确认、连接中断自动提示
+- 命令历史（时间倒序、持久化）、xterm.js 搜索（`⌘F`）、拖拽文件到终端即上传到当前目录
+
+### 远程编辑器（Monaco · VS Code 同源内核）
+- **编辑体验**：语法高亮（约 40 种语言）、代码折叠、彩虹括号、缩进引导、多光标、列选择、minimap、Sticky Scroll
+- **IntelliSense**：TS/JS/JSON/CSS/HTML 内置补全/诊断/悬停
+- **多标签工作区**：一窗多文件、每文件独立 undo、脏点标记、`⌘S` 保存
+- **保存安全**：保存状态四态（已修改/保存中/已同步/失败重试）、**远端冲突检测**（mtime+size，覆盖/放弃并重载/取消）、关闭三态确认、失败可导出本地
+- **VS Code 外壳**：面包屑（点击复制路径）、`⌘P` 快速打开、`⌘⇧P` 命令面板、查找替换控件
+- **vim 键位模式**（monaco-vim，状态栏指示）、只读模式、换行/Minimap 开关
+
+### 文件管理
+- **双栏文件管理器**：本地/远程并排浏览、目录下钻、面包屑、拖拽分隔
+- **传输**：上传（文件/整目录）、下载、拖拽到终端上传、**传输历史**（速度/耗时、批量删除、SQLite 持久化）
+- 远程文件操作：新建目录、重命名、删除、编辑（跳转 Monaco）
+
+### 工具箱（右键终端标签）
+- **进程管理**：ps 列表（排序/搜索）、SIGTERM/KILL/STOP/CONT、自动刷新
+- **磁盘分析**：df 使用率 → du 逐级下钻 → 大文件扫描
+- **系统信息**：内核/架构/CPU/负载/内存/Swap 信息卡
+- **网络连接**：ss 全量连接表（状态过滤/搜索）
+- **实时日志**：字节偏移增量 tail、过滤、自动滚动、日志轮转检测
+- **定时任务**：Cron（用户/root/crontab/cron.d）+ Systemd Timers
+- **资源历史**：CPU/内存/磁盘/负载趋势曲线（SVG 图表、SQLite 采样 30 天）
+- **端口监测 / Docker 管理 / 服务管理**：监听端口、容器启停/日志、systemd 服务启停/日志
+
+### SSH 与安全
+- 密码 / **SSH 密钥**认证（含密钥生成与管理）
+- **SSH 隧道管理**：本地/远程端口转发
+- 凭据存 macOS **钥匙串**；配置本地 JSON + SQLite 持久化
+- 远端命令全链路安全：标识符白名单、shell 转义、探测命令防注入/防拼接
+
+### 界面
+- **多主题**：深色/浅色/午夜黑/护眼/Monokai/Dracula/Solarized/Nord + **琉璃（透明玻璃拟态）**，自定义主题导入导出
+- 系统托盘、桌面通知、应用/远程日志面板、全屏提示
 
 ---
 
@@ -39,9 +68,13 @@
 | 前端框架 | [React](https://react.dev/) 18 + TypeScript |
 | 构建工具 | [Vite](https://vitejs.dev/) 5 |
 | 后端语言 | Rust 2021 Edition |
-| 终端模拟 | [xterm.js](https://xtermjs.org/) 5 + xterm-addon-fit |
-| PTY 支持 | [portable-pty](https://github.com/wez/wezterm/tree/main/pty) 0.8 |
-| 图表库 | [Recharts](https://recharts.org/) 2 |
+| 编辑器内核 | [Monaco](https://github.com/microsoft/monaco-editor)（VS Code 同源）+ monaco-vim |
+| 终端模拟 | [xterm.js](https://xtermjs.org/) 5 + fit/search addon |
+| PTY 支持 | [portable-pty](https://github.com/wez/wezterm/tree/main/pty) |
+| SSH / SFTP | [russh](https://crates.io/crates/russh) + russh-sftp（连接池复用） |
+| 本地数据库 | rusqlite（命令/传输历史、指标采样） |
+| 图表 | Recharts + 零依赖 SVG 折线图 |
+| 拖拽 | @dnd-kit（分类树、终端标签） |
 | 异步运行时 | Tokio 1 |
 | 日志系统 | log4rs 1.4 |
 
@@ -53,20 +86,21 @@
 
 ```text
 src-tauri/src/servers/
-├── domain/           # 领域层：Server、Category 模型与仓储接口
-├── application/      # 应用层：AppState，负责状态协调
-├── infrastructure/   # 基础设施层：本地文件存储、SSH/PTy 会话管理
-└── interface/        # 接口层：Tauri commands
+├── domain/           # 领域层：Server、Category、Session、Settings 模型
+├── application/      # 应用层：AppState 状态协调
+├── infrastructure/   # 基础设施层：文件存储、SQLite、SSH/PTY 会话管理
+└── interface/        # 接口层：Tauri commands（工具箱/编辑器/传输等）
 ```
 
 前端主要结构：
 
 ```text
 src/
-├── components/       # 侧边栏、终端、详情、监控、日志、文件传输等 UI 组件
-├── context/          # React Context（ServerContext）
-├── hooks/            # 自定义 Hooks
-└── App.tsx           # 全局布局、面板开关、会话与菜单入口
+├── components/       # 终端、标签栏、文件管理、工具箱、编辑器工作区等 UI
+├── editor/           # Monaco 内核（env/theme/language/工作区）
+├── hooks/            # 会话输出、命令历史、文件上传、剪贴板等 Hooks
+├── utils/            # 主题、会话恢复、路径等工具
+└── App.tsx           # 全局布局、会话编排、事件分发
 ```
 
 ---
@@ -78,16 +112,7 @@ src/
 - [Node.js](https://nodejs.org/) >= 18
 - [Rust](https://rustup.rs/) >= 1.77
 - [Tauri 2 前置依赖](https://v2.tauri.app/start/prerequisites/)：按当前操作系统安装原生依赖
-- 本机需安装可用的 OpenSSH 客户端
-
-项目当前使用的 Tauri 相关版本：
-
-- `tauri` / `tauri-build`: 2.x
-- `@tauri-apps/api`: 2.x
-- `@tauri-apps/cli`: 2.x
-- `@tauri-apps/plugin-dialog`: 2.x
-- `@tauri-apps/plugin-fs`: 2.x
-- `@tauri-apps/plugin-shell`: 2.x
+- 本机需安装可用的 OpenSSH 客户端（终端会话使用系统 `ssh`）
 
 ### 安装与运行
 
@@ -106,98 +131,58 @@ npm run tauri build
 
 构建产物默认位于 `src-tauri/target/release/bundle/`。
 
-如果在某些 CI 环境变量被注入到本地 shell 的场景下遇到 `--ci` 参数报错，可使用：
+若 CI 环境变量注入 shell 导致 `--ci` 报错：
 
 ```bash
 CI=false npm run tauri build
 ```
 
+> macOS 提示：如遇 `linking with cc failed`（Xcode 许可证未同意），
+> 执行 `sudo xcodebuild -license accept`，或构建前 `source scripts/macos-build-env.sh`。
+
 ### GitHub 自动编译
 
-- `CI` 工作流会在推送到 `main` / `master` 或提交 Pull Request 时自动执行前端构建和 Rust 检查。
-- `Build Tauri App` 工作流支持两种触发方式：
-  - 在 GitHub Actions 页面手动触发
-  - 推送形如 `v1.0.0` 的 tag 自动触发
-- 打包完成后会自动上传构建产物，并在 tag 构建时创建 Draft Release。
+- `CI` 工作流：推送 `main` / `master` 或 PR 时执行前端构建与 Rust 检查
+- `Build Tauri App` 工作流：Actions 页面手动触发，或推送 `v1.0.0` 形式 tag 自动触发，产物自动上传并在 tag 构建时创建 Draft Release
 
 ---
 
 ## 使用说明
 
-1. 新建分类：通过顶部菜单“文件 -> 新建分类...”或左侧分类右键菜单创建多级分组
-2. 新建服务器：在“文件 -> 新建服务器...”中填写名称、主机、端口、用户名、密码和所属分组
-3. 连接服务器：在左侧服务器树中双击服务器，或使用右键菜单发起连接
-4. 切换终端：连接成功后会在顶部生成终端标签，多个会话可并行切换
-5. 查看详情：需要时展开右侧服务器信息栏，查看概览与监控信息
-6. 传输文件：打开底部文件传输面板，在远程目录树中浏览并选择文件后执行上传或下载
-7. 查看日志：通过顶部菜单“系统 -> 查看日志”打开应用日志面板；日志面板可独立关闭，不会影响当前终端
+1. **管理服务器**：顶部菜单「文件」或左侧树右键创建分类/服务器；支持从 `~/.ssh/config` 导入
+2. **连接终端**：双击服务器或右键连接；右键标签进入「工具箱」打开各项运维面板
+3. **多标签/分屏**：右键标签固定/配色/重命名；`⌘D` 分屏；拖拽调序
+4. **编辑远程文件**：文件管理器双击文件 → Monaco 编辑器（多标签、`⌘S` 保存、冲突检测）
+5. **路径联动**：右键标签开启「跟随终端目录」，终端 `cd` 即可带面板跳转
+6. **传输文件**：底部文件传输面板上传/下载，或拖拽文件到终端上传至当前目录
+7. **会话恢复**：刷新页面后终端标签与历史输出自动恢复（设置中可关闭）
 
-### 文件传输说明
+### 已知边界
 
-- 当前文件传输基于 `scp`
-- 当前远程目录浏览与文件传输主要面向 Linux 服务器
-- 若服务器未保存密码，则无法直接执行上传下载
-
-### 监控说明
-
-- 当前性能监控仅支持 Linux 服务器
-- 监控面板支持 CPU、内存、GPU 与高占用进程展示
-- 若服务器未连接，则监控面板仅显示待连接提示
-
----
-
-## Tauri 命令列表
-
-| 命令 | 说明 |
-|------|------|
-| `create_server` | 创建服务器记录 |
-| `update_server` | 更新服务器配置 |
-| `get_servers` | 获取服务器列表 |
-| `create_category` | 创建分类 |
-| `get_categories` | 获取分类列表 |
-| `connect_server` | 建立 SSH / PTY 会话 |
-| `pty_write` | 向终端写入数据 |
-| `pty_resize` | 调整终端尺寸 |
-| `disconnect_server` | 断开会话连接 |
-| `fetch_server_metrics` | 获取服务器性能监控数据 |
-| `list_remote_directory` | 按路径列出远程目录内容 |
-| `upload_file_to_server` | 上传本地文件到服务器 |
-| `download_file_from_server` | 从服务器下载文件到本地 |
-
----
-
-## 当前限制
-
-- SSH 连接当前以密码认证为主，暂未提供 SSH 密钥管理界面
-- 文件传输与监控能力当前主要支持 Linux 服务器
-- 应用日志目前仍以示例日志与应用内日志查看为主，未做更完整的筛选与检索
+- 服务器端以 **Linux** 为主（Windows 服务器暂不支持）
+- 终端会话经系统 `ssh` 建立；文件/监控/工具箱能力经 russh（SFTP/exec）执行
+- 监控与工具箱依赖服务器自带命令（ps/ss/df/du/systemctl 等），无需安装代理
+- 语法高亮未收录的格式（如 Makefile/Haskell）按纯文本显示
 
 ---
 
 ## Roadmap
 
-- [x] SSH 密钥认证支持
-- [ ] 更完整的 Windows 连接与功能支持
-- [x] 服务器删除能力
-- [x] 分类拖拽排序
-- [x] 监控指标扩展到磁盘、网络等维度
-- [x] 文件传输队列与批量操作
-- [x] 连接配置导入 / 导出
+- [x] SSH 密钥认证与密钥管理
+- [x] Monaco 多标签远程编辑器（冲突检测 / vim 键位 / 命令面板）
+- [x] 终端分屏、标签管理、会话恢复与输出回放
+- [x] 工具箱全套（进程/磁盘/网络/日志/定时任务/资源历史/Docker/服务）
+- [ ] 会话日志落盘 + 跨会话搜索
+- [ ] 终端 Triggers / 关键词高亮
+- [ ] 命令片段库 + 参数化模板
+- [ ] 目录同步（增量/镜像，差异预览）
+- [ ] Zmodem/Trzsz 终端内文件传输
+- [ ] SSH 高级连接（ControlMaster / Agent Forwarding / SOCKS5）
+- [ ] 配置云同步（Gist / WebDAV）
+- [ ] 更完整的 Windows 服务器支持
 
 ---
 
-## 贡献
+## License
 
-欢迎提交 Issue 和 Pull Request。
-
-1. Fork 本仓库
-2. 创建功能分支：`git checkout -b feat/amazing-feature`
-3. 提交更改：`git commit -m 'feat: add amazing feature'`
-4. 推送分支：`git push origin feat/amazing-feature`
-5. 发起 Pull Request
-
----
-
-## 许可证
-
-本项目基于 [MIT License](LICENSE) 开源。
+[MIT](LICENSE)
